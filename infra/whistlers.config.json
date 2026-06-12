@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "subscriptions": [],
+  "namespaces": {
+    "octospaces": {
+      "subscriptions": [
+        { "name": "octospaces-space", "topics": ["octospaces.space.changed.*"] }
+      ]
+    }
+  }
+}

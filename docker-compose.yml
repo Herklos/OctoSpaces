@@ -1,0 +1,26 @@
+# Local delivery stack for OctoSpaces notifications:
+#   Starfish server (run on host: `NATS_URL=nats://localhost:4222 pnpm --filter @octospaces/server dev`)
+#     → NATS → Whistlers (NATS→SSE gateway) → clients (EventSource at :8080/events)
+services:
+  nats:
+    image: nats:2
+    ports:
+      - "4222:4222"
+
+  whistlers:
+    # Builds the Whistlers image from the sibling repo (it has a root Dockerfile).
+    # Swap `build:` for `image:` if you publish/pull a Whistlers image instead.
+    build:
+      context: ../../Whistlers
+    depends_on:
+      - nats
+    environment:
+      QUEUE_TYPE: nats
+      QUEUE_URL: nats://nats:4222
+      DESTINATION_TYPE: sse
+      SSE_PORT: "8080"
+      SSE_PATH: /events
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./infra/whistlers.config.json:/etc/whistlers/config.json:ro
