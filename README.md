@@ -1,19 +1,37 @@
-# octospaces
+<div align="center">
+  <img src="./logo.png" alt="OctoSpaces" width="180" />
 
-pnpm monorepo housing the shared spaces layer for Drakkar Software apps.
+  <h1>OctoSpaces</h1>
+
+  <p><strong>The shared spaces layer for Drakkar Software apps.</strong><br/>
+  E2EE sync, unified public/private spaces, domain-agnostic objects — headless by design.</p>
+
+  <p>
+    <img alt="pnpm monorepo" src="https://img.shields.io/badge/pnpm-monorepo-f69220?logo=pnpm&logoColor=white" />
+    <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white" />
+    <img alt="Node ≥ 20" src="https://img.shields.io/badge/Node-%E2%89%A520-339933?logo=node.js&logoColor=white" />
+    <img alt="License" src="https://img.shields.io/badge/license-private-red" />
+  </p>
+</div>
+
+---
+
+## Packages
 
 | Package | Version | Description |
 |---|---|---|
 | [`@drakkar.software/octospaces-sdk`](./packages/octospaces-sdk) | `0.1.0` | Headless spaces core — identity, sync, objects, registry |
 | [`@drakkar.software/octospaces-ui`](./packages/octospaces-ui) | `0.1.0` | Shared UI primitives — theme plumbing only, no values |
 
+---
+
 ## Architecture
 
 Everything in a space is an **`ObjectNode`** — a typed, ordered, tree-able unit with an `id`, `type`, `subtype`, `parentId`, and `order`. Rooms, categories, docs, tasks are all objects discriminated by `type`. The SDK is domain-agnostic: no chat/page/board vocabulary in names, paths, or KV keys.
 
-**Private and public spaces are unified on one path family.** Both live under `spaces/{spaceId}/**` with the same `OBJECT_COLLECTIONS` cap scopes. A public space has `visibility:'public'` in its `_rooms` access record; its object index is plaintext (no keyring, `encryptor: null`). The Starfish server never validates or decrypts content — auth is roster-based via the space-role enricher — so no server changes are required to host public spaces.
+**Private and public spaces share one path family.** Both live under `spaces/{spaceId}/**` with the same `OBJECT_COLLECTIONS` cap scopes. A public space sets `visibility:'public'` in its `_rooms` access record and uses a plaintext object index (no keyring, `encryptor: null`). The Starfish server never validates or decrypts content — auth is roster-based — so no server changes are required to host public spaces.
 
-Sync is powered by the **Starfish** protocol (`@drakkar.software/starfish-*`, E2EE, cap-cert auth). The two apps (OctoChat and OctoVault) consume these packages as npm dependencies; the concrete theme values, env vars, and app-specific path extensions stay in each app.
+Sync is powered by the **Starfish** protocol (`@drakkar.software/starfish-*`, E2EE, cap-cert auth). OctoChat and OctoVault consume these packages as npm dependencies; concrete theme values, env vars, and app-specific path extensions stay in each app.
 
 ```
 octospaces/
@@ -32,6 +50,8 @@ octospaces/
 ├── pnpm-workspace.yaml
 └── package.json
 ```
+
+---
 
 ## Requirements
 
@@ -115,8 +135,8 @@ const joined = await joinSpaceByLink(session, token);
 import { buildTree, addObject, patchObject, reparentObject } from '@drakkar.software/octospaces-sdk';
 import type { ObjectNode } from '@drakkar.software/octospaces-sdk';
 
-const tree = buildTree(nodes);              // repairs cycles/orphans, sorts siblings
-const next = addObject(nodes, newNode);     // pure reducer
+const tree  = buildTree(nodes);                              // repairs cycles/orphans, sorts siblings
+const next  = addObject(nodes, newNode);                     // pure reducer
 const moved = reparentObject(nodes, id, newParentId, afterSiblingId);
 ```
 
@@ -182,9 +202,9 @@ import {
   statusColor, swatch, paperBorder, glowShadow, focusRingStyle,
 } from '@drakkar.software/octospaces-ui';
 
-const color = presenceColor(colors, 'online');     // → colors.presenceOnline
-const tint  = avatarTint(colors, userId);          // stable hash → palette key
-const ring  = focusRingStyle(colors, 2);           // { borderWidth, borderColor, borderStyle }
+const color = presenceColor(colors, 'online');  // → colors.presenceOnline
+const tint  = avatarTint(colors, userId);       // stable hash → palette key
+const ring  = focusRingStyle(colors, 2);        // { borderWidth, borderColor, borderStyle }
 ```
 
 ### Theme contract
@@ -194,9 +214,9 @@ The `Theme` type your app must satisfy (all fields, values stay in the app):
 ```ts
 interface Theme {
   scheme:  'light' | 'dark';
-  colors:  Palette;       // see Palette interface — includes editorCanvas, tooltipBg, onTooltip
+  colors:  Palette;       // includes editorCanvas, tooltipBg, onTooltip
   spacing: Record<string, number>;
-  radii:   { sm, md, lg, full: number };
+  radii:   { sm: number; md: number; lg: number; full: number };
   type:    Record<string, unknown>;
   fonts:   Record<string, unknown>;
   motion:  Record<string, unknown>;
@@ -223,12 +243,14 @@ react-native   >=0.75
 
 When `sharedSpacesNamespace` is set, `buildSession` creates two extra Starfish clients on the `Session` object:
 
-| Client | Used for |
+| Client | Purpose |
 |---|---|
-| `session.spacesRegistryClient` | Space registry reads/writes (uses shared namespace) |
-| `session.spacesKeyringClient` | Space keyring ops (uses shared namespace) |
+| `session.spacesRegistryClient` | Space registry reads/writes (shared namespace) |
+| `session.spacesKeyringClient` | Space keyring ops (shared namespace) |
 
 Without the namespace both fall back to the default clients — no behavior change for single-app deployments.
+
+---
 
 ## License
 
