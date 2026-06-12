@@ -27,9 +27,9 @@
 
 ## Architecture
 
-Everything in a space is an **`ObjectNode`** — a typed, ordered, tree-able unit with an `id`, `type`, `subtype`, `parentId`, and `order`. Rooms, categories, docs, tasks are all objects discriminated by `type`. The SDK is domain-agnostic: no chat/page/board vocabulary in names, paths, or KV keys.
+Everything in a space is an **`ObjectNode`** — a typed, ordered, tree-able unit with an `id`, `type`, `parentId`, and `order`. The SDK defines **no domain object types**: apps (OctoChat, OctoVault, …) declare their own `type` strings and descriptors in their own SDKs. The SDK ships only the generic tree engine (`buildTree`, `addObject`, `reparentObject`, …) and the spaces infrastructure (keyring, access record, index).
 
-**Private and public spaces share one path family.** Both live under `spaces/{spaceId}/**` with the same `OBJECT_COLLECTIONS` cap scopes. A public space sets `visibility:'public'` in its `_rooms` access record and uses a plaintext object index (no keyring, `encryptor: null`). The [Starfish](https://github.com/Drakkar-Software/Starfish) server never validates or decrypts content — auth is roster-based — so no server changes are required to host public spaces.
+**Private and public spaces share one path family.** Both live under `spaces/{spaceId}/**` with the same `OBJECT_COLLECTIONS` cap scopes. A public space sets `visibility:'public'` in its `_access` access record (`spaceregistry` collection) and uses a plaintext object index (no keyring, `encryptor: null`). The [Starfish](https://github.com/Drakkar-Software/Starfish) server never validates or decrypts content — auth is roster-based — so no server changes are required to host public spaces. The space keyring lives in the `spacekeyring` collection at `spaces/{spaceId}/_keyring`.
 
 Sync is powered by the **[Starfish](https://github.com/Drakkar-Software/Starfish)** protocol (`@drakkar.software/starfish-*`, E2EE, cap-cert auth). OctoChat and OctoVault consume these packages as npm dependencies; concrete theme values, env vars, and app-specific path extensions stay in each app.
 
@@ -41,7 +41,7 @@ octospaces/
 │   │       ├── core/            # config, types, ids, adapters, errors
 │   │       ├── sync/            # identity, client, paths, encryptors, pairing, caps
 │   │       ├── spaces/          # registry, members, object-index, pubspace
-│   │       ├── objects/         # ObjectNode tree, reducers, legacy bridges
+│   │       ├── objects/         # ObjectNode tree, reducers (generic — no domain types)
 │   │       └── platform/        # kv / crypto split (.ts + .native.ts)
 │   └── octospaces-ui/           # UI primitives
 │       └── src/

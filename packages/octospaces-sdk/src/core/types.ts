@@ -1,11 +1,11 @@
 /**
- * Domain model for OctoSpaces — space + object types shared by the SDK and any UI.
+ * Domain model for OctoSpaces — space + generic object-tree types shared by the SDK.
  *
  * A space's contents are modelled as a tree of typed {@link ObjectNode}s stored in
- * a union-merged index at `spaces/{spaceId}/objects/_index`. Everything —  rooms,
- * categories, docs, projects, tasks — is an `ObjectNode` discriminated by `type`.
- * Apps extend the model by adding their own `ObjectType` strings; the generic
- * primitives here are app-neutral.
+ * a union-merged index at `spaces/{spaceId}/objects/_index`. The SDK is deliberately
+ * domain-agnostic: it defines only the generic {@link ObjectNode} envelope and the
+ * {@link ObjectType} string alias. Apps (OctoChat, OctoVault, …) declare their own
+ * type strings and descriptors — they are not defined here.
  */
 
 // Re-export SealedBlob so consumers get it from one place.
@@ -76,81 +76,34 @@ export interface Space {
   write?: boolean;
 }
 
-/** Legacy room kind — used while apps migrate their content onto objects.
- *  New code should use {@link RoomSubtype} directly. */
-export type RoomKind = 'channel' | 'dm' | 'automated';
-
-/** Scheduled-fetch cadence for automated rooms. */
-export type AutomationSchedule =
-  | { kind: 'interval'; everyMin: number }
-  | { kind: 'daily'; hour: number; minute: number }
-  | { kind: 'weekly'; weekday: number; hour: number; minute: number }
-  | { kind: 'cron'; expression: string };
-
-/** Stored, synced configuration of an `automated` room. */
-export interface AutomationMeta {
-  providerId: string;
-  params: Record<string, unknown>;
-  intervalMin: number;
-  schedule?: AutomationSchedule;
-  onOpen?: boolean;
-  enabled: boolean;
-  credential: import('../sync/account-seal.js').SealedBlob;
-  botUserId?: string;
-  runOnDeviceId: string | null;
-  lastRunAt: number | null;
-  lastFetchHash?: string | null;
-  lastError: string | null;
-}
-
-/** A transitional Room shape (used while apps migrate onto the object model). */
-export interface Room {
-  id: ID;
-  spaceId: ID;
-  category: string;
-  name: string;
-  kind: RoomKind;
-  topic?: string;
-  unread?: number;
-  mention?: boolean;
-  avatar?: string;
-  automation?: AutomationMeta;
-}
-
 // ── Object model ─────────────────────────────────────────────────────────────
-// Everything in a space — rooms, categories, docs, projects, etc. — is an
-// ObjectNode with a type. Apps extend ObjectType with their own strings.
+// Everything in a space is an ObjectNode with a type string. Apps (OctoChat,
+// OctoVault, …) define their own type strings; none are baked into the SDK.
 
-/** The builtin object types. Custom types ride the same `string` field. */
-export type BuiltinObjectType = 'room' | 'category' | 'automation' | 'doc' | 'project' | 'task';
-export type ObjectType = BuiltinObjectType | (string & {});
+/** Any string an app assigns as an object's type. No builtins are defined here —
+ *  each app declares its own type strings in its local SDK. */
+export type ObjectType = string;
 
-/** Runtime set of builtin type strings for renderer branching. */
-export const BUILTIN_OBJECT_TYPES: readonly BuiltinObjectType[] = ['room', 'category', 'automation', 'doc', 'project', 'task'];
-
-/** How an object's content syncs. Builtins infer this; custom types set it explicitly. */
+/** How an object's content syncs. Apps may set this per-type explicitly. */
 export type ObjectContentKind = 'merge' | 'append' | 'none';
-
-/** When `type === 'room'`, the room flavour. */
-export type RoomSubtype = 'channel' | 'dm' | 'automation';
 
 /**
  * One entry in a space's object index (`spaces/{spaceId}/objects/_index`).
  * Identity + tree position + light metadata ONLY — heavy content (messages, doc
- * blocks, project event log) lives in a per-object content doc keyed by `id`.
+ * blocks, event logs) lives in a per-object content doc keyed by `id`.
+ * App-specific fields ride `meta` rather than top-level fields here.
  */
 export interface ObjectNode {
   id: ID;
   type: ObjectType;
-  subtype?: RoomSubtype;
   parentId: ID | null;
   order: number;
   title: string;
   emoji?: string;
   updatedAt: number;
   archived?: boolean;
-  automation?: AutomationMeta;
   contentKind?: ObjectContentKind;
+  /** App-specific fields. Apps store type-specific metadata here. */
   meta?: Record<string, unknown>;
 }
 

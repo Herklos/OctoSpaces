@@ -17,7 +17,7 @@ import {
 
 describe('OBJECT_COLLECTIONS', () => {
   it('contains the canonical generic object collections', () => {
-    expect(OBJECT_COLLECTIONS).toContain('keyring');
+    expect(OBJECT_COLLECTIONS).toContain('spacekeyring');
     expect(OBJECT_COLLECTIONS).toContain('objindex');
     expect(OBJECT_COLLECTIONS).toContain('objlog');
     expect(OBJECT_COLLECTIONS).toContain('objdoc');
@@ -92,7 +92,7 @@ describe('accountScope', () => {
 describe('linkedDeviceScope', () => {
   it('contains both object and account collections', () => {
     const scope = linkedDeviceScope('user-1');
-    expect(scope.collections).toEqual(expect.arrayContaining(['keyring', 'profile', 'spaces']));
+    expect(scope.collections).toEqual(expect.arrayContaining(['spacekeyring', 'profile', 'spaces']));
   });
 
   it('does NOT contain pubspace', () => {

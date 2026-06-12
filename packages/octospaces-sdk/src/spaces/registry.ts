@@ -1,25 +1,21 @@
 /**
- * Space + room registries (plaintext metadata docs). A user's spaces live at
+ * Space registries (plaintext metadata docs). A user's spaces live at
  * `user/<userId>/_spaces`; each space's ACCESS RECORD (owner/members + shared
- * name/image) at `spaces/<spaceId>/_rooms`. The room/category LIST no longer lives
- * here — it moved to the encrypted unified object index (`objects/_index`, see
- * `object-index.ts`); `_rooms` is now just the owner-only access record.
+ * name/image) at `spaces/<spaceId>/_access`. The object tree lives in the encrypted
+ * unified object index (`objects/_index`, see `object-index.ts`); `_access` is the
+ * owner-only access record.
  */
 import { ConflictError, StarfishHttpError } from '@drakkar.software/starfish-client';
 import type { StarfishClient } from '@drakkar.software/starfish-client';
 
-import type { ArchivedDms, CapMap, DmMap, MutePrefs, PubAccessMap, ReadPrefs, Room, Space, SpaceVisibility } from '../core/types.js';
+import type { ArchivedDms, CapMap, DmMap, MutePrefs, PubAccessMap, ReadPrefs, Space, SpaceVisibility } from '../core/types.js';
 import type { SealedBlob } from '../sync/account-seal.js';
 import { randomId } from '../core/ids.js';
 import type { Session } from '../sync/identity.js';
-import { DEFAULT_CATEGORY } from '../objects/objects.js';
 import { seedSpaceObjectIndex } from './object-index.js';
-import { roomsRegistryPull, roomsRegistryPush, spacesPull, spacesPush } from '../sync/paths.js';
+import { spaceAccessPull, spaceAccessPush, spacesPull, spacesPush } from '../sync/paths.js';
 
-// Re-export so existing `import { DEFAULT_CATEGORY } from './registry'` consumers keep working.
-export { DEFAULT_CATEGORY };
-
-/** Owner-set, SHARED space identity, persisted in the `_rooms` registry doc
+/** Owner-set, SHARED space identity, persisted in the `_access` registry doc
  *  (plaintext — NOT E2EE). `image` is a data URI. Both optional for back-compat. */
 export interface SpaceMeta {
   name?: string | null;
@@ -302,21 +298,11 @@ function newSpaceId(): string {
   return `sp-${randomId()}`;
 }
 
-export function normalizeCategories(rooms: Room[], stored: unknown): string[] {
-  const distinct: string[] = [];
-  for (const r of rooms) if (r.category && !distinct.includes(r.category)) distinct.push(r.category);
-  const list = Array.isArray(stored) ? stored.filter((c): c is string => typeof c === 'string') : [];
-  if (!list.length) return distinct;
-  const result = [...list];
-  for (const c of distinct) if (!result.includes(c)) result.push(c);
-  return result;
-}
-
-export async function readRooms(
+export async function readSpaceAccess(
   client: StarfishClient,
   spaceId: string,
 ): Promise<{ owner: string | null; members: string[]; visibility: SpaceVisibility | null; name: string | null; image: string | null; hash: string | null }> {
-  const res = await client.pull(roomsRegistryPull(spaceId)).catch((err: unknown) => {
+  const res = await client.pull(spaceAccessPull(spaceId)).catch((err: unknown) => {
     if (err instanceof StarfishHttpError && err.status === 404) return null;
     throw err;
   });
@@ -331,7 +317,7 @@ export async function readRooms(
   };
 }
 
-export async function writeRooms(
+export async function writeSpaceAccess(
   client: StarfishClient,
   spaceId: string,
   owner: string,
@@ -343,7 +329,7 @@ export async function writeRooms(
   const image = meta?.image || undefined;
   const visibility = meta?.visibility === 'public' ? 'public' : undefined;
   await client.push(
-    roomsRegistryPush(spaceId),
+    spaceAccessPush(spaceId),
     { v: 1, owner, members, ...(visibility ? { visibility } : {}), ...(name ? { name } : {}), ...(image ? { image } : {}) },
     hash,
   );
@@ -355,9 +341,9 @@ export async function addSpaceMember(
   ownerUserId: string,
   memberUserId: string,
 ): Promise<void> {
-  const { owner, members, visibility, name, image, hash } = await readRooms(client, spaceId);
+  const { owner, members, visibility, name, image, hash } = await readSpaceAccess(client, spaceId);
   if (memberUserId === (owner ?? ownerUserId) || members.includes(memberUserId)) return;
-  await writeRooms(client, spaceId, owner ?? ownerUserId, [...members, memberUserId], hash, { name, image, visibility: visibility ?? undefined });
+  await writeSpaceAccess(client, spaceId, owner ?? ownerUserId, [...members, memberUserId], hash, { name, image, visibility: visibility ?? undefined });
 }
 
 /** Remove a member from the space roster (used for link revocation). */
@@ -366,9 +352,9 @@ export async function removeSpaceMember(
   spaceId: string,
   memberUserId: string,
 ): Promise<void> {
-  const { owner, members, visibility, name, image, hash } = await readRooms(client, spaceId);
+  const { owner, members, visibility, name, image, hash } = await readSpaceAccess(client, spaceId);
   if (!members.includes(memberUserId)) return;
-  await writeRooms(client, spaceId, owner ?? memberUserId, members.filter((m) => m !== memberUserId), hash, { name, image, visibility: visibility ?? undefined });
+  await writeSpaceAccess(client, spaceId, owner ?? memberUserId, members.filter((m) => m !== memberUserId), hash, { name, image, visibility: visibility ?? undefined });
 }
 
 export async function addJoinedSpace(client: StarfishClient, userId: string, space: Space): Promise<void> {
@@ -406,8 +392,9 @@ export async function addJoinedSpaceWithLinkAccess(
 }
 
 /**
- * Create a new space owned by the identity. Seeds ONE generic `general` object node
- * into the object index (encrypted for private, plaintext for public).
+ * Create a new space owned by the identity. Seeds an empty object index
+ * (encrypted for private, plaintext for public). Apps populate the index
+ * with their own object types after creation.
  *
  * `opts.visibility` defaults to `'private'`.
  */
@@ -428,13 +415,11 @@ export async function createSpace(
     members: 1,
     ...(visibility === 'public' ? { visibility: 'public', ownerId: userId, write: true } : {}),
   };
-  await writeRooms(accountClient, id, userId, [], null, { name: trimmed, visibility: visibility === 'public' ? 'public' : undefined });
-  await seedSpaceObjectIndex(session, id, [{ id: `${id}-general`, name: 'general', kind: 'channel', category: DEFAULT_CATEGORY }], { visibility });
+  await writeSpaceAccess(accountClient, id, userId, [], null, { name: trimmed, visibility: visibility === 'public' ? 'public' : undefined });
+  await seedSpaceObjectIndex(session, id, [], { visibility });
   await writeSpaces(accountClient, userId, [...spaces, space], hash);
   return space;
 }
-
-export class CategoryError extends Error {}
 
 export async function reconcileSpaceMeta(
   client: StarfishClient,

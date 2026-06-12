@@ -1,13 +1,10 @@
 /**
  * Membership-binding for a space's per-space access record
- * (`spaces/{spaceId}/_rooms`): `{ v, owner, members, visibility, name, image }`.
+ * (`spaces/{spaceId}/_access`): `{ v, owner, members, visibility, name, image }`.
  *
  * Synthesizes two roles:
  *   - `space:owner`  — the creator (TOFU: first writer stamps `owner`).
  *   - `space:member` — the owner OR any userId listed in `members`.
- *
- * Storage leaf is `_rooms` for byte-compatibility with the octochat/octovault
- * role enricher — the same enricher logic runs across all three namespaces.
  */
 import type { ObjectStore, RoleEnricher } from "@drakkar.software/starfish-server";
 
@@ -36,7 +33,7 @@ export function makeSpaceRoleEnricher(store: ObjectStore): RoleEnricher {
     if (!spaceId || !auth.identity) return [];
     let raw: string | null = null;
     try {
-      raw = await store.getString(`spaces/${spaceId}/_rooms`);
+      raw = await store.getString(`spaces/${spaceId}/_access`);
     } catch {
       raw = null;
     }

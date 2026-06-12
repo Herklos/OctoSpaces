@@ -7,7 +7,7 @@
  * per-space membership check below).
  *
  * Filter: client declares candidate spaceIds via ?spaces=sp-a,sp-b. Each is
- * validated against `spaces/{id}/_rooms` membership (makeSpaceRoleEnricher).
+ * validated against `spaces/{id}/_access` membership (makeSpaceRoleEnricher).
  * The authorized ids map to sanitized Whistlers destinationTopics derived from
  * `octospaces.space.changed.<spaceId>` — the same transform queue.ts applies
  * when publishing to NATS.

@@ -15,10 +15,6 @@ export type {
   ObjectType,
   ObjectsIndex,
   ObjectContentKind,
-  RoomSubtype,
-  AutomationMeta,
-  Room,
-  RoomKind,
   Space,
   SpaceVisibility,
   CapMap,
@@ -27,7 +23,6 @@ export type {
   MutePrefs,
   ReadPrefs,
   ArchivedDms,
-  BUILTIN_OBJECT_TYPES,
 } from './core/types.js';
 
 // Ids
@@ -47,8 +42,8 @@ export {
   objIndexPush,
   spacesPull,
   spacesPush,
-  roomsRegistryPull,
-  roomsRegistryPush,
+  spaceAccessPull,
+  spaceAccessPush,
   profilePull,
   profilePush,
   objLogPull,
@@ -131,7 +126,6 @@ export type { SpaceAccessEntry, SpaceAccessMap } from './sync/space-access-store
 
 // Registry
 export {
-  DEFAULT_CATEGORY,
   readSpaces,
   updateSpacesDoc,
   updateMutesDoc,
@@ -142,19 +136,17 @@ export {
   setDmMapping,
   writeSpaces,
   reorderSpaces,
-  readRooms,
-  writeRooms,
+  readSpaceAccess,
+  writeSpaceAccess,
   addSpaceMember,
   removeSpaceMember,
   addJoinedSpace,
   addJoinedSpaceWithCap,
   addJoinedSpaceWithLinkAccess,
   createSpace,
-  normalizeCategories,
   reconcileSpaceMeta,
   onSpaceMeta,
   broadcastSpaceMeta,
-  CategoryError,
 } from './spaces/registry.js';
 export type { SpaceMeta, SpaceMetaUpdate } from './spaces/registry.js';
 
@@ -174,7 +166,6 @@ export type { JoinRequest, SpaceInviteLinkToken } from './spaces/members.js';
 
 // Object core
 export {
-  categoryId,
   buildTree,
   breadcrumbs,
   ancestors,
@@ -185,19 +176,11 @@ export {
   reparentObject,
   reorderObjects,
   archiveObject,
-  seedIndexNodes,
-  objectsToRoomCategories,
-  excludeAutomatedRooms,
-  roomKindToSubtype,
-  subtypeToRoomKind,
 } from './objects/objects.js';
-export type { ObjectTreeNode, NewObjectInput, AdaptedCategory, SeedRoom } from './objects/objects.js';
+export type { ObjectTreeNode, NewObjectInput } from './objects/objects.js';
 
 // Object index
 export {
-  readIndexRooms,
-  readSpaceIndexRooms,
-  readSpaceRooms,
   pushIndexSeed,
   seedSpaceObjectIndex,
   updateObjectIndex,

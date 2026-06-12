@@ -1,5 +1,5 @@
 /**
- * Collection path + cap-scope helpers (merged from OctoChat + OctoVault).
+ * Collection path + cap-scope helpers for OctoSpaces.
  *
  * Paths are signed relative to SYNC_BASE; the server mounts the sync router at
  * root, so they start with /pull or /push. Everything for a space is nested under
@@ -8,9 +8,10 @@
  * covers a whole space.
  *
  * **Generic object collections** — scopes use the `obj*` collection names (the
- * domain-neutral storage layer both apps migrate onto). App-specific collection
- * names like `'chat'` are left for the consumer's own `paths.ts` extension until
- * that app finishes migrating.
+ * domain-neutral storage layer apps migrate onto). The access record lives at
+ * `spaces/{spaceId}/_access` (collection `spaceregistry`); the keyring at
+ * `spaces/{spaceId}/_keyring` (collection `spacekeyring`). App-specific collection
+ * names are left for the consumer's own `paths.ts` extension.
  */
 import type { ScopePreset } from '@drakkar.software/starfish-identities';
 
@@ -39,8 +40,8 @@ export const profilePush = (userId: string) => push(`user/${userId}/profile`);
 export const spacesPull = (userId: string) => pull(`user/${userId}/_spaces`);
 export const spacesPush = (userId: string) => push(`user/${userId}/_spaces`);
 
-export const roomsRegistryPull = (spaceId: string) => pull(`spaces/${spaceId}/_rooms`);
-export const roomsRegistryPush = (spaceId: string) => push(`spaces/${spaceId}/_rooms`);
+export const spaceAccessPull = (spaceId: string) => pull(`spaces/${spaceId}/_access`);
+export const spaceAccessPush = (spaceId: string) => push(`spaces/${spaceId}/_access`);
 
 // ── Unified Object index + content (private/E2EE) ─────────────────────────────
 // ALL Object content lives in one generic path family — no type-specific prefixes:
@@ -85,7 +86,7 @@ export const spaceIndexPull = (shard: 'public') => pull(spaceIndexName(shard));
 // authorizes an app whose data currently lives under a legacy collection name during
 // the migration transition.
 export const OBJECT_COLLECTIONS: string[] = [
-  'keyring', 'objindex', 'objlog', 'objsnap', 'objdoc', 'objblob', 'typeindex',
+  'spacekeyring', 'objindex', 'objlog', 'objsnap', 'objdoc', 'objblob', 'typeindex',
 ];
 
 // ── Cap scopes ────────────────────────────────────────────────────────────────
@@ -121,7 +122,7 @@ export function spaceMemberScope(spaceId: string, canWrite: boolean): ScopePrese
 export function accountScope(userId: string): ScopePreset {
   return {
     ops: ['read', 'list', 'write'],
-    collections: ['profile', 'devices', 'spaces', 'rooms'],
+    collections: ['profile', 'devices', 'spaces', 'spaceregistry'],
     paths: [
       `user/${userId}/profile`,
       `users/${userId}/_devices`,
@@ -139,7 +140,7 @@ export function accountScope(userId: string): ScopePreset {
 export function linkedDeviceScope(userId: string): ScopePreset {
   return {
     ops: ['read', 'list', 'write'],
-    collections: [...OBJECT_COLLECTIONS, 'profile', 'devices', 'spaces', 'rooms'],
+    collections: [...OBJECT_COLLECTIONS, 'profile', 'devices', 'spaces', 'spaceregistry'],
     paths: [
       'spaces/**',
       `user/${userId}/profile`,

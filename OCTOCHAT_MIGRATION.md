@@ -20,12 +20,11 @@ File: `apps/server/src/projections.ts`
 
 - The current hook fires on `pubspace` collection writes to `_rooms` under
   `pubspaces/{ownerId}/{spaceId}`.
-- After the migration, public spaces write `_rooms` to the `rooms` collection under
-  `spaces/{spaceId}`, with a `visibility:'public'` field.
-- **Change**: add a second hook that fires on `rooms` collection writes where
-  `docId === '_rooms'` and `body.visibility === 'public'`. Extract `body.name` and
-  `body.image`; derive room count from subsequent `objindex` writes (count
-  `type:'room'` nodes) or omit the count.
+- After the migration, public spaces write to the `spaceregistry` collection at
+  `spaces/{spaceId}/_access`, with a `visibility:'public'` field.
+- **Change**: add a second hook that fires on `spaceregistry` collection writes where
+  `body.visibility === 'public'`. Extract `body.name` and `body.image`; derive room
+  count from subsequent `objindex` writes (count typed nodes) or omit the count.
 - Keep the old `pubspace` hook alive during the transition window (old clients still
   write there; new clients don't).
 
@@ -39,15 +38,15 @@ Files: `apps/server/src/config.ts`, `Infra/sync/server/drakkar_sync/apps/octocha
   `webhooks` collections (set `pullOnly: true` or remove their write roles).
 - Leave them readable for a migration window so clients can recover old links.
 
-### 1c. Optional: add `links[]` to `_rooms` for ghost-member hygiene
+### 1c. Optional: add `links[]` to the access record for ghost-member hygiene
 
 Files: `apps/server/src/space-role.ts`, `Infra/…/role_enricher.py`
 
-- Add a separate `links: string[]` field to the `_rooms` doc alongside `members[]`.
+- Add a separate `links: string[]` field to the access record doc alongside `members[]`.
 - Grant `space:member` to identities in EITHER `members` OR `links`.
 - This lets the SDK migrate link ids out of `members[]` (which affects profile fan-outs
   and member counts) without a breaking change to the role enricher.
-- Timeline: do this before counting real member counts from `_rooms.members`.
+- Timeline: do this before counting real member counts from the access record.
 
 ---
 
@@ -192,27 +191,66 @@ Then replace `import { ... } from '@/components/ui'` with
 
 ## 4. Data migration: stored data → ObjectNode tree
 
-### 4.0 — Private spaces: nothing to convert
+### 4.0 — Declare OctoChat's own ObjectType strings in octochat-sdk
 
-OctoChat private rooms, categories, pages, tasks, etc. are already `ObjectNode`s stored in the
-encrypted `spaces/{spaceId}/objects/_index` doc. The `octospaces-sdk` reads the same doc shape
-(`{ objects: ObjectNode[] }`). **No data migration needed for private spaces.**
+`octospaces-sdk` no longer ships any domain types — `room`, `category`, `dm`, `automation`,
+`doc`, `project`, `task` are **removed** from the SDK. OctoChat must declare its own:
 
-### 4.1 — Keep bespoke (do not convert)
+```ts
+// packages/sdk/src/types/object-types.ts
+export const ROOM_TYPES = {
+  room:       'room',
+  category:   'category',
+  dm:         'dm',
+  automation: 'automation',
+} as const;
+export type RoomObjectType = (typeof ROOM_TYPES)[keyof typeof ROOM_TYPES];
+```
+
+Existing `ObjectNode`s in the DB have `type: 'room'`, `type: 'category'` etc. — those
+string values are yours to own. The SDK no longer has an opinion about what type strings
+are valid. The tree engine (`buildTree`, `addObject`, …) works with any `type: string`.
+
+### 4.1 — Private spaces: nothing to convert
+
+OctoChat private rooms, categories, etc. are already `ObjectNode`s stored in the
+encrypted `spaces/{spaceId}/objects/_index` doc. The `octospaces-sdk` reads the same doc
+shape (`{ objects: ObjectNode[] }`). **No data migration needed for the object index.**
+
+### 4.2 — Access record leaf rename: `_rooms` → `_access`
+
+OctoSpaces now uses `_access` as its storage leaf; OctoChat keeps `_rooms` until it
+adopts this migration. When OctoChat is ready:
+
+1. **For each space**: copy `spaces/{spaceId}/_rooms` to `spaces/{spaceId}/_access`.
+2. **Flip the enricher**: pass `registry_path="spaces/{id}/_access"` to
+   `make_space_role_enricher` in `Infra/…/octochat/__init__.py` and update the
+   server's `space-role.ts` to read `_access`.
+3. **Update collection names**: `rooms` → `spaceregistry`, `chatkeyring` → `spacekeyring`.
+4. Retire the old `_rooms` docs after a migration window.
+
+**Migration script (run once per space, owner session)**:
+```ts
+const { client } = await getSpaceAccess(spaceId, session, reg);
+const oldRec = await readSpaceAccess(client, spaceId); // still reads _rooms via your old client
+await client.push(`/push/spaces/${spaceId}/_access`, { ...oldRec }, null);
+```
+
+### 4.3 — Keep bespoke (do not convert)
 
 | Data | Why it stays bespoke |
 |---|---|
 | Chat messages / reactions / edits / pins | `streams/{roomId}` append-log; `contentKind:'append'` — **never** fold into the node tree |
 | `dminbox` delivery docs | DM delivery queue; OctoChat-specific scope |
 | `_spaces` SpacesDoc | Account-level registry — not object-tree content |
-| `_rooms` ACL doc `{v, owner, members, name, image}` | Access control record; same storage path |
+| Access record `{v, owner, members, name, image}` | Control record — keep at `_rooms` until §4.2 |
 | Profile, devices, keyring | Identity/auth data — outside object tree |
 
 Chat messages are append-only logs keyed by the room node's `id` (`streams/{roomId}`). They carry
 `contentKind:'append'` on the room `ObjectNode` — the log stays separate from the node tree by
 design. **Do not convert messages to object nodes.**
 
-### 4.2 — Public spaces: relocate node index + streams
+### 4.4 — Public spaces: relocate node index + streams
 
 Public-space content is already `ObjectNode`s at the old paths:
 
@@ -245,12 +283,14 @@ for (const entry of await listPublicSpaces(ownerId)) {
   // 2. Write verbatim to new path (encryptor null = plaintext)
   await updateObjectIndex(session, spaceId, () => oldIndex, reg);
 
-  // 3. Synthesize the new _rooms access record
-  await writeSpaceAccess(reg.client, spaceId, {
-    v: 1, owner: ownerId, members: [], visibility: 'public', name, image,
+  // 3. Synthesize the new access record at _access (OctoSpaces leaf)
+  //    or at _rooms (OctoChat leaf, until the §4.2 rename is complete)
+  await writeSpaceAccess(session.accountClient, spaceId, ownerId, [], null, {
+    name, image, visibility: 'public',
   });
 
   // 4. Relocate message streams (or accept history loss for public spaces)
+  // 'room' is your app-owned type string (declared in octochat-sdk, not octospaces-sdk)
   for (const roomNode of oldIndex.objects.filter(n => n.type === 'room')) {
     // copy  pubspaces/{ownerId}/{spaceId}/streams/{roomId}
     //   →   spaces/{spaceId}/streams/{roomId}  (append-only log, unchanged shape)
@@ -258,8 +298,8 @@ for (const entry of await listPublicSpaces(ownerId)) {
   }
 }
 
-// Verify: relocated index reads back correctly with room nodes intact
-await readSpaceIndexRooms(session, spaceId, reg);
+// Verify: relocated index reads back correctly with object nodes intact
+await updateObjectIndex(session, spaceId, (nodes) => nodes);
 ```
 
 Stream relocation is optional — if message history in public spaces is acceptable to lose, skip
@@ -277,23 +317,28 @@ step 4 and wipe `pubspaces/` after the index relocate.
 File: `Infra/sync/server/drakkar_sync/server.py`
 
 Mount `drakkar_sync/apps/octospaces/` at `/v1/octospaces`:
-- Collections: `spaces`, `rooms`, `chatkeyring`, `spaceindex` only (no `objindex` etc. — space
-  index data lives in each app's own namespace).
-- Role enricher: `make_space_role_enricher` (reads `spaces/{spaceId}/_rooms`).
-- Projection plugin: watches `rooms` writes with `visibility:'public'` → upserts into
+- Collections: `spaces`, `spaceregistry`, `spacekeyring`, `spaceindex` only (no `objindex`
+  etc. — object content lives in each app's own namespace).
+- Role enricher: `make_space_role_enricher` with `registry_path="spaces/{id}/_access"`.
+- Projection plugin: watches `spaceregistry` writes with `visibility:'public'` → upserts into
   `_index/spaces/public` (supplements the legacy `pubspace` hook during the migration window).
 - This is what `spacesNamespace` points to for cross-app space registry sharing.
+
+**Note:** OctoChat's own enricher keeps `registry_path="spaces/{id}/_rooms"` (the default)
+until OctoChat completes the §4.2 leaf rename.
 
 ---
 
 ## Summary checklist
 
-- [ ] **Server**: rebuild projection for `rooms` collection `_rooms` writes with `visibility:'public'`
-- [ ] **Server**: (later) retire `pubspace`/`pubstream` collections
+- [ ] **octochat-sdk**: declare `room`/`category`/`dm`/`automation` ObjectType constants (§4.0); remove any import of removed SDK symbols (`BuiltinObjectType`, `RoomSubtype`, `AutomationMeta`, `Room`, `RoomKind`, `categoryId`, `objectsToRoomCategories`, etc.)
+- [ ] **Server**: rebuild projection for `spaceregistry` collection writes with `visibility:'public'` (§1a)
+- [ ] **Server**: (later) retire `pubspace`/`pubstream` collections (§1b)
 - [ ] **SDK**: add `octospaces-sdk` dep; delete replaced files; re-export + extend
 - [ ] **App**: wire `sharedSpacesNamespace`; swap registry call sites
 - [ ] **App**: `Space.type` → `Space.visibility` global search-replace
 - [ ] **App**: replace pubspace call sites per the table above
 - [ ] **App** (optional): adopt `octospaces-ui` primitives after theme contract satisfied
-- [ ] **Data migration**: for public spaces — relocate `pubobjindex` to `spaces/{spaceId}/objects/_index` (nodes already correct shape); relocate `pubstream` logs to `spaces/{spaceId}/streams/{roomId}` or accept history loss; synthesize `_rooms` with `visibility:'public'`. For private spaces: nothing to convert (already ObjectNodes).
-- [ ] **Infra**: add `octospaces` namespace app at `/v1/octospaces`
+- [ ] **Data migration — access record**: copy `_rooms` → `_access` per space; flip enricher to `_access`; rename collections `rooms`→`spaceregistry`, `chatkeyring`→`spacekeyring` (§4.2)
+- [ ] **Data migration — public spaces**: relocate `pubobjindex` to `spaces/{spaceId}/objects/_index`; relocate `pubstream` logs; synthesize access record with `visibility:'public'` (§4.4)
+- [ ] **Infra**: add `octospaces` namespace app at `/v1/octospaces` (§5a)

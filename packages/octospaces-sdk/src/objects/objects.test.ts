@@ -6,18 +6,11 @@ import {
   breadcrumbs,
   buildTree,
   ancestors,
-  categoryId,
-  DEFAULT_CATEGORY,
   nextOrder,
   patchObject,
   reparentObject,
   reorderObjects,
-  seedIndexNodes,
   subtreeIds,
-  objectsToRoomCategories,
-  excludeAutomatedRooms,
-  roomKindToSubtype,
-  subtypeToRoomKind,
 } from './objects.js';
 
 const NOW = 1_700_000_000_000;
@@ -25,7 +18,7 @@ const NOW = 1_700_000_000_000;
 function makeNode(overrides: Partial<ObjectNode> = {}): ObjectNode {
   return {
     id: 'n1',
-    type: 'room',
+    type: 'item',
     parentId: null,
     order: 1,
     title: 'Test',
@@ -33,22 +26,6 @@ function makeNode(overrides: Partial<ObjectNode> = {}): ObjectNode {
     ...overrides,
   };
 }
-
-describe('DEFAULT_CATEGORY', () => {
-  it('is CHANNELS', () => { expect(DEFAULT_CATEGORY).toBe('CHANNELS'); });
-});
-
-describe('categoryId', () => {
-  it('is deterministic for the same name', () => {
-    expect(categoryId('Channels')).toBe(categoryId('Channels'));
-  });
-  it('differs for different names', () => {
-    expect(categoryId('Alpha')).not.toBe(categoryId('Beta'));
-  });
-  it('starts with cat-', () => {
-    expect(categoryId('test')).toMatch(/^cat-/);
-  });
-});
 
 describe('nextOrder', () => {
   it('returns 1 for empty sibling list', () => {
@@ -74,13 +51,13 @@ describe('buildTree', () => {
 
   it('nests children under their parent', () => {
     const nodes: ObjectNode[] = [
-      makeNode({ id: 'cat', type: 'category', parentId: null, order: 1 }),
-      makeNode({ id: 'room', type: 'room', parentId: 'cat', order: 1 }),
+      makeNode({ id: 'folder', type: 'folder', parentId: null, order: 1 }),
+      makeNode({ id: 'page', type: 'page', parentId: 'folder', order: 1 }),
     ];
     const tree = buildTree(nodes);
     expect(tree).toHaveLength(1);
     expect(tree[0].children).toHaveLength(1);
-    expect(tree[0].children[0].id).toBe('room');
+    expect(tree[0].children[0].id).toBe('page');
   });
 
   it('excludes archived nodes by default', () => {
@@ -147,16 +124,21 @@ describe('subtreeIds', () => {
 
 describe('addObject', () => {
   it('appends a new node with correct order', () => {
-    const { nodes, node } = addObject([], { type: 'room', title: 'general' }, NOW);
+    const { nodes, node } = addObject([], { type: 'page', title: 'Intro' }, NOW);
     expect(nodes).toHaveLength(1);
-    expect(node.title).toBe('general');
-    expect(node.type).toBe('room');
+    expect(node.title).toBe('Intro');
+    expect(node.type).toBe('page');
     expect(node.order).toBe(1);
   });
 
   it('respects provided id', () => {
-    const { node } = addObject([], { id: 'my-id', type: 'category', title: 'Channels' }, NOW);
+    const { node } = addObject([], { id: 'my-id', type: 'folder', title: 'Docs' }, NOW);
     expect(node.id).toBe('my-id');
+  });
+
+  it('passes meta through to the node', () => {
+    const { node } = addObject([], { type: 'task', title: 'Fix bug', meta: { priority: 'high' } }, NOW);
+    expect(node.meta).toEqual({ priority: 'high' });
   });
 });
 
@@ -172,19 +154,19 @@ describe('patchObject', () => {
 describe('reparentObject', () => {
   it('moves a node to a new parent', () => {
     const nodes: ObjectNode[] = [
-      makeNode({ id: 'cat-a', type: 'category', parentId: null }),
-      makeNode({ id: 'cat-b', type: 'category', parentId: null }),
-      makeNode({ id: 'room', type: 'room', parentId: 'cat-a' }),
+      makeNode({ id: 'folder-a', type: 'folder', parentId: null }),
+      makeNode({ id: 'folder-b', type: 'folder', parentId: null }),
+      makeNode({ id: 'page', type: 'page', parentId: 'folder-a' }),
     ];
-    const result = reparentObject(nodes, 'room', 'cat-b', NOW);
-    const room = result.find(n => n.id === 'room')!;
-    expect(room.parentId).toBe('cat-b');
+    const result = reparentObject(nodes, 'page', 'folder-b', NOW);
+    const page = result.find(n => n.id === 'page')!;
+    expect(page.parentId).toBe('folder-b');
   });
 
   it('rejects making a node its own descendant', () => {
     const nodes: ObjectNode[] = [
-      makeNode({ id: 'parent', type: 'category', parentId: null }),
-      makeNode({ id: 'child', type: 'room', parentId: 'parent' }),
+      makeNode({ id: 'parent', type: 'folder', parentId: null }),
+      makeNode({ id: 'child', type: 'page', parentId: 'parent' }),
     ];
     const result = reparentObject(nodes, 'parent', 'child', NOW);
     expect(result).toBe(nodes); // unchanged
@@ -214,75 +196,3 @@ describe('archiveObject', () => {
   });
 });
 
-describe('seedIndexNodes', () => {
-  it('creates category + room nodes', () => {
-    const nodes = seedIndexNodes([{ id: 'r1', name: 'general', kind: 'channel', category: 'CHANNELS' }], NOW);
-    expect(nodes.some(n => n.type === 'category')).toBe(true);
-    expect(nodes.some(n => n.type === 'room')).toBe(true);
-  });
-
-  it('dedupes categories', () => {
-    const rooms = [
-      { id: 'r1', name: 'general', kind: 'channel' as const, category: 'CHANNELS' },
-      { id: 'r2', name: 'random', kind: 'channel' as const, category: 'CHANNELS' },
-    ];
-    const nodes = seedIndexNodes(rooms, NOW);
-    const cats = nodes.filter(n => n.type === 'category');
-    expect(cats).toHaveLength(1);
-  });
-});
-
-describe('roomKindToSubtype / subtypeToRoomKind', () => {
-  it('channel ↔ channel', () => {
-    expect(roomKindToSubtype('channel')).toBe('channel');
-    expect(subtypeToRoomKind('channel')).toBe('channel');
-  });
-  it('dm ↔ dm', () => {
-    expect(roomKindToSubtype('dm')).toBe('dm');
-    expect(subtypeToRoomKind('dm')).toBe('dm');
-  });
-  it('automated ↔ automation', () => {
-    expect(roomKindToSubtype('automated')).toBe('automation');
-    expect(subtypeToRoomKind('automation')).toBe('automated');
-  });
-});
-
-describe('objectsToRoomCategories', () => {
-  it('returns null for empty index', () => {
-    expect(objectsToRoomCategories([], 'sp-1', 'CHANNELS')).toBeNull();
-  });
-
-  it('groups rooms under their category', () => {
-    const nodes: ObjectNode[] = [
-      makeNode({ id: 'cat', type: 'category', parentId: null, order: 1, title: 'CHANNELS' }),
-      makeNode({ id: 'room', type: 'room', parentId: 'cat', order: 1, title: 'general' }),
-    ];
-    const cats = objectsToRoomCategories(nodes, 'sp-1', 'CHANNELS')!;
-    expect(cats).toHaveLength(1);
-    expect(cats[0].name).toBe('CHANNELS');
-    expect(cats[0].rooms[0].name).toBe('general');
-  });
-});
-
-describe('excludeAutomatedRooms', () => {
-  it('removes categories that held ONLY automated rooms', () => {
-    const cats = [{ name: 'C', rooms: [{ id: 'r', spaceId: 's', category: 'C', name: 'bot', kind: 'automated' as const }] }];
-    const result = excludeAutomatedRooms(cats);
-    // A category whose ONLY room was automated gets dropped entirely.
-    expect(result).toHaveLength(0);
-  });
-
-  it('keeps categories that still have non-automated rooms', () => {
-    const cats = [{
-      name: 'C',
-      rooms: [
-        { id: 'r1', spaceId: 's', category: 'C', name: 'bot', kind: 'automated' as const },
-        { id: 'r2', spaceId: 's', category: 'C', name: 'general', kind: 'channel' as const },
-      ],
-    }];
-    const result = excludeAutomatedRooms(cats);
-    expect(result).toHaveLength(1);
-    expect(result[0].rooms).toHaveLength(1);
-    expect(result[0].rooms[0].name).toBe('general');
-  });
-});

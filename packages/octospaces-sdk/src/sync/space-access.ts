@@ -42,7 +42,7 @@ export function clearSpaceAccessCache(): void {
 /**
  * Resolve the right (client, encryptor) for a space, opening and caching on first use.
  *
- * `reg` is the space's `_rooms` access record if already known. Pass null when the
+ * `reg` is the space's `_access` access record if already known. Pass null when the
  * caller has not yet read the registry; the resolver will probe if needed.
  */
 export function getSpaceAccess(

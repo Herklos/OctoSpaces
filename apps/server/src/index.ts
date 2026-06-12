@@ -63,18 +63,18 @@ const queuing = createQueuingServerPlugin({
   queue,
   collections: {
     // Space access record changes (member added/removed, name/image updated).
-    rooms: { topic: "octospaces.space.changed", includeParams: true, includeIdentity: false },
+    spaceregistry: { topic: "octospaces.space.changed", includeParams: true, includeIdentity: false },
     // Keyring changes (CEK rotation on member invite/revoke).
-    chatkeyring: { topic: "octospaces.space.changed", includeParams: true, includeIdentity: false },
+    spacekeyring: { topic: "octospaces.space.changed", includeParams: true, includeIdentity: false },
   },
 });
 
-// Grants `space:owner` / `space:member` by reading `spaces/{spaceId}/_rooms`.
+// Grants `space:owner` / `space:member` by reading `spaces/{spaceId}/_access`.
 // Shared between the sync router and the /events proxy.
 const spaceEnricher = makeSpaceRoleEnricher(store);
 
 // Upserts public-space directory entries into `_index/spaces/public` on each
-// `rooms` write with `visibility:'public'`. The `spaceindex` collection is
+// `spaceregistry` write with `visibility:'public'`. The `spaceindex` collection is
 // pullOnly — clients read it; only this projection writes it.
 const projection = createProjectionServerPlugin({ store, projections });
 

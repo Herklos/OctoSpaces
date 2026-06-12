@@ -7,10 +7,10 @@ import type { SyncConfig } from "@drakkar.software/starfish-server";
  * records, and per-space keyrings. Both OctoChat and OctoVault clients point their
  * `spacesNamespace` here so they share one space registry rather than duplicating it.
  *
- *   spaces      — per-identity space list.
- *   rooms       — per-space access record `{ owner, members, visibility, name, image }`.
- *   chatkeyring — per-space multi-recipient keyring (shared encryption key).
- *   spaceindex  — pull-only public-space directory (`_index/spaces/public`).
+ *   spaces        — per-identity space list.
+ *   spaceregistry — per-space access record `{ owner, members, visibility, name, image }`.
+ *   spacekeyring  — per-space multi-recipient keyring (shared encryption key).
+ *   spaceindex    — pull-only public-space directory (`_index/spaces/public`).
  *
  * Keep in sync with Infra/sync/server/drakkar_sync/apps/octospaces/collections.py.
  */
@@ -31,11 +31,10 @@ export const config: SyncConfig = {
     },
     // PER-SPACE access record `{ v, owner, members, visibility, name, image }`.
     // The space-role enricher reads THIS doc to synthesize space:owner / space:member
-    // for every other space-gated collection. Storage leaf stays `_rooms` for
-    // byte-compatibility with the octochat/octovault role enricher.
+    // for every other space-gated collection.
     {
-      name: "rooms",
-      storagePath: "spaces/{spaceId}/_rooms",
+      name: "spaceregistry",
+      storagePath: "spaces/{spaceId}/_access",
       readRoles: ["space:member"],
       writeRoles: ["space:owner"],
       encryption: "none",
@@ -45,7 +44,7 @@ export const config: SyncConfig = {
     // PER-SPACE keyring: multi-recipient CEK shared by all space documents that use
     // delegated encryption. READ gated on `space:member`, WRITE on `space:owner`.
     {
-      name: "chatkeyring",
+      name: "spacekeyring",
       storagePath: "spaces/{spaceId}/_keyring",
       readRoles: ["space:member"],
       writeRoles: ["space:owner"],
