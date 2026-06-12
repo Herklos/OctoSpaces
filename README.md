@@ -29,9 +29,9 @@
 
 Everything in a space is an **`ObjectNode`** — a typed, ordered, tree-able unit with an `id`, `type`, `subtype`, `parentId`, and `order`. Rooms, categories, docs, tasks are all objects discriminated by `type`. The SDK is domain-agnostic: no chat/page/board vocabulary in names, paths, or KV keys.
 
-**Private and public spaces share one path family.** Both live under `spaces/{spaceId}/**` with the same `OBJECT_COLLECTIONS` cap scopes. A public space sets `visibility:'public'` in its `_rooms` access record and uses a plaintext object index (no keyring, `encryptor: null`). The Starfish server never validates or decrypts content — auth is roster-based — so no server changes are required to host public spaces.
+**Private and public spaces share one path family.** Both live under `spaces/{spaceId}/**` with the same `OBJECT_COLLECTIONS` cap scopes. A public space sets `visibility:'public'` in its `_rooms` access record and uses a plaintext object index (no keyring, `encryptor: null`). The [Starfish](https://github.com/Drakkar-Software/Starfish) server never validates or decrypts content — auth is roster-based — so no server changes are required to host public spaces.
 
-Sync is powered by the **Starfish** protocol (`@drakkar.software/starfish-*`, E2EE, cap-cert auth). OctoChat and OctoVault consume these packages as npm dependencies; concrete theme values, env vars, and app-specific path extensions stay in each app.
+Sync is powered by the **[Starfish](https://github.com/Drakkar-Software/Starfish)** protocol (`@drakkar.software/starfish-*`, E2EE, cap-cert auth). OctoChat and OctoVault consume these packages as npm dependencies; concrete theme values, env vars, and app-specific path extensions stay in each app.
 
 ```
 octospaces/
@@ -249,9 +249,3 @@ When `sharedSpacesNamespace` is set, `buildSession` creates two extra Starfish c
 | `session.spacesKeyringClient` | Space keyring ops (shared namespace) |
 
 Without the namespace both fall back to the default clients — no behavior change for single-app deployments.
-
----
-
-## License
-
-Private — Drakkar Software. All rights reserved.
