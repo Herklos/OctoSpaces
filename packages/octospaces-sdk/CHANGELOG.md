@@ -1,5 +1,31 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.3.0 (2026-06-12)
+
+### Added
+
+- **`Space.type` / `Space.subtype`** — optional opaque string fields on the `Space` interface.
+  App-owned; no builtins defined in the SDK (`'chat'`, `'vault'`, `'chat-only'`, etc. are yours
+  to declare).
+- **`SpaceMeta.type` / `SpaceMeta.subtype`** — same fields added to the write-side meta struct.
+- **`writeSpaceAccess`** now persists `type` / `subtype` when truthy; `readSpaceAccess` reads them
+  back (string | null). Both are threaded through `addSpaceMember` / `removeSpaceMember` so roster
+  edits no longer drop them.
+- **`createSpace`** accepts `opts.type` / `opts.subtype`; both are stored in `_access` and
+  mirrored on the returned `Space` object.
+- **`spaceIndexName` exported** from the barrel (`src/index.ts`). `spaceIndexPull` / `spaceIndexName`
+  signatures generalised from `(shard: 'public')` to `(shard?: string)` — default `'public'`
+  keeps existing call sites unchanged. Clients read a typed catalog via `spaceIndexPull('chat')`.
+
+### Notes
+
+`type` / `subtype` may be set on private spaces (stored in the member-gated `_access` doc, not
+publicly visible). Only public spaces reach the world-readable directory; the server projection
+shards on `type`. Treat `type` as set-at-create — changing it after the fact leaves a stale row
+in the old shard (same caveat as public → private flips today).
+
+---
+
 ## 0.2.0 (2026-06-12)
 
 ### Breaking changes

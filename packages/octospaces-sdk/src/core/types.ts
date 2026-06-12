@@ -74,6 +74,12 @@ export interface Space {
   ownerId?: string;
   /** Public spaces only (joiner side): whether this identity's invite link grants write. */
   write?: boolean;
+  /** App-owned opaque type string used to shard the public discovery index
+   *  (e.g. 'chat', 'vault'). Absent ⇒ untyped, lands in the default shard. */
+  type?: string;
+  /** App-owned opaque subtype string stored as a row field within the type shard
+   *  (e.g. 'chat-only', 'dm'). Absent ⇒ no subtype. */
+  subtype?: string;
 }
 
 // ── Object model ─────────────────────────────────────────────────────────────

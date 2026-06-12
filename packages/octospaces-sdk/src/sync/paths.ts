@@ -77,8 +77,10 @@ export const typesIndexPull = (spaceId: string) => pull(typesIndexName(spaceId))
 export const typesIndexPush = (spaceId: string) => push(typesIndexName(spaceId));
 
 // ── Public-space directory index (server-maintained projection) ───────────────
-export const spaceIndexName = (shard: 'public') => `_index/spaces/${shard}`;
-export const spaceIndexPull = (shard: 'public') => pull(spaceIndexName(shard));
+// Pull `_index/spaces/{shard}` where shard is either the back-compat 'public'
+// (default, untyped spaces) or an app-owned type string ('chat', 'vault', …).
+export const spaceIndexName = (shard: string = 'public') => `_index/spaces/${shard}`;
+export const spaceIndexPull = (shard: string = 'public') => pull(spaceIndexName(shard));
 
 // ── Generic object collections — used in cap scopes ──────────────────────────
 // These are the domain-neutral storage collections both apps migrate onto. The

@@ -56,6 +56,7 @@ export {
   typesIndexPush,
   attachmentPull,
   attachmentPush,
+  spaceIndexName,
   spaceIndexPull,
   userIdFromEdPub,
   bytesToHex,

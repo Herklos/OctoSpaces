@@ -8,6 +8,32 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## `@drakkar.software/octospaces-sdk`
 
+### [0.3.0] — 2026-06-12 (typed + subtyped public space directory)
+
+#### Added
+
+- `Space.type` / `Space.subtype` — optional opaque string fields (app-owned, no SDK builtins).
+- `SpaceMeta.type` / `SpaceMeta.subtype` — write-side meta.
+- `writeSpaceAccess` / `readSpaceAccess` persist and return `type` / `subtype`.
+- `addSpaceMember` / `removeSpaceMember` thread `type` / `subtype` through roster writes.
+- `createSpace` accepts `opts.type` / `opts.subtype`.
+- `spaceIndexName` exported from barrel; both `spaceIndexName` / `spaceIndexPull` accept any
+  shard string (default `'public'`).
+
+## `@octospaces/server`
+
+### [0.2.0] — 2026-06-12 (typed shard projection)
+
+#### Changed
+
+- `spaceTarget` now shards the public directory by `body.type` — untyped spaces still land in
+  `_index/spaces/public`; typed spaces land in `_index/spaces/{type}` (sanitised).
+- `projectSpaceRegistry` adds `subtype` to each directory row.
+
+---
+
+## `@drakkar.software/octospaces-sdk`
+
 ### [Unreleased] — 2026-06-12 (unified spaces refactor)
 
 #### Changed — **breaking** (pre-publish clean break; no consumers yet)

@@ -16,11 +16,16 @@ import { seedSpaceObjectIndex } from './object-index.js';
 import { spaceAccessPull, spaceAccessPush, spacesPull, spacesPush } from '../sync/paths.js';
 
 /** Owner-set, SHARED space identity, persisted in the `_access` registry doc
- *  (plaintext — NOT E2EE). `image` is a data URI. Both optional for back-compat. */
+ *  (plaintext — NOT E2EE). `image` is a data URI. All fields optional for back-compat.
+ *  `type`/`subtype` are app-owned opaque strings that drive the public discovery
+ *  index sharding; they may be set on private spaces too (stored in member-gated
+ *  `_access`, harmless — only public spaces reach the world-readable directory). */
 export interface SpaceMeta {
   name?: string | null;
   image?: string | null;
   visibility?: SpaceVisibility;
+  type?: string | null;
+  subtype?: string | null;
 }
 
 /** A resolved name/image update fanned out so the SpacesProvider adopts a
@@ -301,18 +306,20 @@ function newSpaceId(): string {
 export async function readSpaceAccess(
   client: StarfishClient,
   spaceId: string,
-): Promise<{ owner: string | null; members: string[]; visibility: SpaceVisibility | null; name: string | null; image: string | null; hash: string | null }> {
+): Promise<{ owner: string | null; members: string[]; visibility: SpaceVisibility | null; name: string | null; image: string | null; type: string | null; subtype: string | null; hash: string | null }> {
   const res = await client.pull(spaceAccessPull(spaceId)).catch((err: unknown) => {
     if (err instanceof StarfishHttpError && err.status === 404) return null;
     throw err;
   });
-  const data = res?.data as { owner?: string; members?: unknown[]; visibility?: string; name?: string; image?: string } | undefined;
+  const data = res?.data as { owner?: string; members?: unknown[]; visibility?: string; name?: string; image?: string; type?: string; subtype?: string } | undefined;
   return {
     owner: typeof data?.owner === 'string' ? data.owner : null,
     members: Array.isArray(data?.members) ? data!.members!.filter((m): m is string => typeof m === 'string') : [],
     visibility: data?.visibility === 'public' ? 'public' : null,
     name: typeof data?.name === 'string' ? data.name : null,
     image: typeof data?.image === 'string' ? data.image : null,
+    type: typeof data?.type === 'string' ? data.type : null,
+    subtype: typeof data?.subtype === 'string' ? data.subtype : null,
     hash: res?.hash ?? null,
   };
 }
@@ -328,9 +335,18 @@ export async function writeSpaceAccess(
   const name = meta?.name?.trim() || undefined;
   const image = meta?.image || undefined;
   const visibility = meta?.visibility === 'public' ? 'public' : undefined;
+  const type = meta?.type?.trim() || undefined;
+  const subtype = meta?.subtype?.trim() || undefined;
   await client.push(
     spaceAccessPush(spaceId),
-    { v: 1, owner, members, ...(visibility ? { visibility } : {}), ...(name ? { name } : {}), ...(image ? { image } : {}) },
+    {
+      v: 1, owner, members,
+      ...(visibility ? { visibility } : {}),
+      ...(name ? { name } : {}),
+      ...(image ? { image } : {}),
+      ...(type ? { type } : {}),
+      ...(subtype ? { subtype } : {}),
+    },
     hash,
   );
 }
@@ -341,9 +357,9 @@ export async function addSpaceMember(
   ownerUserId: string,
   memberUserId: string,
 ): Promise<void> {
-  const { owner, members, visibility, name, image, hash } = await readSpaceAccess(client, spaceId);
+  const { owner, members, visibility, name, image, type, subtype, hash } = await readSpaceAccess(client, spaceId);
   if (memberUserId === (owner ?? ownerUserId) || members.includes(memberUserId)) return;
-  await writeSpaceAccess(client, spaceId, owner ?? ownerUserId, [...members, memberUserId], hash, { name, image, visibility: visibility ?? undefined });
+  await writeSpaceAccess(client, spaceId, owner ?? ownerUserId, [...members, memberUserId], hash, { name, image, visibility: visibility ?? undefined, type, subtype });
 }
 
 /** Remove a member from the space roster (used for link revocation). */
@@ -352,9 +368,9 @@ export async function removeSpaceMember(
   spaceId: string,
   memberUserId: string,
 ): Promise<void> {
-  const { owner, members, visibility, name, image, hash } = await readSpaceAccess(client, spaceId);
+  const { owner, members, visibility, name, image, type, subtype, hash } = await readSpaceAccess(client, spaceId);
   if (!members.includes(memberUserId)) return;
-  await writeSpaceAccess(client, spaceId, owner ?? memberUserId, members.filter((m) => m !== memberUserId), hash, { name, image, visibility: visibility ?? undefined });
+  await writeSpaceAccess(client, spaceId, owner ?? memberUserId, members.filter((m) => m !== memberUserId), hash, { name, image, visibility: visibility ?? undefined, type, subtype });
 }
 
 export async function addJoinedSpace(client: StarfishClient, userId: string, space: Space): Promise<void> {
@@ -397,16 +413,21 @@ export async function addJoinedSpaceWithLinkAccess(
  * with their own object types after creation.
  *
  * `opts.visibility` defaults to `'private'`.
+ * `opts.type` / `opts.subtype` are app-owned opaque strings stored in `_access` and
+ * mirrored on the returned `Space` object. Public spaces with a `type` are indexed
+ * in `_index/spaces/{type}` instead of `_index/spaces/public`.
  */
 export async function createSpace(
   session: Session,
   name: string,
-  opts?: { visibility?: SpaceVisibility },
+  opts?: { visibility?: SpaceVisibility; type?: string; subtype?: string },
 ): Promise<Space> {
   const { accountClient, userId } = session;
   const { spaces, hash } = await readSpaces(accountClient, userId);
   const trimmed = name.trim() || 'New Space';
   const visibility = opts?.visibility ?? 'private';
+  const type = opts?.type?.trim() || undefined;
+  const subtype = opts?.subtype?.trim() || undefined;
   const id = newSpaceId();
   const space: Space = {
     id,
@@ -414,8 +435,10 @@ export async function createSpace(
     short: trimmed.slice(0, 2).toUpperCase(),
     members: 1,
     ...(visibility === 'public' ? { visibility: 'public', ownerId: userId, write: true } : {}),
+    ...(type ? { type } : {}),
+    ...(subtype ? { subtype } : {}),
   };
-  await writeSpaceAccess(accountClient, id, userId, [], null, { name: trimmed, visibility: visibility === 'public' ? 'public' : undefined });
+  await writeSpaceAccess(accountClient, id, userId, [], null, { name: trimmed, visibility: visibility === 'public' ? 'public' : undefined, type, subtype });
   await seedSpaceObjectIndex(session, id, [], { visibility });
   await writeSpaces(accountClient, userId, [...spaces, space], hash);
   return space;
