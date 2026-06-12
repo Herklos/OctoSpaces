@@ -1,136 +1,179 @@
 /**
- * Space access resolver — returns the right (client, encryptor) pair for any
- * space regardless of whether it is private (E2EE) or public (plaintext).
+ * Space and node access resolver.
  *
- * Replaces `space-encryptor.ts`. The key invariant: public spaces have
- * `encryptor: null`; private spaces always have a live `Encryptor`.
+ * Spaces are always plaintext (no space keyring). Encryption lives at the
+ * per-node level: each `enc:true` node has its own keyring at
+ * `objects/n/{nodeId}/_keyring`.
  *
- * Resolution order (same semantics as the old `getSpaceEncryptor`):
- *   1. Link entry in the access store → sign requests as the ephemeral identity;
- *      no keyring, encryptor null.
- *   2. Member entry → open the keyring as a recipient with the stored cap.
- *   3. No entry + visibility === 'public' (from `reg`) → owner mode, no keyring.
- *   4. No entry, private → either owner (open/mint keyring) or SpaceAccessError
- *      if the space's roster shows we're a member but we're not holding a cap yet.
+ * Two entry points:
+ *   - `getSpaceClient`  — returns the right StarfishClient for member-gated
+ *     space docs (index, _access). No encryptor.
+ *   - `getNodeAccess`   — resolves the (client, encryptor) for a specific node's
+ *     CONTENT. Encryptor is null for plaintext nodes.
+ *
+ * Resolution order for `getNodeAccess`:
+ *   1. Per-node link entry  → sign as ephemeral identity; encryptor from keyring.
+ *   2. Per-node member entry → open node keyring as recipient.
+ *   3. Space-level link entry → same client; open keyring if enc.
+ *   4. Space-level member entry → open keyring if enc.
+ *   5. No entry, owner        → mint node keyring if enc; plain client otherwise.
+ *   6. No entry, non-owner   → SpaceAccessError if enc; plain client otherwise.
  */
 import type { Encryptor, StarfishClient } from '@drakkar.software/starfish-client';
 
 import { buildEncryptor, makeClient, openEncryptor, ownerEnsureKeyring } from './client.js';
 import type { Session } from './identity.js';
 import { ownerTrustedAdders } from './identity.js';
-import { getSpaceAccessEntry } from './space-access-store.js';
+import { getNodeAccessEntry, getSpaceAccessEntry } from './space-access-store.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
-import type { SpaceVisibility } from '../core/types.js';
+import { nodeKeyringPull, nodeKeyringPush } from './paths.js';
+import type { NodeAccess } from '../core/types.js';
 
 // Re-export so existing importers keep reaching SpaceAccessError through this module.
 export { SpaceAccessError };
 
-export interface SpaceAccessHandle {
+export interface NodeAccessHandle {
   encryptor: Encryptor | null;
   client: StarfishClient;
-  /** True when opened as the space OWNER (so the caller must seed the room doc). */
+  /** True when opened as the space OWNER (may seed / mint the node keyring). */
   isOwnerOpen: boolean;
 }
 
-const cache = new Map<string, Promise<SpaceAccessHandle>>();
+const cache = new Map<string, Promise<NodeAccessHandle>>();
 
 /** Drop every cached handle (on account switch — keys are per-identity). */
-export function clearSpaceAccessCache(): void {
+export function clearNodeAccessCache(): void {
   cache.clear();
 }
 
 /**
- * Resolve the right (client, encryptor) for a space, opening and caching on first use.
- *
- * `reg` is the space's `_access` access record if already known. Pass null when the
- * caller has not yet read the registry; the resolver will probe if needed.
+ * Return the right StarfishClient for reading/writing member-gated space docs
+ * (e.g. the `_index`, `_access`). Spaces are always plaintext — no encryptor.
  */
-export function getSpaceAccess(
-  spaceId: string,
-  session: Session,
-  reg: { owner: string | null; members: string[]; visibility?: SpaceVisibility } | null,
-): Promise<SpaceAccessHandle> {
-  const hit = cache.get(spaceId);
-  if (hit) return hit;
-  const p = (async (): Promise<SpaceAccessHandle> => {
-    const entry = getSpaceAccessEntry(spaceId);
+export function getSpaceClient(spaceId: string, session: Session): StarfishClient {
+  const entry = getSpaceAccessEntry(spaceId);
+  if (entry?.kind === 'link') return makeClient(entry.cap, entry.key);
+  if (entry?.kind === 'member') {
+    const cap = JSON.parse(entry.cap) as { iss?: string };
+    return makeClient(cap, session.keys.edPriv);
+  }
+  return session.chatClient;
+}
 
-    // 1. Link entry — ephemeral identity; no keyring
-    if (entry?.kind === 'link') {
-      const cap = entry.cap;
-      const client = makeClient(cap, entry.key);
-      return { encryptor: null, client, isOwnerOpen: false };
+/**
+ * Resolve the right (client, encryptor) for a node's CONTENT, opening and
+ * caching on first use.
+ *
+ * `node` carries `{ access?, enc? }` — the plaintext flags from the index.
+ * `reg` is the space's access record if already known; used to determine
+ * ownership. Pass null if unknown.
+ */
+export function getNodeAccess(
+  spaceId: string,
+  nodeId: string,
+  node: { access?: NodeAccess; enc?: boolean },
+  session: Session,
+  reg?: { owner: string | null; members: string[] } | null,
+): Promise<NodeAccessHandle> {
+  const cacheKey = `${spaceId}:${nodeId}`;
+  const hit = cache.get(cacheKey);
+  if (hit) return hit;
+
+  const p = (async (): Promise<NodeAccessHandle> => {
+    // Prefer a per-node entry, fall back to the space-level entry for the client.
+    const nodeEntry = getNodeAccessEntry(spaceId, nodeId);
+    const spaceEntry = getSpaceAccessEntry(spaceId);
+    const activeEntry = nodeEntry ?? spaceEntry;
+
+    // Build the client.
+    let client: StarfishClient;
+    let capIss: string | undefined;
+    if (activeEntry?.kind === 'link') {
+      client = makeClient(activeEntry.cap, activeEntry.key);
+    } else if (activeEntry?.kind === 'member') {
+      const cap = JSON.parse(activeEntry.cap) as { iss?: string };
+      capIss = cap.iss;
+      client = makeClient(cap, session.keys.edPriv);
+    } else {
+      client = session.chatClient;
     }
 
-    // 2. Member entry — open as a keyring recipient
-    if (entry?.kind === 'member') {
-      const cap = JSON.parse(entry.cap) as { iss?: string };
-      const client = makeClient(cap, session.keys.edPriv);
-      const encryptor = await openEncryptor(client, session.keys, spaceId, cap.iss ? [cap.iss] : []);
+    const isOwnerOpen =
+      reg != null ? reg.owner === session.userId : activeEntry == null;
+
+    // Plaintext node — no keyring needed.
+    if (!node.enc) {
+      return { encryptor: null, client, isOwnerOpen };
+    }
+
+    // E2EE node — resolve the per-node keyring.
+    const pullPath = nodeKeyringPull(spaceId, nodeId);
+    const trustedAdders = capIss
+      ? [capIss]
+      : reg?.owner
+        ? [reg.owner]
+        : ownerTrustedAdders(session);
+
+    if (activeEntry?.kind === 'member' || activeEntry?.kind === 'link') {
+      const encryptor = await openEncryptor(client, session.keys, pullPath, trustedAdders);
       return { encryptor, client, isOwnerOpen: false };
     }
 
-    // 3. No entry — branch on visibility
-    const visibility = reg?.visibility;
-    if (visibility === 'public') {
-      return { encryptor: null, client: session.chatClient, isOwnerOpen: reg!.owner === session.userId };
-    }
-
-    // 4. No entry, private — owner or error
+    // No access entry — owner mints/opens the keyring; non-owner errors.
     const owner = reg?.owner ?? null;
     const members = reg?.members ?? [];
     if (owner !== null && owner !== session.userId) {
       throw new SpaceAccessError(
         members.includes(session.userId)
-          ? "You're a member of this space, but its key isn't on this device yet — reconnect, or ask the owner to re-invite."
-          : "You don't have access to this space.",
+          ? "You're a member of this space, but this node's key isn't on this device yet — ask the owner to invite you."
+          : "You don't have access to this node.",
       );
     }
     const encryptor = await ownerEnsureKeyring(
       session.chatClient,
       session.keys,
-      spaceId,
+      pullPath,
+      nodeKeyringPush(spaceId, nodeId),
       ownerTrustedAdders(session),
     );
     return { encryptor, client: session.chatClient, isOwnerOpen: true };
   })();
-  cache.set(spaceId, p);
-  p.catch(() => cache.delete(spaceId));
+
+  cache.set(cacheKey, p);
+  p.catch(() => cache.delete(cacheKey));
   return p;
 }
 
 /**
  * SOFT resolve — never mints a keyring, never throws on missing access.
- * Returns null when the identity has no usable access for the space yet.
+ * Returns null when the identity has no usable access for the node yet.
  */
-export async function buildSpaceAccess(
+export async function buildNodeAccess(
   session: Session,
   spaceId: string,
-  hint?: { visibility?: SpaceVisibility },
+  nodeId: string,
+  node: { enc?: boolean },
 ): Promise<{ client: StarfishClient; encryptor: Encryptor | null } | null> {
-  const entry = getSpaceAccessEntry(spaceId);
+  const nodeEntry = getNodeAccessEntry(spaceId, nodeId);
+  const spaceEntry = getSpaceAccessEntry(spaceId);
+  const activeEntry = nodeEntry ?? spaceEntry;
 
-  if (entry?.kind === 'link') {
-    const client = makeClient(entry.cap, entry.key);
-    return { client, encryptor: null };
-  }
-
-  let client = session.chatClient;
+  let client: StarfishClient;
   let trustedAdders = ownerTrustedAdders(session);
 
-  if (entry?.kind === 'member') {
-    const cap = JSON.parse(entry.cap) as { iss?: string };
+  if (activeEntry?.kind === 'link') {
+    client = makeClient(activeEntry.cap, activeEntry.key);
+  } else if (activeEntry?.kind === 'member') {
+    const cap = JSON.parse(activeEntry.cap) as { iss?: string };
     client = makeClient(cap, session.keys.edPriv);
     if (cap.iss) trustedAdders = [cap.iss];
-    const encryptor = await buildEncryptor(client, session.keys, spaceId, trustedAdders);
-    return encryptor ? { client, encryptor } : null;
+  } else {
+    client = session.chatClient;
   }
 
-  if (hint?.visibility === 'public') {
-    return { client, encryptor: null };
-  }
+  if (!node.enc) return { client, encryptor: null };
 
-  // No entry, no hint — try the keyring probe (owner path)
-  const encryptor = await buildEncryptor(client, session.keys, spaceId, trustedAdders);
+  const pullPath = nodeKeyringPull(spaceId, nodeId);
+  const encryptor = await buildEncryptor(client, session.keys, pullPath, trustedAdders);
   return encryptor ? { client, encryptor } : null;
 }

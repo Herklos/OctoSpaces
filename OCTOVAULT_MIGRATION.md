@@ -8,6 +8,54 @@ The migration is gated on publishing `octospaces-sdk@0.1.0` and `octospaces-ui@0
 
 ---
 
+## ⚡ 0.4.0 Breaking changes (per-node access + decoupled encryption)
+
+`octospaces-sdk@0.4.0` is the release OctoVault has been designed for: every page or project
+is an `ObjectNode` with an independent `access` axis and optional `enc` flag.
+
+### What this unlocks for OctoVault
+
+| Node type | `access` | `enc` | Effect |
+|---|---|---|---|
+| Public project / page | `'public'` | `false` | World-readable via `_index/objects/public` + `objpub` |
+| Members-only page | `'space'` (default) | `false` | Only space members can read |
+| Invite-only page (plaintext) | `'invite'` | `false` | Only invited identities (per-node cap) |
+| Invite-only page (E2EE) | `'invite'` | `true` | Only invited identities + keyring holders |
+
+### Server changes (OctoVault's `apps/server` or Infra)
+
+1. **Replace `spacekeyring` with `nodekeyring`**.
+2. **Replace `spaceindex` with `objectindex`**.
+3. **Add `objindex`, `objpub`, `objinv`** (see `apps/server/src/config.ts` for specs).
+4. **Rewrite projection** to source `objindex`, emit public-node rows per space.
+5. **Update queuing**: add `nodekeyring` and `objindex`.
+
+### SDK / app changes
+
+1. **Remove `SpaceVisibility`**, `Space.visibility`/`ownerId`/`write`,
+   `SpaceMeta.type`/`subtype` references.
+2. **Replace `keyringPull/Push`** with `nodeKeyringPull/Push(spaceId, nodeId)`.
+3. **Replace `spaceIndexPull`** with `objectDirPull()` (reads `_index/objects/public`).
+4. **Replace `getSpaceAccess`** with `getNodeAccess(spaceId, nodeId, node, session)`.
+5. **Projects and pages** are `ObjectNode`s — create with
+   `createNode(session, spaceId, { type:'project'|'page', title, access, enc })`.
+6. **Anonymous browsing**: pull `objectDirPull()` to list public projects; read content
+   from `objPubPull(spaceId, nodeId)` without authentication.
+7. **Invite sharing**: use `createNodeInviteLink` (for `invite` nodes) or
+   `inviteToNode` (for direct invites by identity).
+8. **`createSpace(session, name)`** — `opts` removed.
+
+### Data migration (Infra / production)
+
+Same as OctoChat:
+- `spacekeyring` → `nodekeyring` (path gains `{nodeId}` segment).
+- `spaceindex` → `objectindex`.
+- Add `objindex` (needed for projection + change events).
+- Existing pages/projects in public spaces need their `access` field set to `'public'`
+  in the index so the projection picks them up.
+
+---
+
 ## 1. Bump starfish alpha
 
 OctoVault currently pins `@drakkar.software/starfish-*` at `3.0.0-alpha.26`.

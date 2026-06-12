@@ -8,6 +8,51 @@ The migration is gated on publishing `octospaces-sdk@0.1.0` to npm.
 
 ---
 
+## ⚡ 0.4.0 Breaking changes (per-node access + decoupled encryption)
+
+`octospaces-sdk@0.4.0` removes the public/private space distinction entirely.
+Upgrade from 0.3.x requires the following OctoChat-side changes:
+
+### Server (OctoChat's `apps/server`)
+
+1. **Replace `spacekeyring` with `nodekeyring`** in `config.ts`
+   (`storagePath: spaces/{spaceId}/objects/n/{nodeId}/_keyring`).
+2. **Replace `spaceindex` with `objectindex`** (`storagePath: _index/objects/{shard}`).
+3. **Add collections**: `objindex`, `objpub`, `objinv`, `objlog`, `objsnap`, `objdoc`,
+   `objblob`, `typeindex` (see `apps/server/src/config.ts` for full specs).
+4. **Rewrite the projection** to source `objindex` and emit per-space public-node rows.
+5. **Update queuing config**: `spacekeyring` → `nodekeyring`, add `objindex`.
+
+### SDK / app code
+
+1. **Remove all references to `SpaceVisibility`**, `Space.visibility`, `Space.ownerId`,
+   `Space.write`, `SpaceMeta.type`, `SpaceMeta.subtype`.
+2. **Replace `keyringPull/Push`** call sites with `nodeKeyringPull/Push(spaceId, nodeId)`.
+3. **Replace `spaceIndexPull`** call sites with `objectDirPull()`.
+4. **Replace `getSpaceAccess`** call sites with `getNodeAccess(spaceId, nodeId, node, session)`.
+5. **Replace `addDeviceToSpaceKeyring`** — no longer exists. Linked devices get per-node
+   keyring access only when explicitly invited via `inviteToNode`.
+6. **`createSpace(session, name)`** — `opts` arg removed.
+7. **`acceptSpaceInvite`** — no longer verifies keyring access; `cap.iss` is optional.
+8. **Rooms** are `ObjectNode`s — migrate to `createNode(session, spaceId, { type:'room', ... })`.
+   Use `access:'invite'` for private rooms, `enc:true` to add E2EE.
+9. **`pushIndexSeed(client, spaceId, nodes?)`** — encryptor arg removed.
+
+### Data migration (Infra / production)
+
+Mirror all collection changes in
+`Infra/sync/server/drakkar_sync/apps/octochat/collections.py` and the projection file.
+Key changes:
+- `spacekeyring` → `nodekeyring` path pattern includes `{nodeId}` segment.
+- `spaceindex` → `objectindex` at `_index/objects/{shard}`.
+- Add `objindex` collection (required for projection and change events).
+- Existing `spacekeyring` data is orphaned (no migration needed for new deployments;
+  for live deployments, node keyrings will be lazily re-minted on first `enc` node access).
+
+---
+
+---
+
 ## 1. Server (apps/server) — REQUIRED FIRST
 
 These server changes must ship **before** any client-side migration that creates public

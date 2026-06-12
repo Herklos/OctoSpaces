@@ -19,9 +19,7 @@ import { getSyncBase, getSyncNamespace } from '../core/config.js';
 import { fetchWithTimeout } from './fetch-timeout.js';
 import type { Session } from './identity.js';
 import { fingerprintFromUserId } from './identity.js';
-import { addDeviceToSpaceKeyring } from '../spaces/members.js';
 import { bytesToHex, linkedDeviceScope } from './paths.js';
-import { readSpaces } from '../spaces/registry.js';
 
 /** The QR-payload prefix this SDK uses. Kept distinct from `octochat-pair:` so apps
  *  can route QR payloads to the correct handler during their migration window. */
@@ -40,21 +38,20 @@ function randomNonce(): string {
   return bytesToHex(b);
 }
 
-/** Existing device: provision + PIN-seal a new device, publish to rendezvous, return the QR payload. */
+/**
+ * Existing device: provision + PIN-seal a new device, publish to rendezvous, return
+ * the QR payload.
+ *
+ * NOTE: Per-node E2EE keyrings are not automatically granted during pairing — each
+ * E2EE node's owner must explicitly add the new device via `inviteToNode`. The paired
+ * device will have full access to plaintext (`space` and `public`) nodes immediately
+ * and to `invite+enc` nodes once its KEM key is added to each node's keyring.
+ */
 export async function startDevicePairing(session: Session, pin: string): Promise<string> {
   const { deviceKeys, bundle } = await provisionDevice(
     { edPriv: session.keys.edPriv, edPub: session.keys.edPub },
     { scope: linkedDeviceScope(session.userId), ttlSec: LINKED_DEVICE_TTL_SEC },
   );
-  const { spaces, caps } = await readSpaces(session.accountClient, session.userId);
-  for (const space of spaces) {
-    if (caps[space.id]) continue;
-    try {
-      await addDeviceToSpaceKeyring(session, space.id, { kemPub: deviceKeys.kemPub, userId: session.userId });
-    } catch (err) {
-      console.log('[pairing] keyring grant failed', { spaceId: space.id, error: String((err as Error)?.message ?? err) });
-    }
-  }
   const blob = JSON.stringify({ v: 1, keys: deviceKeys, bundle });
   const sealed = await sealWithPassphrase(pin, new TextEncoder().encode(blob));
   const nonce = randomNonce();

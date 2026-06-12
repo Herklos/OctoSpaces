@@ -7,11 +7,13 @@
  * space:owner/space:member enricher, and a single `spaces/{spaceId}/**` member cap
  * covers a whole space.
  *
- * **Generic object collections** — scopes use the `obj*` collection names (the
- * domain-neutral storage layer apps migrate onto). The access record lives at
- * `spaces/{spaceId}/_access` (collection `spaceregistry`); the keyring at
- * `spaces/{spaceId}/_keyring` (collection `spacekeyring`). App-specific collection
- * names are left for the consumer's own `paths.ts` extension.
+ * **Generic object collections** — scopes use the `obj*` / `node*` collection names
+ * (the domain-neutral storage layer). The access record lives at
+ * `spaces/{spaceId}/_access` (collection `spaceregistry`); per-node keyrings at
+ * `spaces/{spaceId}/objects/n/{nodeId}/_keyring` (collection `nodekeyring`).
+ *
+ * Note: `objinv` (invite-plaintext content) is intentionally EXCLUDED from
+ * OBJECT_COLLECTIONS / spaceMemberScope — only a per-node cap can reach it.
  */
 import type { ScopePreset } from '@drakkar.software/starfish-identities';
 
@@ -21,10 +23,14 @@ const push = (rest: string) => `/push/${rest}`;
 /** A room id is `sp-<rand>-<name>`; the space is its first two `-` segments. */
 export const spaceIdFromRoomId = (roomId: string) => roomId.split('-').slice(0, 2).join('-');
 
-// ── Space-wide keyring (one per space, shared by all its channels) ────────────
-export const keyringName = (spaceId: string) => `spaces/${spaceId}`;
-export const keyringPull = (spaceId: string) => pull(`${keyringName(spaceId)}/_keyring`);
-export const keyringPush = (spaceId: string) => push(`${keyringName(spaceId)}/_keyring`);
+// ── Per-node keyring (one keyring per E2EE node) ──────────────────────────────
+/** Base name used as the `collectionName` arg to `addCollectionRecipient`. */
+export const nodeKeyringName = (spaceId: string, nodeId: string) =>
+  `spaces/${spaceId}/objects/n/${nodeId}`;
+export const nodeKeyringPull = (spaceId: string, nodeId: string) =>
+  pull(`${nodeKeyringName(spaceId, nodeId)}/_keyring`);
+export const nodeKeyringPush = (spaceId: string, nodeId: string) =>
+  push(`${nodeKeyringName(spaceId, nodeId)}/_keyring`);
 
 // ── Attachments (sealed blobs, in a per-space subtree keyed by room) ──────────
 /** Storage path of one attachment blob — also the AAD bound into its seal. */
@@ -43,21 +49,24 @@ export const spacesPush = (userId: string) => push(`user/${userId}/_spaces`);
 export const spaceAccessPull = (spaceId: string) => pull(`spaces/${spaceId}/_access`);
 export const spaceAccessPush = (spaceId: string) => push(`spaces/${spaceId}/_access`);
 
-// ── Unified Object index + content (private/E2EE) ─────────────────────────────
-// ALL Object content lives in one generic path family — no type-specific prefixes:
-//
-//   objects/_index          — union-merged ObjectNode tree (every Object in the space)
-//   objects/logs/{id}       — WAL/CRDT append-only op-log (contentKind "append")
-//   objects/logs/{id}__snapshot — sibling LWW snapshot for fast cold-start
-//   objects/docs/{id}       — LWW merge-doc (contentKind "merge": records, captions)
-//   objects/blobs/{id}      — sealed raw binary blob (file/image objects)
-//
-// Keep in sync with the objindex/objlog/objsnap/objdoc/objblob collections in
-// apps/server AND Infra collections.py.
+// ── Object index (member-gated, always plaintext) ────────────────────────────
+// The index lists every node with structural fields plaintext. For `invite`
+// nodes the title/emoji are stripped before storage; only invited members read
+// the real title from the node's content doc. Keep in sync with the objindex
+// collection in apps/server AND Infra collections.py.
 export const objIndexName = (spaceId: string) => `spaces/${spaceId}/objects/_index`;
 export const objIndexPull = (spaceId: string) => pull(objIndexName(spaceId));
 export const objIndexPush = (spaceId: string) => push(objIndexName(spaceId));
 
+// ── Space-tier & general object content (space:member gated) ─────────────────
+//
+//   objects/logs/{id}             — WAL/CRDT append-only op-log (contentKind "append")
+//   objects/logs/{id}__snapshot   — sibling LWW snapshot for fast cold-start
+//   objects/docs/{id}             — LWW merge-doc (contentKind "merge")
+//   objects/blobs/{id}            — sealed raw binary blob
+//
+// Keep in sync with the objlog/objsnap/objdoc/objblob collections in
+// apps/server AND Infra collections.py.
 export const objLogName = (spaceId: string, objectId: string) => `spaces/${spaceId}/objects/logs/${objectId}`;
 export const objLogPull = (spaceId: string, objectId: string) => pull(objLogName(spaceId, objectId));
 export const objLogPush = (spaceId: string, objectId: string) => push(objLogName(spaceId, objectId));
@@ -71,24 +80,38 @@ export const objectBlobName = (spaceId: string, blobId: string) => `spaces/${spa
 export const objectBlobPull = (spaceId: string, blobId: string) => pull(objectBlobName(spaceId, blobId));
 export const objectBlobPush = (spaceId: string, blobId: string) => push(objectBlobName(spaceId, blobId));
 
-// ── Per-space custom type registry (private/E2EE) ─────────────────────────────
+// ── Public node content (world-readable) ─────────────────────────────────────
+// For `access:'public'` nodes, content is stored here so anonymous readers can
+// fetch it without being a space member. Keep in sync with objpub in server config.
+export const objPubName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/pub/${nodeId}`;
+export const objPubPull = (spaceId: string, nodeId: string) => pull(objPubName(spaceId, nodeId));
+export const objPubPush = (spaceId: string, nodeId: string) => push(objPubName(spaceId, nodeId));
+
+// ── Invite-only plaintext content (cap-gated) ────────────────────────────────
+// For `access:'invite' + enc:false` nodes, content is stored here. The `objinv`
+// collection is intentionally excluded from spaceMemberScope — only a per-node cap
+// (nodeMemberScope) can reach it. Keep in sync with objinv in server config.
+export const objInvName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/n/${nodeId}/content`;
+export const objInvPull = (spaceId: string, nodeId: string) => pull(objInvName(spaceId, nodeId));
+export const objInvPush = (spaceId: string, nodeId: string) => push(objInvName(spaceId, nodeId));
+
+// ── Per-space custom type registry ────────────────────────────────────────────
 export const typesIndexName = (spaceId: string) => `spaces/${spaceId}/types/_index`;
 export const typesIndexPull = (spaceId: string) => pull(typesIndexName(spaceId));
 export const typesIndexPush = (spaceId: string) => push(typesIndexName(spaceId));
 
-// ── Public-space directory index (server-maintained projection) ───────────────
-// Pull `_index/spaces/{shard}` where shard is either the back-compat 'public'
-// (default, untyped spaces) or an app-owned type string ('chat', 'vault', …).
-export const spaceIndexName = (shard: string = 'public') => `_index/spaces/${shard}`;
-export const spaceIndexPull = (shard: string = 'public') => pull(spaceIndexName(shard));
+// ── Global object directory (server-maintained projection) ───────────────────
+// Pull `_index/objects/{shard}` to discover world-readable public nodes.
+// Default shard 'public'; future: sharded by app-supplied type string.
+export const objectDirName = (shard: string = 'public') => `_index/objects/${shard}`;
+export const objectDirPull = (shard: string = 'public') => pull(objectDirName(shard));
 
 // ── Generic object collections — used in cap scopes ──────────────────────────
-// These are the domain-neutral storage collections both apps migrate onto. The
-// server ignores unrecognized collection names, so a cap minted with this set still
-// authorizes an app whose data currently lives under a legacy collection name during
-// the migration transition.
+// These are the domain-neutral storage collections both apps migrate onto.
+// IMPORTANT: `objinv` is NOT included here — it is excluded from the broad space
+// member scope so that only per-node caps (nodeMemberScope) can reach it.
 export const OBJECT_COLLECTIONS: string[] = [
-  'spacekeyring', 'objindex', 'objlog', 'objsnap', 'objdoc', 'objblob', 'typeindex',
+  'nodekeyring', 'objindex', 'objlog', 'objsnap', 'objdoc', 'objblob', 'typeindex', 'objpub',
 ];
 
 // ── Cap scopes ────────────────────────────────────────────────────────────────
@@ -103,9 +126,10 @@ export function ownerScope(): ScopePreset {
 }
 
 /**
- * Member access to one SPACE — its keyring + every channel's messages and
- * attachments + the room registry, all under `spaces/{spaceId}/**`. One cap
- * covers current AND future channels.
+ * Member access to one SPACE — its node keyrings, every node's content docs and
+ * attachments, all under `spaces/{spaceId}/**`. Does NOT cover `objinv` (invite-
+ * plaintext content) — use `nodeMemberScope` for that. One cap covers current AND
+ * future nodes.
  */
 export function spaceMemberScope(spaceId: string, canWrite: boolean): ScopePreset {
   const ops: ('read' | 'write' | 'list')[] = canWrite ? ['read', 'list', 'write'] : ['read', 'list'];
@@ -113,6 +137,19 @@ export function spaceMemberScope(spaceId: string, canWrite: boolean): ScopePrese
     ops,
     collections: OBJECT_COLLECTIONS,
     paths: [`spaces/${spaceId}/**`],
+  };
+}
+
+/**
+ * Narrow per-node cap for `invite+plaintext` nodes. Covers the node's keyring
+ * (for future promotion to E2EE) and its `objinv` content path only.
+ */
+export function nodeMemberScope(spaceId: string, nodeId: string, canWrite: boolean): ScopePreset {
+  const ops: ('read' | 'write' | 'list')[] = canWrite ? ['read', 'list', 'write'] : ['read', 'list'];
+  return {
+    ops,
+    collections: ['nodekeyring', 'objinv'],
+    paths: [`spaces/${spaceId}/objects/n/${nodeId}/**`],
   };
 }
 

@@ -13,7 +13,7 @@
  *
  * No domain types (room, category, task, …) are defined here. Apps define their own.
  */
-import type { ID, ObjectNode, ObjectType } from '../core/types.js';
+import type { ID, NodeAccess, ObjectNode, ObjectType } from '../core/types.js';
 import { randomId } from '../core/ids.js';
 
 /** A node plus its resolved children — the shape a tree view renders. */
@@ -127,6 +127,10 @@ export interface NewObjectInput {
   meta?: Record<string, unknown>;
   /** Provide to reuse an id (e.g. a node id derived elsewhere); else minted. */
   id?: ID;
+  /** Who may reach this node. Absent ⇒ `'space'` (all space members). */
+  access?: NodeAccess;
+  /** Whether the node's content is E2EE under its own per-node keyring. Absent ⇒ false. */
+  enc?: boolean;
 }
 
 /** Append a new node under `parentId` at the end of its sibling order. */
@@ -142,12 +146,19 @@ export function addObject(nodes: ObjectNode[], input: NewObjectInput, now: numbe
     ...(input.emoji ? { emoji: input.emoji } : {}),
     updatedAt: now,
     ...(input.meta ? { meta: input.meta } : {}),
+    ...(input.access && input.access !== 'space' ? { access: input.access } : {}),
+    ...(input.enc ? { enc: true as const } : {}),
   };
   return { nodes: [...nodes, node], node };
 }
 
-/** Patch a node's mutable metadata (title/emoji/meta), bumping `updatedAt`. */
-export function patchObject(nodes: ObjectNode[], id: ID, patch: Partial<Pick<ObjectNode, 'title' | 'emoji' | 'meta'>>, now: number): ObjectNode[] {
+/** Patch a node's mutable metadata (title/emoji/meta/access/enc), bumping `updatedAt`. */
+export function patchObject(
+  nodes: ObjectNode[],
+  id: ID,
+  patch: Partial<Pick<ObjectNode, 'title' | 'emoji' | 'meta' | 'access' | 'enc'>>,
+  now: number,
+): ObjectNode[] {
   return nodes.map((n) => (n.id === id ? { ...n, ...patch, updatedAt: now } : n));
 }
 

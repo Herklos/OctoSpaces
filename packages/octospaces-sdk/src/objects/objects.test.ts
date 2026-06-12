@@ -196,3 +196,53 @@ describe('archiveObject', () => {
   });
 });
 
+// ── access / enc fields ───────────────────────────────────────────────────────
+
+describe('addObject — access / enc', () => {
+  it('omits access field when not provided (defaults to space)', () => {
+    const { node } = addObject([], { type: 'page', title: 'Space' }, NOW);
+    expect(node).not.toHaveProperty('access');
+  });
+
+  it('omits access field when access is "space"', () => {
+    const { node } = addObject([], { type: 'page', title: 'Space', access: 'space' }, NOW);
+    expect(node).not.toHaveProperty('access');
+  });
+
+  it('sets access:"public" on the node', () => {
+    const { node } = addObject([], { type: 'page', title: 'Public', access: 'public' }, NOW);
+    expect(node.access).toBe('public');
+  });
+
+  it('sets access:"invite" on the node', () => {
+    const { node } = addObject([], { type: 'page', title: 'Private', access: 'invite' }, NOW);
+    expect(node.access).toBe('invite');
+  });
+
+  it('omits enc field when not provided or false', () => {
+    const { node: n1 } = addObject([], { type: 'page', title: 'T' }, NOW);
+    const { node: n2 } = addObject([], { type: 'page', title: 'T', enc: false }, NOW);
+    expect(n1).not.toHaveProperty('enc');
+    expect(n2).not.toHaveProperty('enc');
+  });
+
+  it('sets enc:true on the node', () => {
+    const { node } = addObject([], { type: 'page', title: 'E2EE', enc: true }, NOW);
+    expect(node.enc).toBe(true);
+  });
+});
+
+describe('patchObject — access / enc', () => {
+  it('patches access field', () => {
+    const nodes = [makeNode({ id: 'x', title: 'X' })];
+    const patched = patchObject(nodes, 'x', { access: 'public' }, NOW);
+    expect(patched[0].access).toBe('public');
+  });
+
+  it('patches enc field', () => {
+    const nodes = [makeNode({ id: 'x', title: 'X' })];
+    const patched = patchObject(nodes, 'x', { enc: true }, NOW);
+    expect(patched[0].enc).toBe(true);
+  });
+});
+

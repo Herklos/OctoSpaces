@@ -29,7 +29,7 @@
 
 Everything in a space is an **`ObjectNode`** — a typed, ordered, tree-able unit with an `id`, `type`, `parentId`, and `order`. The SDK defines **no domain object types**: apps (OctoChat, OctoVault, …) declare their own `type` strings and descriptors in their own SDKs. The SDK ships only the generic tree engine (`buildTree`, `addObject`, `reparentObject`, …) and the spaces infrastructure (keyring, access record, index).
 
-**Private and public spaces share one path family.** Both live under `spaces/{spaceId}/**` with the same `OBJECT_COLLECTIONS` cap scopes. A public space sets `visibility:'public'` in its `_access` access record (`spaceregistry` collection) and uses a plaintext object index (no keyring, `encryptor: null`). The [Starfish](https://github.com/Drakkar-Software/Starfish) server never validates or decrypts content — auth is roster-based — so no server changes are required to host public spaces. The space keyring lives in the `spacekeyring` collection at `spaces/{spaceId}/_keyring`.
+**Spaces are neutral containers.** All nodes live under `spaces/{spaceId}/**` with the same `OBJECT_COLLECTIONS` cap scopes. Visibility and encryption are **per-node** axes — not per-space: `ObjectNode.access` (`'public' | 'space' | 'invite'`) controls who can reach a node; `ObjectNode.enc` adds E2EE under its own per-node keyring. A public node is projected to `_index/objects/public` (`objectindex` collection) for world discovery. The object index (`objindex` collection) is always plaintext — invite nodes have their title/emoji stripped before storage. The [Starfish](https://github.com/Drakkar-Software/Starfish) server never validates or decrypts content — auth is roster-based + cap-scope gated.
 
 Sync is powered by the **[Starfish](https://github.com/Drakkar-Software/Starfish)** protocol (`@drakkar.software/starfish-*`, E2EE, cap-cert auth). OctoChat and OctoVault consume these packages as npm dependencies; concrete theme values, env vars, and app-specific path extensions stay in each app.
 
@@ -107,11 +107,13 @@ const linked = await buildLinkedSession(pairingToken, deviceLabel, kv);
 ```ts
 import { createSpace, readSpaces, updateSpacesDoc } from '@drakkar.software/octospaces-sdk';
 
-// Private (E2EE) space — default
+// Create a space (neutral container — no visibility, no keyring)
 const space = await createSpace(session, 'My Space');
 
-// Public (plaintext) space — same path family, no keyring
-const pub = await createSpace(session, 'Public Docs', { visibility: 'public' });
+// Nodes carry access/enc independently — create after space exists
+// import { createNode } from '@drakkar.software/octospaces-sdk';
+// const pub = await createNode(session, space.id, { type:'page', title:'Public Docs', access:'public' });
+// const priv = await createNode(session, space.id, { type:'page', title:'Private', access:'invite', enc:true });
 
 const spaces = await readSpaces(session.accountClient, session.userId);
 ```

@@ -1,5 +1,79 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.4.0 (2026-06-12)
+
+### Breaking changes
+
+- **`SpaceVisibility` removed.** The type `'private' | 'public'` no longer exists; spaces
+  are neutral containers. Visibility/encryption move to the node level (see below).
+- **Space-level keyring removed.** `keyringName`, `keyringPull`, `keyringPush` are gone.
+  There is no per-space CEK. Encryption is per-node.
+- **`addDeviceToSpaceKeyring` removed.** Pairing no longer auto-grants a linked device
+  access to E2EE nodes — the owner must call `inviteToNode` per node after pairing.
+- **`getSpaceAccess` / `buildSpaceAccess` / `clearSpaceAccessCache` / `SpaceAccessHandle`
+  removed.** Replaced by `getNodeAccess` / `buildNodeAccess` / `clearNodeAccessCache` /
+  `NodeAccessHandle`.
+- **`spaceIndexName` / `spaceIndexPull` removed.** Replaced by `objectDirName` /
+  `objectDirPull` (target `_index/objects/{shard}`).
+- **`createSpace(session, name, opts?)` — `opts` removed.** Spaces no longer have a
+  `visibility` or `type`/`subtype`; call is now `createSpace(session, name)`.
+- **`Space.visibility`, `Space.ownerId`, `Space.write` removed.** `Space` interface now
+  carries only `{ id, name, short, image?, members, unread? }`.
+- **`SpaceMeta.type` / `SpaceMeta.subtype` removed.**
+- **`joinSpaceByLink` no longer sets `visibility`/`ownerId`/`write` on the returned Space.**
+- **`acceptSpaceInvite` no longer requires `cap.iss`.** Keyring verification is gone.
+
+### Added
+
+- **`NodeAccess = 'public' | 'space' | 'invite'`** — per-node access axis. Absent ⇒ `'space'`.
+- **`ObjectNode.access?: NodeAccess`** and **`ObjectNode.enc?: boolean`** — two orthogonal
+  axes. The invalid combo `public+enc` is rejected at `createNode`/`setNodeAccess`.
+- **Per-node keyrings**: `nodeKeyringName/Pull/Push(spaceId, nodeId)` at
+  `spaces/{spaceId}/objects/n/{nodeId}/_keyring` (collection `nodekeyring`).
+- **Public node content**: `objPubName/Pull/Push(spaceId, nodeId)` at
+  `spaces/{spaceId}/objects/pub/{nodeId}` (collection `objpub`, `readRoles:['public']`).
+- **Invite-only plaintext content**: `objInvName/Pull/Push(spaceId, nodeId)` at
+  `spaces/{spaceId}/objects/n/{nodeId}/content` (collection `objinv`, excluded from
+  `spaceMemberScope`).
+- **Global object directory**: `objectDirName/Pull(shard?)` → `_index/objects/{shard}`.
+- **`nodeMemberScope(spaceId, nodeId, canWrite)`** — narrow per-node cap covering
+  `['nodekeyring', 'objinv']`. Only this scope reaches invite-plaintext content.
+- **`OBJECT_COLLECTIONS`** updated: `spacekeyring` → `nodekeyring`; `objpub` added;
+  `objinv` intentionally absent (excluded from broad scope by design).
+- **`getSpaceClient(spaceId, session)`** — returns the member-gated client for index/access
+  docs; always plaintext.
+- **`getNodeAccess(spaceId, nodeId, node, session, reg?)`** — resolves `{ encryptor, client,
+  isOwnerOpen }` for a specific node's content.
+- **`buildNodeAccess(session, spaceId, nodeId, node)`** — soft variant (returns null instead
+  of throwing on missing access).
+- **`clearNodeAccessCache()`** — drop cached handles on account switch.
+- **`getNodeAccessEntry / saveNodeAccessEntry / removeNodeAccessEntry`** — per-node entries
+  in the unified space-access store (composite key `${spaceId}:${nodeId}`).
+- **`readObjectTree(session, spaceId)`** — read-only pull of a space's node list.
+- **`spaces/nodes.ts`** — new module:
+  - `createNode(session, spaceId, input, reg?)` — creates a node; mints per-node keyring
+    for `enc` nodes.
+  - `setNodeAccess(session, spaceId, nodeId, patch, reg?)` — flips `access`/`enc` flags.
+  - `inviteToNode(session, spaceId, nodeId, requestJson, node, nodeName?)` — owner-side
+    direct invite; adds to keyring (`enc`) or mints narrow cap (`invite+plaintext`).
+  - `acceptNodeInvite(session, bundleJson)` — invitee stores per-node access.
+  - `createNodeInviteLink(…)` — shareable link invite for a specific node.
+  - `joinNodeByLink(session, token)` — bearer stores per-node link entry.
+- **`NewObjectInput.access?` / `NewObjectInput.enc?`** — `addObject` passes these through
+  to the node; `patchObject` now accepts them in its patch type.
+- **`pushIndexSeed` API simplified**: `pushIndexSeed(client, spaceId, nodes?)` — no
+  encryptor argument (index is always plaintext).
+
+### Changed
+
+- Object index is **always plaintext**. `invite` node entries have `title` / `emoji`
+  stripped before storage (non-invited members see a placeholder row only).
+- **`inviteToSpace`** no longer adds the invitee to a space keyring (there is none).
+- **`acceptSpaceInvite`** no longer verifies keyring access.
+- **`startDevicePairing`** no longer auto-grants linked devices to space keyrings.
+
+---
+
 ## 0.3.0 (2026-06-12)
 
 ### Added

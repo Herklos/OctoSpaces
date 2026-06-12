@@ -2,55 +2,71 @@ import type { WriteEvent } from "@drakkar.software/starfish-protocol";
 import type { Projection, ProjectionOp } from "@drakkar.software/starfish-projection";
 
 /**
- * Public-space directory projection.
+ * Public-node directory projection.
  *
- * Watches every write to the `spaceregistry` collection (`spaces/{spaceId}/_access`)
- * and, when `body.visibility === 'public'`, upserts that space's entry into a
- * type-sharded aggregate list (the `spaceindex` pull-only collection).
+ * Watches every write to the `objindex` collection
+ * (`spaces/{spaceId}/objects/_index`) and maintains a per-space row in the
+ * world-readable `_index/objects/public` aggregate (`objectindex` collection).
  *
- * Shard layout:
- *   `_index/spaces/public`  — untyped public spaces (back-compat default)
- *   `_index/spaces/{type}`  — typed public spaces, one doc per app-owned type string
+ * Each row is keyed by `spaceId` and carries all of that space's public nodes:
+ *   `{ spaceId, nodes: [{ nodeId, parentId, title, emoji, type }], ts }`
  *
- * Each row carries an optional `subtype` field for finer client-side filtering.
- * A hot subtype can be promoted to its own shard later without changing the row shape.
+ * When a space's index has no public nodes the row is removed (tombstone).
+ * Clients read `_index/objects/public` to discover public content without
+ * being a space member.
  *
- * Security: `type` is owner-controlled, so it is sanitised before use as a path
- * segment — only `^[a-z0-9-]{1,32}$` is accepted; anything else falls back to 'public'.
+ * Security: fields come from the member-gated `_index` doc. The `spaceId` is
+ * taken from the verified `params.spaceId` path parameter, not from the body.
  */
 
-/** Allowlist for the `type` shard key — prevents path traversal via owner-controlled input. */
-const SHARD_RE = /^[a-z0-9-]{1,32}$/;
-
-function spaceTarget(event: WriteEvent): string {
-  const raw = (event.body ?? {}).type;
-  const shard =
-    typeof raw === "string" && SHARD_RE.test(raw) ? raw : "public";
-  return `_index/spaces/${shard}`;
+interface RawNode {
+  id?: unknown;
+  parentId?: unknown;
+  title?: unknown;
+  emoji?: unknown;
+  type?: unknown;
+  access?: unknown;
 }
 
-function projectSpaceRegistry(e: WriteEvent): ProjectionOp {
+function projectObjectIndex(e: WriteEvent): ProjectionOp {
+  const spaceId = e.params.spaceId;
+  if (!spaceId) return null;
+
   const body = e.body ?? {};
-  // Only public spaces belong in the directory. Private spaces are intentionally
-  // excluded — their `_access` docs are member-gated, and an aggregate list would
-  // leak names/owners to anyone who can read the index.
-  if (body.visibility !== "public") return null;
+  const rawObjects = (body as { objects?: unknown }).objects;
+  if (!Array.isArray(rawObjects)) return null;
+
+  const publicNodes = rawObjects
+    .filter((n: unknown) => {
+      const node = n as RawNode;
+      return typeof node.id === "string" && node.access === "public";
+    })
+    .map((n: unknown) => {
+      const node = n as RawNode;
+      return {
+        nodeId: node.id as string,
+        parentId: typeof node.parentId === "string" ? node.parentId : null,
+        title: typeof node.title === "string" ? node.title : null,
+        emoji: typeof node.emoji === "string" ? node.emoji : null,
+        type: typeof node.type === "string" ? node.type : null,
+      };
+    });
+
+  // No public nodes left in this space — remove any existing directory row.
+  if (publicNodes.length === 0) {
+    return { id: spaceId, remove: true };
+  }
+
   return {
-    id: e.params.spaceId,
-    value: {
-      name: typeof body.name === "string" ? body.name : null,
-      ownerId: typeof body.owner === "string" ? body.owner : null,
-      image: typeof body.image === "string" ? body.image : null,
-      subtype: typeof body.subtype === "string" ? body.subtype : null,
-      ts: e.timestamp,
-    },
+    id: spaceId,
+    value: { spaceId, nodes: publicNodes, ts: e.timestamp },
   };
 }
 
 export const projections: Projection[] = [
   {
-    source: "spaceregistry",
-    target: spaceTarget,
-    project: projectSpaceRegistry,
+    source: "objindex",
+    target: "_index/objects/public",
+    project: projectObjectIndex,
   },
 ];

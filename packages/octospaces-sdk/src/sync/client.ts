@@ -12,7 +12,7 @@ import { getSyncBase, getSyncNamespace, getSyncPrefix, getOnServerReachable } fr
 import { fetchWithTimeout } from './fetch-timeout.js';
 import { pullCache, PULL_CACHE_MAX_AGE_MS } from './pull-cache.js';
 import { cacheProfile, loadCachedProfile } from './profile-cache.js';
-import { keyringPull, keyringPush, profilePull, profilePush } from './paths.js';
+import { profilePull, profilePush } from './paths.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
 
 export interface DeviceKeys {
@@ -48,24 +48,25 @@ export function makeClient(cap: unknown, devEdPrivHex: string, namespaceOverride
 }
 
 /**
- * Open a SPACE's decryptor, throwing a descriptive error per failure mode
+ * Open a node's decryptor, throwing a descriptive error per failure mode
  * (unreachable server / no keyring yet / not a recipient).
  *
- * A `SpaceAccessError` is a hard access denial; any other thrown error is a
- * transient offline state.
+ * `keyringPullPath` is the full `/pull/.../_keyring` path (e.g. from
+ * `nodeKeyringPull(spaceId, nodeId)`). A `SpaceAccessError` is a hard access
+ * denial; any other thrown error is a transient offline state.
  */
 export async function openEncryptor(
   client: StarfishClient,
   keys: DeviceKeys,
-  spaceId: string,
+  keyringPullPath: string,
   trustedAdders: string[],
 ): Promise<Encryptor> {
-  const res = await client.pull(keyringPull(spaceId)).catch(() => {
-    throw new Error('Could not reach the server to fetch space keys.');
+  const res = await client.pull(keyringPullPath).catch(() => {
+    throw new Error('Could not reach the server to fetch node keys.');
   });
   const keyring = res?.data as unknown as Keyring | undefined;
   if (!keyring || !keyring.epochs) {
-    throw new SpaceAccessError('This space has no keyring yet — ask the owner to open it first.');
+    throw new SpaceAccessError('This node has no keyring yet — ask the owner to create it first.');
   }
   try {
     const enc = await createKeyringEncryptor(
@@ -75,7 +76,7 @@ export async function openEncryptor(
     );
     return enc as unknown as Encryptor;
   } catch {
-    throw new SpaceAccessError("You're not a recipient of this space's keyring yet — ask the owner to re-invite.");
+    throw new SpaceAccessError("You're not a recipient of this node's keyring yet — ask the owner to invite you.");
   }
 }
 
@@ -83,33 +84,37 @@ export async function openEncryptor(
 export async function buildEncryptor(
   client: StarfishClient,
   keys: DeviceKeys,
-  spaceId: string,
+  keyringPullPath: string,
   trustedAdders: string[],
 ): Promise<Encryptor | null> {
   try {
-    return await openEncryptor(client, keys, spaceId, trustedAdders);
+    return await openEncryptor(client, keys, keyringPullPath, trustedAdders);
   } catch {
     return null;
   }
 }
 
 /**
- * Owner-side: create the SPACE keyring if missing, return an encryptor.
+ * Owner-side: create a per-node keyring if missing, return an encryptor.
+ *
+ * `keyringPullPath` / `keyringPushPath` are the full `/pull|push/.../_keyring`
+ * paths (e.g. from `nodeKeyringPull`/`nodeKeyringPush`).
  */
 export async function ownerEnsureKeyring(
   client: StarfishClient,
   keys: DeviceKeys,
-  spaceId: string,
+  keyringPullPath: string,
+  keyringPushPath: string,
   trustedAdders: string[] = [keys.edPub],
 ): Promise<Encryptor> {
-  const krRes = await client.pull(keyringPull(spaceId)).catch(() => null);
+  const krRes = await client.pull(keyringPullPath).catch(() => null);
   let keyring = krRes?.data as unknown as Keyring | undefined;
   if (!keyring || !keyring.epochs) {
     const created = await createKeyring({ edPrivHex: keys.edPriv, edPubHex: keys.edPub }, [
       { subKemHex: keys.kemPub },
     ]);
     keyring = created.keyring;
-    await client.push(keyringPush(spaceId), keyring as unknown as Record<string, unknown>, krRes?.hash ?? null);
+    await client.push(keyringPushPath, keyring as unknown as Record<string, unknown>, krRes?.hash ?? null);
   }
   const enc = await createKeyringEncryptor(
     keyring,

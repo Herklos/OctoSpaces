@@ -1,21 +1,19 @@
 /**
- * Space membership — both keyring-based (private spaces) and link-based (public spaces).
+ * Space membership — invite-based (member cap) and link-based (open access).
  *
- * PRIVATE join: the owner adds the invitee to the space keyring, records them in the
- * roster, and mints a space-scoped member cap. The invitee verifies keyring access on
- * accept and stores a `{kind:'member'}` entry.
+ * MEMBER join: the owner records the invitee in the roster and mints a space-scoped
+ * member cap. The invitee stores a `{kind:'member'}` entry. Encryption lives at the
+ * per-node level — there is no space-wide keyring.
  *
- * PUBLIC (link) join: the owner mints an ephemeral Ed/KEM keypair whose *private* key
- * ships inside a URL-fragment token, adds the ephemeral userId to the roster so the
- * server grants `space:member`, and mints a member cap scoped to that ephemeral subject.
+ * LINK join: the owner mints an ephemeral Ed/KEM keypair whose *private* key ships
+ * inside a URL-fragment token, adds the ephemeral userId to the roster so the server
+ * grants `space:member`, and mints a member cap scoped to that ephemeral subject.
  * Any bearer of the link stores a `{kind:'link'}` entry. Revocation = `removeSpaceMember`.
  */
 import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
-import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
 import { mintMemberCap } from '@drakkar.software/starfish-sharing';
 
 import type { Space } from '../core/types.js';
-import { buildEncryptor, makeClient } from '../sync/client.js';
 import type { Session } from '../sync/identity.js';
 import {
   getSpaceAccessEntry,
@@ -23,7 +21,7 @@ import {
   localSpaceAccessEntries,
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
-import { keyringName, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
+import { spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
 import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, readSpaces, updateSpacesDoc } from './registry.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
 import { toBase64Url, fromBase64Url } from '../sync/base64url.js';
@@ -45,35 +43,9 @@ interface SpaceInvite {
   cap: unknown;
 }
 
-function isAlreadyPresentRecipient(err: unknown): boolean {
-  return err instanceof Error && /already present in epoch/.test(err.message);
-}
-
 /**
- * Owner-side: add a recipient's KEM key to a SPACE keyring (one keyring → every
- * object in the space). Reused by {@link inviteToSpace} and by device pairing.
- */
-export async function addDeviceToSpaceKeyring(
-  session: Session,
-  spaceId: string,
-  recipient: { kemPub: string; userId: string },
-): Promise<void> {
-  try {
-    await addCollectionRecipient(
-      session.chatClient,
-      keyringName(spaceId),
-      { subKem: recipient.kemPub, userId: recipient.userId, label: recipient.userId.slice(0, 8) },
-      { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
-      { trustedAdders: [session.keys.edPub] },
-    );
-  } catch (err) {
-    if (!isAlreadyPresentRecipient(err)) throw err;
-  }
-}
-
-/**
- * Owner: invite an identity into a PRIVATE space. Adds them to the keyring, records
- * them in the roster, and mints a single space-scoped member cap.
+ * Owner: invite an identity into a space. Records them in the roster and mints a
+ * space-scoped member cap. Encryption is per-node — there is no space keyring.
  * Returns the invite bundle JSON.
  */
 export async function inviteToSpace(
@@ -85,7 +57,6 @@ export async function inviteToSpace(
 ): Promise<string> {
   const req = JSON.parse(requestJson) as JoinRequest;
   if (!req.edPub || !req.kemPub || !req.userId) throw new Error('That is not a valid join request.');
-  await addDeviceToSpaceKeyring(session, spaceId, { kemPub: req.kemPub, userId: req.userId });
   await addSpaceMember(session.accountClient, spaceId, session.userId, req.userId);
   // NOTE: 'chat' is the cap collection the deployed server's space-member enricher recognises.
   const cap = await mintMemberCap(
@@ -105,22 +76,18 @@ export async function inviteToSpace(
 }
 
 /**
- * Invitee: accept a PRIVATE space invite — verify keyring access, store the cap,
- * and register the space. Returns the joined space.
+ * Invitee: accept a space invite — store the cap and register the space.
+ * Returns the joined space.
  */
 export async function acceptSpaceInvite(session: Session, inviteJson: string): Promise<Space> {
   const inv = JSON.parse(inviteJson) as Partial<SpaceInvite>;
-  const cap = inv.cap as { kind?: string; sub?: string; iss?: string } | undefined;
+  const cap = inv.cap as { kind?: string; sub?: string } | undefined;
   if (!cap || !inv.spaceId) throw new Error('That is not a valid space invite.');
   if (cap.kind !== 'member') throw new Error('That is not a valid space invite.');
   if (!cap.sub || cap.sub !== session.keys.edPub) {
     throw new Error('This invite was issued for a different identity.');
   }
-  if (!cap.iss) throw new Error('This invite is missing its issuer.');
   const spaceId = inv.spaceId;
-  const client = makeClient(cap, session.keys.edPriv);
-  const enc = await buildEncryptor(client, session.keys, spaceId, [cap.iss]);
-  if (!enc) throw new Error("Accepted, but you're not in the space keyring yet — ask the owner to re-invite.");
   const capJson = JSON.stringify(cap);
   const name = inv.spaceName?.trim() || `space-${spaceId.slice(-6)}`;
   const space: Space = { id: spaceId, name, short: name.slice(0, 2).toUpperCase(), members: 1 };
@@ -193,21 +160,16 @@ export async function createSpaceInviteLink(
 }
 
 /**
- * Any user: join a PUBLIC space by redeeming an invite link token.
+ * Any user: join a space by redeeming an invite link token.
  * Stores the link credential locally and seals it into the synced `_spaces` doc.
  */
 export async function joinSpaceByLink(session: Session, token: SpaceInviteLinkToken): Promise<Space> {
-  const cap = token.cap as { iss?: string };
-  const ownerId = cap.iss ? await userIdFromEdPub(cap.iss) : undefined;
   const name = token.spaceName.trim() || `space-${token.spaceId.slice(-6)}`;
   const space: Space = {
     id: token.spaceId,
     name,
     short: name.slice(0, 2).toUpperCase(),
     members: 1,
-    visibility: 'public',
-    ...(ownerId ? { ownerId } : {}),
-    write: token.write,
   };
   const accessPayload = { cap: token.cap, key: token.key, write: token.write };
   const sealed = await sealToSelf(session, JSON.stringify(accessPayload));

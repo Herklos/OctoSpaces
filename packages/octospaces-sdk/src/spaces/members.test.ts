@@ -75,13 +75,20 @@ describe('acceptSpaceInvite validation', () => {
     ).rejects.toThrow('different identity');
   });
 
-  it('rejects invite missing iss', async () => {
+  it('accepts invite with no iss field (no longer required — keyrings are per-node now)', async () => {
     const inv = JSON.stringify({
       spaceId: 'sp-x',
+      spaceName: 'My Space',
       cap: { kind: 'member', sub: 'my-pub' },
     });
+    // Should NOT throw on missing iss — the iss check was removed with space keyrings.
+    // The accountClient.push mock is needed for addJoinedSpaceWithCap.
+    const fakeClient = {
+      pull: () => Promise.resolve({ data: { v: 1, spaces: [], caps: {}, pubAccess: {} }, hash: null }),
+      push: () => Promise.resolve(),
+    };
     await expect(
-      acceptSpaceInvite({ keys: { edPub: 'my-pub' }, accountClient: {} } as never, inv),
-    ).rejects.toThrow('missing its issuer');
+      acceptSpaceInvite({ keys: { edPub: 'my-pub' }, accountClient: fakeClient, userId: 'alice' } as never, inv),
+    ).resolves.toMatchObject({ id: 'sp-x' });
   });
 });

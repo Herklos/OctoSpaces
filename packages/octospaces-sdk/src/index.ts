@@ -11,12 +11,12 @@ export type { KvAdapter } from './core/adapters.js';
 // Domain types
 export type {
   ID,
+  NodeAccess,
   ObjectNode,
   ObjectType,
   ObjectsIndex,
   ObjectContentKind,
   Space,
-  SpaceVisibility,
   CapMap,
   PubAccessMap,
   DmMap,
@@ -33,13 +33,22 @@ export {
   OBJECT_COLLECTIONS,
   ownerScope,
   spaceMemberScope,
+  nodeMemberScope,
   accountScope,
   linkedDeviceScope,
-  keyringName,
-  keyringPull,
-  keyringPush,
+  nodeKeyringName,
+  nodeKeyringPull,
+  nodeKeyringPush,
   objIndexPull,
   objIndexPush,
+  objPubName,
+  objPubPull,
+  objPubPush,
+  objInvName,
+  objInvPull,
+  objInvPush,
+  objectDirName,
+  objectDirPull,
   spacesPull,
   spacesPush,
   spaceAccessPull,
@@ -56,8 +65,6 @@ export {
   typesIndexPush,
   attachmentPull,
   attachmentPush,
-  spaceIndexName,
-  spaceIndexPull,
   userIdFromEdPub,
   bytesToHex,
 } from './sync/paths.js';
@@ -108,9 +115,15 @@ export type {
 export { sealToSelf, unsealFromSelf, sealToRecipient, unsealFromRecipient } from './sync/account-seal.js';
 export type { SealedBlob } from './sync/account-seal.js';
 
-// Space access (replaces SpaceEncryptor)
-export { SpaceAccessError, getSpaceAccess, buildSpaceAccess, clearSpaceAccessCache } from './sync/space-access.js';
-export type { SpaceAccessHandle } from './sync/space-access.js';
+// Node access (per-node encryptor + client resolver, replaces per-space access)
+export {
+  SpaceAccessError,
+  getSpaceClient,
+  getNodeAccess,
+  buildNodeAccess,
+  clearNodeAccessCache,
+} from './sync/space-access.js';
+export type { NodeAccessHandle } from './sync/space-access.js';
 
 // Space access store (replaces member-caps + pubspace-caps)
 export {
@@ -118,6 +131,9 @@ export {
   getSpaceAccessEntry,
   saveSpaceAccessEntry,
   removeSpaceAccessEntry,
+  getNodeAccessEntry,
+  saveNodeAccessEntry,
+  removeNodeAccessEntry,
   localSpaceAccessEntries,
   memberCapsFromStore,
   linkAccessFromStore,
@@ -156,7 +172,6 @@ export {
   makeJoinRequest,
   inviteToSpace,
   acceptSpaceInvite,
-  addDeviceToSpaceKeyring,
   encodeSpaceInviteLink,
   decodeSpaceInviteLink,
   createSpaceInviteLink,
@@ -164,6 +179,19 @@ export {
   recoverSpaceAccess,
 } from './spaces/members.js';
 export type { JoinRequest, SpaceInviteLinkToken } from './spaces/members.js';
+
+// Nodes (per-node creation + access management + invite flows)
+export {
+  createNode,
+  setNodeAccess,
+  inviteToNode,
+  acceptNodeInvite,
+  createNodeInviteLink,
+  decodeNodeInviteLink,
+  encodeNodeInviteLink,
+  joinNodeByLink,
+} from './spaces/nodes.js';
+export type { CreateNodeInput, NodeInviteBundle, NodeInviteLinkToken } from './spaces/nodes.js';
 
 // Object core
 export {
@@ -185,6 +213,7 @@ export {
   pushIndexSeed,
   seedSpaceObjectIndex,
   updateObjectIndex,
+  readObjectTree,
 } from './spaces/object-index.js';
 
 // Pairing

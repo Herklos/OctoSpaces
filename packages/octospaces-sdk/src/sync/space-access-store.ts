@@ -88,6 +88,23 @@ export function removeSpaceAccessEntry(spaceId: string): void {
   persist();
 }
 
+// ── Per-node access entries (keyed by `${spaceId}:${nodeId}`) ────────────────
+
+/** Look up a per-node invite access entry. Returns null if not invited or unknown. */
+export function getNodeAccessEntry(spaceId: string, nodeId: string): SpaceAccessEntry | null {
+  return cache[`${spaceId}:${nodeId}`] ?? null;
+}
+
+/** Persist an invite access entry for one node. */
+export function saveNodeAccessEntry(spaceId: string, nodeId: string, entry: SpaceAccessEntry): void {
+  saveSpaceAccessEntry(`${spaceId}:${nodeId}`, entry);
+}
+
+/** Forget a node's invite access entry (e.g. on leaving the node). */
+export function removeNodeAccessEntry(spaceId: string, nodeId: string): void {
+  removeSpaceAccessEntry(`${spaceId}:${nodeId}`);
+}
+
 /** A snapshot of the in-memory cache — used by `recoverSpaceAccess` to find entries
  *  not yet on the server. */
 export function localSpaceAccessEntries(): SpaceAccessMap {
