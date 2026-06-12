@@ -276,7 +276,7 @@ step 4 and wipe `pubspaces/` after the index relocate.
 
 File: `Infra/sync/server/drakkar_sync/server.py`
 
-Mount `drakkar_sync/apps/spaces/` at `/v1/spaces`:
+Mount `drakkar_sync/apps/octospaces/` at `/v1/octospaces`:
 - Collections: `spaces`, `rooms`, `chatkeyring`, `spaceindex` only (no `objindex` etc. — space
   index data lives in each app's own namespace).
 - Role enricher: `make_space_role_enricher` (reads `spaces/{spaceId}/_rooms`).
@@ -296,4 +296,4 @@ Mount `drakkar_sync/apps/spaces/` at `/v1/spaces`:
 - [ ] **App**: replace pubspace call sites per the table above
 - [ ] **App** (optional): adopt `octospaces-ui` primitives after theme contract satisfied
 - [ ] **Data migration**: for public spaces — relocate `pubobjindex` to `spaces/{spaceId}/objects/_index` (nodes already correct shape); relocate `pubstream` logs to `spaces/{spaceId}/streams/{roomId}` or accept history loss; synthesize `_rooms` with `visibility:'public'`. For private spaces: nothing to convert (already ObjectNodes).
-- [ ] **Infra**: add `spaces` namespace app at `/v1/spaces`
+- [ ] **Infra**: add `octospaces` namespace app at `/v1/octospaces`
