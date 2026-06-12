@@ -318,24 +318,25 @@ Vestigial `general` room + `cat-channels` category nodes that exist in live spac
 by `buildTree` (which reparents orphans to root) and hidden by `showsInWorkTree`. A lazy cleanup
 helper (`stripRoomNodes`) strips them on the next index write — no forced migration pass required.
 
-### 11.2 — Access record leaf rename: `_rooms` → `_access`
+### 11.2 — Access record leaf rename: `_rooms` → `_access` ✅
 
-OctoSpaces now uses `_access` as its storage leaf; OctoVault keeps `_rooms` until it adopts
-this migration. When OctoVault is ready:
+**Done (dev clean break — no data copy needed).**
 
-1. **For each space**: copy `spaces/{spaceId}/_rooms` to `spaces/{spaceId}/_access`.
-2. **Flip the enricher**: pass `registry_path="spaces/{id}/_access"` to
-   `make_space_role_enricher` in `Infra/…/octovault/__init__.py` and update
-   `apps/server/src/space-role.ts` to read `_access`.
-3. **Update collection names**: `rooms` → `spaceregistry`, `chatkeyring` → `spacekeyring`.
-4. Retire the old `_rooms` docs after a migration window.
+1. ~~For each space: copy `spaces/{spaceId}/_rooms` to `spaces/{spaceId}/_access`.~~
+   Dev clean break: wipe `STARFISH_DATA_DIR` and start fresh.
+2. **Enricher flipped**: `registry_path="spaces/{id}/_access"` in
+   `Infra/…/octovault/__init__.py`; `apps/server/src/space-role.ts` reads `_access`.
+3. **Collection names updated**: `keyring` → `spacekeyring`; `spaceregistry` storage
+   path `_rooms` → `_access`; `objindex` encryption `delegated` → `none`;
+   `objpub` and `objinv` added.
+4. `_rooms` docs will never exist in the new clean-break deployment.
 
 ### 11.3 — Keep bespoke (do not convert)
 
 | Data | Why it stays bespoke |
 |---|---|
 | `Space` container doc / `_spaces` SpacesDoc | Account-level registry — not object-tree content |
-| Access record `{v, owner, members, name, image}` | Control record — keep at `_rooms` until §11.2 |
+| Access record `{v, owner, members, name, image}` | Control record — now at `_access` (§11.2 complete) |
 | `typeindex` custom-type registry | Schema metadata — not content nodes |
 | Profile, devices, keyring | Identity/auth data — outside object tree |
 | Device-local `Vault` | Local encrypted storage — never on the object path |
@@ -428,16 +429,18 @@ in OctoVault deployments:
 
 ## Summary checklist
 
-- [ ] **Starfish**: bump `@drakkar.software/starfish-*` to `3.0.0-alpha.27`; fix `ScopePreset.paths` guards and `userIdFromEdPub` rename
-- [ ] **Deps**: add `octospaces-sdk@^0.1.0` + `octospaces-ui@^0.1.0`
-- [ ] **octovault-sdk**: declare vault ObjectType constants (`folder`/`page`/`board`/`task`/`file`/`image`/`automation`) as own strings (§11.0); remove any import of removed SDK symbols (`BuiltinObjectType`, `RoomSubtype`, `AutomationMeta`, `Room`, `RoomKind`, `categoryId`, `objectsToRoomCategories`, `readSpaceIndexRooms`, `readSpaceRooms`, `seedIndexNodes`, etc.)
-- [ ] **Config**: call `configureOctoSpaces` at boot
-- [ ] **Files**: delete replaced files; re-export shared symbols
-- [ ] **Types**: `Space.type` → `Space.visibility` global search-replace
-- [ ] **Call sites**: replace pubspace call sites per the table above
-- [ ] **Paths**: extend `accountScope` with vault-specific collections if needed
-- [ ] **UI**: wrap root in `OctoSpacesThemeProvider` (theme already satisfies the contract)
-- [ ] **Native** (if applicable): add `platform` import
-- [ ] **Data migration — access record**: copy `_rooms` → `_access` per space; flip enricher to `_access`; rename collections `rooms`→`spaceregistry`, `chatkeyring`→`spacekeyring` (§11.2)
-- [ ] **Data migration — public spaces**: relocate `pubObjIndex` to `spaces/{spaceId}/objects/_index`; strip room/category nodes; re-tag automation subtype to `type:'automation' + meta`; synthesize access record with `visibility:'public'` (§11.4). For private spaces: nothing to convert (already ObjectNodes); vestigial nodes cleaned lazily.
-- [ ] **Server**: rebuild public-space directory projection from `spaceregistry`-collection `_access` writes
+- [x] **Starfish**: bump `@drakkar.software/starfish-*` to `3.0.0-alpha.27`; fix `ScopePreset.paths` guards and `userIdFromEdPub` rename
+- [x] **Deps**: add `octospaces-sdk@0.4.3` + `octospaces-ui@0.1.0`
+- [x] **octovault-sdk**: declare vault ObjectType constants (`folder`/`page`/`board`/`task`/`file`/`image`/`automation`) as own strings (§11.0); remove all removed SDK symbols (`BuiltinObjectType`, `RoomSubtype`, `Room`, `RoomKind`, `categoryId`, `objectsToRoomCategories`, etc.)
+- [x] **Config**: `configureOctoVault` now calls `configureOctoSpaces` + octospaces `configureKv` at boot
+- [x] **Files**: replaced files deleted; shared symbols re-exported from octospaces-sdk
+- [x] **Types**: `Space.type`/`ownerId`/`write` removed; per-node `access`/`enc` model adopted
+- [x] **Call sites**: pubspace call sites replaced — `isPublicSpaceId` branches removed; `getSpaceEncryptor` → `getNodeAccess`; `recoverPubspaceAccess` → `recoverSpaceAccess`; `joinPublicSpace` → `joinSpaceByLink`/`joinNodeByLink`/`acceptSpaceInvite`
+- [x] **Paths**: vault `accountScope` extended in `paths.ts`; `objLogName`/`objDocName`/`attachmentName`/etc. re-exported from octospaces-sdk@0.4.3
+- [ ] **UI**: wrap root in `OctoSpacesThemeProvider` (theme adapter + `resolveOctoSpacesTheme` still pending — Phase 4)
+- [x] **Native**: `platform` import added at boot
+- [x] **Data migration — access record**: enricher flipped to `_access`; collections renamed `spaceregistry`/`spacekeyring`; `objindex` encryption changed to `none`; `objpub`/`objinv` added. **Dev clean break** — wipe `STARFISH_DATA_DIR` before first boot with new config.
+- [x] **Data migration — public spaces**: pubspaces removed (per-node `access:'public'` replaces them). No relocation for dev data — clean break.
+- [x] **Server/Infra**: `apps/server/src/config.ts` + `Infra/…/octovault/collections.py` updated in lockstep; Infra `__init__.py` drops `make_pubspace_role_enricher` and passes `registry_path="spaces/{id}/_access"`
+- [ ] **Server**: rebuild public-space directory projection from `objpub`-collection writes (deferred — Phase 5)
+- [ ] **Promoted to octospaces-sdk@0.4.3**: `previewInvite`, `matchTitle`/`rankResults`, `registerPull`/`dispatchDocChange` live-sync bus; `MuteValue`/`ReadValue`/`PresenceStatus`/`VerificationLevel`/`*Name` path helpers exported
