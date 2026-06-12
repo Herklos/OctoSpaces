@@ -20,6 +20,7 @@ export type {
   Room,
   RoomKind,
   Space,
+  SpaceVisibility,
   CapMap,
   PubAccessMap,
   DmMap,
@@ -39,22 +40,17 @@ export {
   spaceMemberScope,
   accountScope,
   linkedDeviceScope,
-  pubspaceScope,
   keyringName,
   keyringPull,
   keyringPush,
   objIndexPull,
   objIndexPush,
-  pubObjIndexPull,
-  pubObjIndexPush,
   spacesPull,
   spacesPush,
   roomsRegistryPull,
   roomsRegistryPush,
   profilePull,
   profilePush,
-  pubspaceRoomsPull,
-  pubspaceRoomsPush,
   objLogPull,
   objLogPush,
   objDocPull,
@@ -63,12 +59,9 @@ export {
   objectBlobPush,
   typesIndexPull,
   typesIndexPush,
-  pubObjDocPull,
-  pubObjDocPush,
-  pubObjLogPull,
-  pubObjLogPush,
   attachmentPull,
   attachmentPush,
+  spaceIndexPull,
   userIdFromEdPub,
   bytesToHex,
 } from './sync/paths.js';
@@ -119,10 +112,22 @@ export type {
 export { sealToSelf, unsealFromSelf, sealToRecipient, unsealFromRecipient } from './sync/account-seal.js';
 export type { SealedBlob } from './sync/account-seal.js';
 
-// Space access
-export { SpaceAccessError } from './core/space-access-error.js';
-export { getSpaceEncryptor, buildSpaceEncryptor, clearSpaceEncryptors } from './sync/space-encryptor.js';
-export type { SpaceEncryptor } from './sync/space-encryptor.js';
+// Space access (replaces SpaceEncryptor)
+export { SpaceAccessError, getSpaceAccess, buildSpaceAccess, clearSpaceAccessCache } from './sync/space-access.js';
+export type { SpaceAccessHandle } from './sync/space-access.js';
+
+// Space access store (replaces member-caps + pubspace-caps)
+export {
+  hydrateSpaceAccessStore,
+  getSpaceAccessEntry,
+  saveSpaceAccessEntry,
+  removeSpaceAccessEntry,
+  localSpaceAccessEntries,
+  memberCapsFromStore,
+  linkAccessFromStore,
+  clearSpaceAccessStore,
+} from './sync/space-access-store.js';
+export type { SpaceAccessEntry, SpaceAccessMap } from './sync/space-access-store.js';
 
 // Registry
 export {
@@ -140,9 +145,10 @@ export {
   readRooms,
   writeRooms,
   addSpaceMember,
+  removeSpaceMember,
   addJoinedSpace,
   addJoinedSpaceWithCap,
-  addJoinedPublicSpaceWithAccess,
+  addJoinedSpaceWithLinkAccess,
   createSpace,
   normalizeCategories,
   reconcileSpaceMeta,
@@ -158,49 +164,13 @@ export {
   inviteToSpace,
   acceptSpaceInvite,
   addDeviceToSpaceKeyring,
-  getMemberCap,
+  encodeSpaceInviteLink,
+  decodeSpaceInviteLink,
+  createSpaceInviteLink,
+  joinSpaceByLink,
+  recoverSpaceAccess,
 } from './spaces/members.js';
-export type { JoinRequest } from './spaces/members.js';
-
-// Member caps
-export {
-  hydrateMemberCaps,
-  saveMemberCap,
-  removeMemberCap,
-  clearMemberCaps,
-} from './sync/member-caps.js';
-
-// Pubspace caps
-export {
-  hydratePubspaceCaps,
-  mergePubspaceAccess,
-  localPubspaceEntries,
-  getPubspaceAccess,
-  savePubspaceAccess,
-  removePubspaceAccess,
-  clearPubspaceCaps,
-} from './sync/pubspace-caps.js';
-export type { PubspaceAccess, AccessMap } from './sync/pubspace-caps.js';
-
-// Public spaces
-export {
-  isPublicSpaceId,
-  publicSpaceAuth,
-  publicSpaceClient,
-  encodePublicInviteLink,
-  decodePublicInvite,
-  createPublicSpace,
-  createPublicInvite,
-  joinPublicSpace,
-  recoverPubspaceAccess,
-  readPublicRooms,
-  readPublicRoomsDoc,
-  createPublicRoom,
-  updatePublicSpaceMeta,
-  updatePublicRoomsRegistry,
-  updatePublicObjectIndex,
-} from './spaces/pubspace.js';
-export type { PublicInviteToken } from './spaces/pubspace.js';
+export type { JoinRequest, SpaceInviteLinkToken } from './spaces/members.js';
 
 // Object core
 export {
@@ -226,11 +196,11 @@ export type { ObjectTreeNode, NewObjectInput, AdaptedCategory, SeedRoom } from '
 // Object index
 export {
   readIndexRooms,
-  readPublicIndexRooms,
-  readPrivateIndexRooms,
-  readPrivateSpaceRooms,
+  readSpaceIndexRooms,
+  readSpaceRooms,
   pushIndexSeed,
   seedSpaceObjectIndex,
+  updateObjectIndex,
 } from './spaces/object-index.js';
 
 // Pairing

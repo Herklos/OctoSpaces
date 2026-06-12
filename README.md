@@ -11,6 +11,8 @@ pnpm monorepo housing the shared spaces layer for Drakkar Software apps.
 
 Everything in a space is an **`ObjectNode`** — a typed, ordered, tree-able unit with an `id`, `type`, `subtype`, `parentId`, and `order`. Rooms, categories, docs, tasks are all objects discriminated by `type`. The SDK is domain-agnostic: no chat/page/board vocabulary in names, paths, or KV keys.
 
+**Private and public spaces are unified on one path family.** Both live under `spaces/{spaceId}/**` with the same `OBJECT_COLLECTIONS` cap scopes. A public space has `visibility:'public'` in its `_rooms` access record; its object index is plaintext (no keyring, `encryptor: null`). The Starfish server never validates or decrypts content — auth is roster-based via the space-role enricher — so no server changes are required to host public spaces.
+
 Sync is powered by the **Starfish** protocol (`@drakkar.software/starfish-*`, E2EE, cap-cert auth). The two apps (OctoChat and OctoVault) consume these packages as npm dependencies; the concrete theme values, env vars, and app-specific path extensions stay in each app.
 
 ```
@@ -85,8 +87,26 @@ const linked = await buildLinkedSession(pairingToken, deviceLabel, kv);
 ```ts
 import { createSpace, readSpaces, updateSpacesDoc } from '@drakkar.software/octospaces-sdk';
 
+// Private (E2EE) space — default
 const space = await createSpace(session, 'My Space');
-const spaces = await readSpaces(session);
+
+// Public (plaintext) space — same path family, no keyring
+const pub = await createSpace(session, 'Public Docs', { visibility: 'public' });
+
+const spaces = await readSpaces(session.accountClient, session.userId);
+```
+
+#### Link-based joins (public spaces)
+
+```ts
+import { createSpaceInviteLink, joinSpaceByLink, decodeSpaceInviteLink } from '@drakkar.software/octospaces-sdk';
+
+// Owner: create a shareable link
+const { link } = await createSpaceInviteLink(session, spaceId, 'Public Docs', true, 'https://app.example.com');
+
+// Guest: redeem the link
+const token = decodeSpaceInviteLink(fragment);
+const joined = await joinSpaceByLink(session, token);
 ```
 
 #### Object tree

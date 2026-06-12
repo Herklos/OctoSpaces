@@ -29,7 +29,7 @@ export type CapMap = Record<string, string>;
  *  member cap (safe in the clear — see {@link CapMap}), a public-join credential
  *  embeds a bearer secret, so it is sealed before riding in the plaintext `_spaces`
  *  doc. Recovered on any device with the same seed. See `account-seal.ts` and
- *  `pubspace-caps.ts`. */
+ *  `space-access-store.ts`. */
 export type PubAccessMap = Record<string, import('../sync/account-seal.js').SealedBlob>;
 
 /** Maps a DM peer's userId → the private DM-space id shared with them. */
@@ -55,6 +55,9 @@ export interface ReadPrefs {
   rooms: Record<string, ReadValue>;
 }
 
+/** Whether a space encrypts its content client-side. */
+export type SpaceVisibility = 'private' | 'public';
+
 export interface Space {
   id: ID;
   name: string;
@@ -64,10 +67,10 @@ export interface Space {
   image?: string;
   members: number;
   unread?: number;
-  /** 'private' (E2EE keyring space, the default) or 'public' (plaintext, joined via
-   *  a space-wide invitation link). Absent ⇒ treat as 'private' (back-compat). */
-  type?: 'private' | 'public';
-  /** Public spaces only: the owner's userId (the cap issuer + storage path owner). */
+  /** 'private' (E2EE keyring, the default) or 'public' (plaintext, joined via a
+   *  space-wide invitation link). Absent ⇒ treat as 'private' (back-compat). */
+  visibility?: SpaceVisibility;
+  /** Public spaces only: the owner's userId (derived from the cap issuer). */
   ownerId?: string;
   /** Public spaces only (joiner side): whether this identity's invite link grants write. */
   write?: boolean;

@@ -75,45 +75,6 @@ export const typesIndexName = (spaceId: string) => `spaces/${spaceId}/types/_ind
 export const typesIndexPull = (spaceId: string) => pull(typesIndexName(spaceId));
 export const typesIndexPush = (spaceId: string) => push(typesIndexName(spaceId));
 
-// ── Unified Object index + content (public/plaintext) ─────────────────────────
-const pubspaceBase = (ownerId: string, spaceId: string) => `pubspaces/${ownerId}/${spaceId}`;
-
-export const pubObjIndexName = (ownerId: string, spaceId: string) => `${pubspaceBase(ownerId, spaceId)}/objects/_index`;
-export const pubObjIndexPull = (ownerId: string, spaceId: string) => pull(pubObjIndexName(ownerId, spaceId));
-export const pubObjIndexPush = (ownerId: string, spaceId: string) => push(pubObjIndexName(ownerId, spaceId));
-
-export const pubObjDocName = (ownerId: string, spaceId: string, objectId: string) =>
-  `${pubspaceBase(ownerId, spaceId)}/objects/docs/${objectId}`;
-export const pubObjDocPull = (ownerId: string, spaceId: string, objectId: string) =>
-  pull(pubObjDocName(ownerId, spaceId, objectId));
-export const pubObjDocPush = (ownerId: string, spaceId: string, objectId: string) =>
-  push(pubObjDocName(ownerId, spaceId, objectId));
-
-export const pubObjLogName = (ownerId: string, spaceId: string, objectId: string) =>
-  `${pubspaceBase(ownerId, spaceId)}/objects/logs/${objectId}`;
-export const pubObjLogPull = (ownerId: string, spaceId: string, objectId: string) =>
-  pull(pubObjLogName(ownerId, spaceId, objectId));
-export const pubObjLogPush = (ownerId: string, spaceId: string, objectId: string) =>
-  push(pubObjLogName(ownerId, spaceId, objectId));
-
-// ── Public spaces (plaintext; NOT encrypted) ──────────────────────────────────
-export const pubspaceRoomsName = (ownerId: string, spaceId: string) => `${pubspaceBase(ownerId, spaceId)}/_rooms`;
-export const pubspaceRoomsPull = (ownerId: string, spaceId: string) => pull(pubspaceRoomsName(ownerId, spaceId));
-export const pubspaceRoomsPush = (ownerId: string, spaceId: string) => push(pubspaceRoomsName(ownerId, spaceId));
-
-// ── Self-service webhook registry (per public space) ──────────────────────────
-export const pubspaceWebhooksName = (ownerId: string, spaceId: string) => `${pubspaceBase(ownerId, spaceId)}/_webhooks`;
-export const pubspaceWebhooksPull = (ownerId: string, spaceId: string) => pull(pubspaceWebhooksName(ownerId, spaceId));
-export const pubspaceWebhooksPush = (ownerId: string, spaceId: string) => push(pubspaceWebhooksName(ownerId, spaceId));
-
-// ── Public room messages (plaintext, append-only) ─────────────────────────────
-export const pubstreamRoomName = (ownerId: string, spaceId: string, roomId: string) =>
-  `pubspaces/${ownerId}/${spaceId}/streams/${roomId}`;
-export const pubstreamRoomPull = (ownerId: string, spaceId: string, roomId: string) =>
-  pull(pubstreamRoomName(ownerId, spaceId, roomId));
-export const pubstreamRoomPush = (ownerId: string, spaceId: string, roomId: string) =>
-  push(pubstreamRoomName(ownerId, spaceId, roomId));
-
 // ── Public-space directory index (server-maintained projection) ───────────────
 export const spaceIndexName = (shard: 'public') => `_index/spaces/${shard}`;
 export const spaceIndexPull = (shard: 'public') => pull(spaceIndexName(shard));
@@ -153,20 +114,19 @@ export function spaceMemberScope(spaceId: string, canWrite: boolean): ScopePrese
 }
 
 /**
- * Personal cap: profile + space registry + device directory + spaces + own public spaces.
+ * Personal cap: profile + space registry + device directory + all spaces.
  * Note: app-specific collections like `'dminbox'` (chat) are NOT included here —
  * add them in the consumer's own `paths.ts` extension.
  */
 export function accountScope(userId: string): ScopePreset {
   return {
     ops: ['read', 'list', 'write'],
-    collections: ['profile', 'devices', 'spaces', 'rooms', 'pubspace'],
+    collections: ['profile', 'devices', 'spaces', 'rooms'],
     paths: [
       `user/${userId}/profile`,
       `users/${userId}/_devices`,
       `user/${userId}/_spaces`,
       'spaces/**',
-      `pubspaces/${userId}/**`,
     ],
   };
 }
@@ -179,39 +139,13 @@ export function accountScope(userId: string): ScopePreset {
 export function linkedDeviceScope(userId: string): ScopePreset {
   return {
     ops: ['read', 'list', 'write'],
-    collections: [...OBJECT_COLLECTIONS, 'profile', 'devices', 'spaces', 'rooms', 'pubspace'],
+    collections: [...OBJECT_COLLECTIONS, 'profile', 'devices', 'spaces', 'rooms'],
     paths: [
       'spaces/**',
       `user/${userId}/profile`,
       `users/${userId}/_devices`,
       `user/${userId}/_spaces`,
-      `pubspaces/${userId}/**`,
     ],
-  };
-}
-
-/**
- * Link-bearer access to ONE public space at `pubspaces/{ownerId}/{spaceId}` —
- * space-wide (every room + the room registry), read-only or read/write.
- */
-export function pubspaceScope(ownerId: string, spaceId: string, canWrite = false): ScopePreset {
-  const ops: ('read' | 'write' | 'list')[] = canWrite ? ['read', 'list', 'write'] : ['read', 'list'];
-  return {
-    ops,
-    collections: ['pubspace'],
-    paths: [`pubspaces/${ownerId}/${spaceId}/**`],
-  };
-}
-
-/**
- * Bot scope for ONE public stream room — the scope of the `createPublicLink`
- * audience cap an owner mints so a bot/integration can APPEND to that room's log.
- */
-export function pubstreamBotScope(ownerId: string, spaceId: string, roomId: string): ScopePreset {
-  return {
-    ops: ['read', 'list', 'write'],
-    collections: ['pubstream'],
-    paths: [`pubspaces/${ownerId}/${spaceId}/streams/${roomId}`],
   };
 }
 

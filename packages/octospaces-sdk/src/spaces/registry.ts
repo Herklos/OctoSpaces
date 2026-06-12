@@ -8,7 +8,7 @@
 import { ConflictError, StarfishHttpError } from '@drakkar.software/starfish-client';
 import type { StarfishClient } from '@drakkar.software/starfish-client';
 
-import type { ArchivedDms, CapMap, DmMap, MutePrefs, PubAccessMap, ReadPrefs, Room, Space } from '../core/types.js';
+import type { ArchivedDms, CapMap, DmMap, MutePrefs, PubAccessMap, ReadPrefs, Room, Space, SpaceVisibility } from '../core/types.js';
 import type { SealedBlob } from '../sync/account-seal.js';
 import { randomId } from '../core/ids.js';
 import type { Session } from '../sync/identity.js';
@@ -24,6 +24,7 @@ export { DEFAULT_CATEGORY };
 export interface SpaceMeta {
   name?: string | null;
   image?: string | null;
+  visibility?: SpaceVisibility;
 }
 
 /** A resolved name/image update fanned out so the SpacesProvider adopts a
@@ -314,15 +315,16 @@ export function normalizeCategories(rooms: Room[], stored: unknown): string[] {
 export async function readRooms(
   client: StarfishClient,
   spaceId: string,
-): Promise<{ owner: string | null; members: string[]; name: string | null; image: string | null; hash: string | null }> {
+): Promise<{ owner: string | null; members: string[]; visibility: SpaceVisibility | null; name: string | null; image: string | null; hash: string | null }> {
   const res = await client.pull(roomsRegistryPull(spaceId)).catch((err: unknown) => {
     if (err instanceof StarfishHttpError && err.status === 404) return null;
     throw err;
   });
-  const data = res?.data as { owner?: string; members?: unknown[]; name?: string; image?: string } | undefined;
+  const data = res?.data as { owner?: string; members?: unknown[]; visibility?: string; name?: string; image?: string } | undefined;
   return {
     owner: typeof data?.owner === 'string' ? data.owner : null,
     members: Array.isArray(data?.members) ? data!.members!.filter((m): m is string => typeof m === 'string') : [],
+    visibility: data?.visibility === 'public' ? 'public' : null,
     name: typeof data?.name === 'string' ? data.name : null,
     image: typeof data?.image === 'string' ? data.image : null,
     hash: res?.hash ?? null,
@@ -339,9 +341,10 @@ export async function writeRooms(
 ): Promise<void> {
   const name = meta?.name?.trim() || undefined;
   const image = meta?.image || undefined;
+  const visibility = meta?.visibility === 'public' ? 'public' : undefined;
   await client.push(
     roomsRegistryPush(spaceId),
-    { v: 1, owner, members, ...(name ? { name } : {}), ...(image ? { image } : {}) },
+    { v: 1, owner, members, ...(visibility ? { visibility } : {}), ...(name ? { name } : {}), ...(image ? { image } : {}) },
     hash,
   );
 }
@@ -352,9 +355,20 @@ export async function addSpaceMember(
   ownerUserId: string,
   memberUserId: string,
 ): Promise<void> {
-  const { owner, members, name, image, hash } = await readRooms(client, spaceId);
+  const { owner, members, visibility, name, image, hash } = await readRooms(client, spaceId);
   if (memberUserId === (owner ?? ownerUserId) || members.includes(memberUserId)) return;
-  await writeRooms(client, spaceId, owner ?? ownerUserId, [...members, memberUserId], hash, { name, image });
+  await writeRooms(client, spaceId, owner ?? ownerUserId, [...members, memberUserId], hash, { name, image, visibility: visibility ?? undefined });
+}
+
+/** Remove a member from the space roster (used for link revocation). */
+export async function removeSpaceMember(
+  client: StarfishClient,
+  spaceId: string,
+  memberUserId: string,
+): Promise<void> {
+  const { owner, members, visibility, name, image, hash } = await readRooms(client, spaceId);
+  if (!members.includes(memberUserId)) return;
+  await writeRooms(client, spaceId, owner ?? memberUserId, members.filter((m) => m !== memberUserId), hash, { name, image, visibility: visibility ?? undefined });
 }
 
 export async function addJoinedSpace(client: StarfishClient, userId: string, space: Space): Promise<void> {
@@ -378,7 +392,7 @@ export async function addJoinedSpaceWithCap(
   }));
 }
 
-export async function addJoinedPublicSpaceWithAccess(
+export async function addJoinedSpaceWithLinkAccess(
   client: StarfishClient,
   userId: string,
   space: Space,
@@ -393,18 +407,29 @@ export async function addJoinedPublicSpaceWithAccess(
 
 /**
  * Create a new space owned by the identity. Seeds ONE generic `general` object node
- * into the encrypted object index (NO hardcoded channel name or category — the caller
- * can pass a different seed list via the lower-level {@link seedSpaceObjectIndex}
- * directly for a custom initial structure).
+ * into the object index (encrypted for private, plaintext for public).
+ *
+ * `opts.visibility` defaults to `'private'`.
  */
-export async function createSpace(session: Session, name: string): Promise<Space> {
+export async function createSpace(
+  session: Session,
+  name: string,
+  opts?: { visibility?: SpaceVisibility },
+): Promise<Space> {
   const { accountClient, userId } = session;
   const { spaces, hash } = await readSpaces(accountClient, userId);
   const trimmed = name.trim() || 'New Space';
+  const visibility = opts?.visibility ?? 'private';
   const id = newSpaceId();
-  const space: Space = { id, name: trimmed, short: trimmed.slice(0, 2).toUpperCase(), members: 1 };
-  await writeRooms(accountClient, id, userId, [], null, { name: trimmed });
-  await seedSpaceObjectIndex(session, id, [{ id: `${id}-general`, name: 'general', kind: 'channel', category: DEFAULT_CATEGORY }]);
+  const space: Space = {
+    id,
+    name: trimmed,
+    short: trimmed.slice(0, 2).toUpperCase(),
+    members: 1,
+    ...(visibility === 'public' ? { visibility: 'public', ownerId: userId, write: true } : {}),
+  };
+  await writeRooms(accountClient, id, userId, [], null, { name: trimmed, visibility: visibility === 'public' ? 'public' : undefined });
+  await seedSpaceObjectIndex(session, id, [{ id: `${id}-general`, name: 'general', kind: 'channel', category: DEFAULT_CATEGORY }], { visibility });
   await writeSpaces(accountClient, userId, [...spaces, space], hash);
   return space;
 }

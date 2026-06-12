@@ -1,20 +1,32 @@
 /**
- * Space membership (space-wide keyring model).
+ * Space membership — both keyring-based (private spaces) and link-based (public spaces).
  *
- * A *join request* is the invitee's identity (Ed/KEM pubkeys + userId). An *invite*
- * makes them a member of a whole SPACE: they're added to the space's keyring (so they
- * can decrypt every object in the space) and to its owner-written roster (so the server
- * grants them `space:member`), and handed a single space-scoped cap.
+ * PRIVATE join: the owner adds the invitee to the space keyring, records them in the
+ * roster, and mints a space-scoped member cap. The invitee verifies keyring access on
+ * accept and stores a `{kind:'member'}` entry.
+ *
+ * PUBLIC (link) join: the owner mints an ephemeral Ed/KEM keypair whose *private* key
+ * ships inside a URL-fragment token, adds the ephemeral userId to the roster so the
+ * server grants `space:member`, and mints a member cap scoped to that ephemeral subject.
+ * Any bearer of the link stores a `{kind:'link'}` entry. Revocation = `removeSpaceMember`.
  */
+import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
 import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
 import { mintMemberCap } from '@drakkar.software/starfish-sharing';
 
 import type { Space } from '../core/types.js';
 import { buildEncryptor, makeClient } from '../sync/client.js';
 import type { Session } from '../sync/identity.js';
-import { getMemberCap, saveMemberCap } from '../sync/member-caps.js';
-import { keyringName, spaceMemberScope } from '../sync/paths.js';
-import { addJoinedSpaceWithCap, addSpaceMember, readSpaces } from './registry.js';
+import {
+  getSpaceAccessEntry,
+  hydrateSpaceAccessStore,
+  localSpaceAccessEntries,
+  saveSpaceAccessEntry,
+} from '../sync/space-access-store.js';
+import { keyringName, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
+import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, readSpaces, updateSpacesDoc } from './registry.js';
+import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
+import { toBase64Url, fromBase64Url } from '../sync/base64url.js';
 
 export interface JoinRequest {
   edPub: string;
@@ -39,8 +51,7 @@ function isAlreadyPresentRecipient(err: unknown): boolean {
 
 /**
  * Owner-side: add a recipient's KEM key to a SPACE keyring (one keyring → every
- * object in the space). The caller must OWN the keyring — this is `space:owner`-gated
- * server-side. Reused by {@link inviteToSpace} and by device pairing.
+ * object in the space). Reused by {@link inviteToSpace} and by device pairing.
  */
 export async function addDeviceToSpaceKeyring(
   session: Session,
@@ -61,9 +72,9 @@ export async function addDeviceToSpaceKeyring(
 }
 
 /**
- * Owner: invite an identity into a space. Adds them to the space keyring, records
- * them in the roster (gates `space:member`), and mints a single space-scoped member
- * cap. Returns the invite bundle JSON.
+ * Owner: invite an identity into a PRIVATE space. Adds them to the keyring, records
+ * them in the roster, and mints a single space-scoped member cap.
+ * Returns the invite bundle JSON.
  */
 export async function inviteToSpace(
   session: Session,
@@ -77,7 +88,6 @@ export async function inviteToSpace(
   await addDeviceToSpaceKeyring(session, spaceId, { kemPub: req.kemPub, userId: req.userId });
   await addSpaceMember(session.accountClient, spaceId, session.userId, req.userId);
   // NOTE: 'chat' is the cap collection the deployed server's space-member enricher recognises.
-  // Consumer apps targeting a different server may need to override this collection name.
   const cap = await mintMemberCap(
     session.keys.edPriv,
     session.keys.edPub,
@@ -95,8 +105,8 @@ export async function inviteToSpace(
 }
 
 /**
- * Invitee: accept a space invite — verify keyring access with the cap, store it,
- * and register the space in your own list. Returns the joined space.
+ * Invitee: accept a PRIVATE space invite — verify keyring access, store the cap,
+ * and register the space. Returns the joined space.
  */
 export async function acceptSpaceInvite(session: Session, inviteJson: string): Promise<Space> {
   const inv = JSON.parse(inviteJson) as Partial<SpaceInvite>;
@@ -115,8 +125,147 @@ export async function acceptSpaceInvite(session: Session, inviteJson: string): P
   const name = inv.spaceName?.trim() || `space-${spaceId.slice(-6)}`;
   const space: Space = { id: spaceId, name, short: name.slice(0, 2).toUpperCase(), members: 1 };
   await addJoinedSpaceWithCap(session.accountClient, session.userId, space, capJson);
-  saveMemberCap(spaceId, capJson);
+  saveSpaceAccessEntry(spaceId, { kind: 'member', cap: capJson });
   return space;
 }
 
-export { getMemberCap };
+// ── Link-based joins (public spaces) ─────────────────────────────────────────
+
+/** A space invite link token (v:1, no ownerId — derive from cap.iss instead). */
+export interface SpaceInviteLinkToken {
+  v: 1;
+  spaceId: string;
+  spaceName: string;
+  cap: unknown;
+  /** The throwaway ephemeral subject's Ed25519 private key (hex). */
+  key: string;
+  write: boolean;
+}
+
+export function encodeSpaceInviteLink(origin: string, token: SpaceInviteLinkToken): string {
+  const base = origin.replace(/\/+$/, '');
+  return `${base}/join#${toBase64Url(JSON.stringify(token))}`;
+}
+
+export function decodeSpaceInviteLink(fragment: string): SpaceInviteLinkToken {
+  const frag = fragment.startsWith('#') ? fragment.slice(1) : fragment;
+  const tok = JSON.parse(fromBase64Url(frag)) as Partial<SpaceInviteLinkToken>;
+  if (!tok || !tok.spaceId || !tok.cap || !tok.key) {
+    throw new Error('That space invite link is malformed or incomplete.');
+  }
+  return {
+    v: 1,
+    spaceId: tok.spaceId,
+    spaceName: tok.spaceName ?? 'Space',
+    cap: tok.cap,
+    key: tok.key,
+    write: !!tok.write,
+  };
+}
+
+/**
+ * Owner: create a shareable invite link for a PUBLIC space.
+ *
+ * Mints an ephemeral Ed/KEM keypair, adds its userId to the roster (so the server
+ * grants `space:member` to any bearer), and encodes the private key + cap in the URL.
+ * Anyone with the link can join; revoke by calling `removeSpaceMember(ephemeralUserId)`.
+ */
+export async function createSpaceInviteLink(
+  session: Session,
+  spaceId: string,
+  spaceName: string,
+  write: boolean,
+  origin: string,
+): Promise<{ token: SpaceInviteLinkToken; link: string }> {
+  const ek = generateDeviceKeys();
+  const ephemeralUserId = await userIdFromEdPub(ek.edPub);
+  const cap = await mintMemberCap(
+    session.keys.edPriv,
+    session.keys.edPub,
+    { edPubHex: ek.edPub, kemPubHex: ek.kemPub, userIdHex: ephemeralUserId },
+    'chat',
+    spaceMemberScope(spaceId, write),
+  );
+  // Add the ephemeral userId to the roster so the server grants `space:member`
+  await addSpaceMember(session.accountClient, spaceId, session.userId, ephemeralUserId);
+  const token: SpaceInviteLinkToken = { v: 1, spaceId, spaceName, cap, key: ek.edPriv, write };
+  return { token, link: encodeSpaceInviteLink(origin, token) };
+}
+
+/**
+ * Any user: join a PUBLIC space by redeeming an invite link token.
+ * Stores the link credential locally and seals it into the synced `_spaces` doc.
+ */
+export async function joinSpaceByLink(session: Session, token: SpaceInviteLinkToken): Promise<Space> {
+  const cap = token.cap as { iss?: string };
+  const ownerId = cap.iss ? await userIdFromEdPub(cap.iss) : undefined;
+  const name = token.spaceName.trim() || `space-${token.spaceId.slice(-6)}`;
+  const space: Space = {
+    id: token.spaceId,
+    name,
+    short: name.slice(0, 2).toUpperCase(),
+    members: 1,
+    visibility: 'public',
+    ...(ownerId ? { ownerId } : {}),
+    write: token.write,
+  };
+  const accessPayload = { cap: token.cap, key: token.key, write: token.write };
+  const sealed = await sealToSelf(session, JSON.stringify(accessPayload));
+  await addJoinedSpaceWithLinkAccess(session.accountClient, session.userId, space, sealed);
+  saveSpaceAccessEntry(token.spaceId, { kind: 'link', cap: token.cap, key: token.key, write: token.write });
+  return space;
+}
+
+/**
+ * Single sign-in hydration: merges server-side caps (plaintext member caps from
+ * `_spaces.caps`) and sealed link access (from `_spaces.pubAccess`) into the
+ * unified space-access store. Call once on sign-in / account switch.
+ * Backfills any local-only entries to the server.
+ */
+export async function recoverSpaceAccess(
+  session: Session,
+  server: { caps: Record<string, string>; pubAccess: Record<string, import('../sync/account-seal.js').SealedBlob> },
+): Promise<void> {
+  // Unseal link access blobs
+  const linkAccess: Record<string, { cap: unknown; key: string; write: boolean }> = {};
+  for (const [spaceId, sealed] of Object.entries(server.pubAccess)) {
+    try {
+      const raw = await unsealFromSelf(session, sealed);
+      const parsed = JSON.parse(raw) as { cap: unknown; key: string; write: boolean };
+      if (parsed.cap && parsed.key) linkAccess[spaceId] = parsed;
+    } catch (e) {
+      console.error('[octospaces] recoverSpaceAccess: failed to unseal', spaceId, e);
+    }
+  }
+
+  await hydrateSpaceAccessStore(session.userId, server.caps, linkAccess);
+
+  // Backfill local-only entries to the server
+  const local = localSpaceAccessEntries();
+  const missingMemberCaps = Object.entries(local)
+    .filter(([id, e]) => e.kind === 'member' && !(id in server.caps));
+  const missingLinks = Object.entries(local)
+    .filter(([id, e]) => e.kind === 'link' && !(id in server.pubAccess));
+
+  if (missingMemberCaps.length === 0 && missingLinks.length === 0) return;
+
+  try {
+    const newCaps: Record<string, string> = {};
+    for (const [id, e] of missingMemberCaps) if (e.kind === 'member') newCaps[id] = e.cap;
+
+    const newPubAccess: Record<string, import('../sync/account-seal.js').SealedBlob> = {};
+    for (const [id, e] of missingLinks) {
+      if (e.kind === 'link') {
+        newPubAccess[id] = await sealToSelf(session, JSON.stringify({ cap: e.cap, key: e.key, write: e.write }));
+      }
+    }
+
+    await updateSpacesDoc(session.accountClient, session.userId, (cur) => ({
+      spaces: cur.spaces,
+      caps: { ...cur.caps, ...newCaps },
+      pubAccess: { ...cur.pubAccess, ...newPubAccess },
+    }));
+  } catch (e) {
+    console.error('[octospaces] recoverSpaceAccess: backfill failed', e);
+  }
+}

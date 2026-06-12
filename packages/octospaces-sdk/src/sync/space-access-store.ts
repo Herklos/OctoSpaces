@@ -1,0 +1,117 @@
+/**
+ * Unified local access store for spaces this identity has joined.
+ *
+ * Replaces the separate `member-caps.ts` (private spaces) and `pubspace-caps.ts`
+ * (public/link spaces). Two entry kinds:
+ *   - `member`: a member cap-cert (plain JSON, no bearer secret — safe to store
+ *     in the clear). Used for PRIVATE space keyring opens.
+ *   - `link`: an ephemeral-subject cap + the link's Ed25519 private key. Embeds a
+ *     bearer secret so it is SEALED in the synced `_spaces.pubAccess` field before
+ *     leaving this device; the local kv stores it plaintext only on the owning device.
+ *
+ * Two tiers (same as old member-caps): device-local kv (fast, offline) and the
+ * user's synced `_spaces` doc (durable source of truth; merged over local on hydrate).
+ * Keyed PER-USER so multiple accounts on one device never see each other's entries.
+ */
+import type { CapMap, PubAccessMap } from '../core/types.js';
+import type { SealedBlob } from './account-seal.js';
+import { kvGet, kvSet } from '../core/adapters.js';
+
+export type SpaceAccessEntry =
+  | { kind: 'member'; cap: string }
+  | { kind: 'link'; cap: unknown; key: string; write: boolean };
+
+export type SpaceAccessMap = Record<string, SpaceAccessEntry>;
+
+const keyFor = (userId: string) => `octospaces.spaceaccess.${userId}`;
+
+let cache: SpaceAccessMap = {};
+let activeKey: string | null = null;
+
+/**
+ * Load the active account's space-access entries into memory. Call (and await) on
+ * sign-in and on every account switch, before opening rooms.
+ *
+ * `serverCaps` (private member caps from `_spaces.caps`) and `serverPubAccess`
+ * (sealed link credentials from `_spaces.pubAccess`, already unsealed by the caller)
+ * are merged OVER the local kv cache (server wins).
+ */
+export async function hydrateSpaceAccessStore(
+  userId: string,
+  serverCaps: CapMap,
+  serverLinkAccess: Record<string, { cap: unknown; key: string; write: boolean }>,
+): Promise<void> {
+  const key = keyFor(userId);
+  if (activeKey === key) return;
+  activeKey = key;
+  cache = {};
+  const raw = await kvGet(key);
+  if (raw) {
+    try {
+      cache = JSON.parse(raw) as SpaceAccessMap;
+    } catch (e) {
+      console.error('[octospaces] space-access-store: corrupt cache, resetting:', e);
+      cache = {};
+    }
+  }
+  let changed = false;
+  for (const [spaceId, capJson] of Object.entries(serverCaps)) {
+    cache[spaceId] = { kind: 'member', cap: capJson };
+    changed = true;
+  }
+  for (const [spaceId, access] of Object.entries(serverLinkAccess)) {
+    cache[spaceId] = { kind: 'link', cap: access.cap, key: access.key, write: access.write };
+    changed = true;
+  }
+  if (changed) await kvSet(key, JSON.stringify(cache));
+}
+
+function persist(): void {
+  if (activeKey) void kvSet(activeKey, JSON.stringify(cache));
+}
+
+export function getSpaceAccessEntry(spaceId: string): SpaceAccessEntry | null {
+  return cache[spaceId] ?? null;
+}
+
+export function saveSpaceAccessEntry(spaceId: string, entry: SpaceAccessEntry): void {
+  cache = { ...cache, [spaceId]: entry };
+  persist();
+}
+
+/** Forget one space's access (on leaving that space). */
+export function removeSpaceAccessEntry(spaceId: string): void {
+  if (!(spaceId in cache)) return;
+  const next = { ...cache };
+  delete next[spaceId];
+  cache = next;
+  persist();
+}
+
+/** A snapshot of the in-memory cache — used by `recoverSpaceAccess` to find entries
+ *  not yet on the server. */
+export function localSpaceAccessEntries(): SpaceAccessMap {
+  return cache;
+}
+
+/** Build the `CapMap` slice (member entries only) for persisting into `_spaces.caps`. */
+export function memberCapsFromStore(): CapMap {
+  const out: CapMap = {};
+  for (const [id, e] of Object.entries(cache)) if (e.kind === 'member') out[id] = e.cap;
+  return out;
+}
+
+/** Build the `PubAccessMap` slice (link entries already sealed by the caller). */
+export function linkAccessFromStore(): Record<string, { cap: unknown; key: string; write: boolean }> {
+  const out: Record<string, { cap: unknown; key: string; write: boolean }> = {};
+  for (const [id, e] of Object.entries(cache)) {
+    if (e.kind === 'link') out[id] = { cap: e.cap, key: e.key, write: e.write };
+  }
+  return out;
+}
+
+/** Drop the in-memory cache (on account switch / sign-out). */
+export function clearSpaceAccessStore(): void {
+  cache = {};
+  activeKey = null;
+}

@@ -12,6 +12,7 @@ import {
   spacesPull,
   spacesPush,
   profilePull,
+  spaceIndexPull,
 } from './paths.js';
 
 describe('OBJECT_COLLECTIONS', () => {
@@ -58,12 +59,28 @@ describe('spaceMemberScope', () => {
     const scope = spaceMemberScope('sp-abc', false);
     expect(scope.ops).not.toContain('write');
   });
+
+  it('collections equal OBJECT_COLLECTIONS', () => {
+    const scope = spaceMemberScope('sp-abc', true);
+    expect(scope.collections).toEqual(OBJECT_COLLECTIONS);
+  });
 });
 
 describe('accountScope', () => {
   it('does NOT contain dminbox', () => {
     const scope = accountScope('user-1');
     expect(scope.collections).not.toContain('dminbox');
+  });
+
+  it('does NOT contain pubspace', () => {
+    const scope = accountScope('user-1');
+    expect(scope.collections).not.toContain('pubspace');
+  });
+
+  it('does NOT include pubspaces/ paths', () => {
+    const scope = accountScope('user-1');
+    const hasPubspaces = (scope.paths ?? []).some((p) => p.includes('pubspaces/'));
+    expect(hasPubspaces).toBe(false);
   });
 
   it('scopes to the given userId', () => {
@@ -76,6 +93,23 @@ describe('linkedDeviceScope', () => {
   it('contains both object and account collections', () => {
     const scope = linkedDeviceScope('user-1');
     expect(scope.collections).toEqual(expect.arrayContaining(['keyring', 'profile', 'spaces']));
+  });
+
+  it('does NOT contain pubspace', () => {
+    const scope = linkedDeviceScope('user-1');
+    expect(scope.collections).not.toContain('pubspace');
+  });
+
+  it('does NOT include pubspaces/ paths', () => {
+    const scope = linkedDeviceScope('user-1');
+    const hasPubspaces = (scope.paths ?? []).some((p) => p.includes('pubspaces/'));
+    expect(hasPubspaces).toBe(false);
+  });
+});
+
+describe('spaceIndexPull', () => {
+  it('returns a pull path for the public shard', () => {
+    expect(spaceIndexPull('public')).toContain('public');
   });
 });
 

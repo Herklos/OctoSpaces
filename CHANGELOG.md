@@ -8,6 +8,73 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## `@drakkar.software/octospaces-sdk`
 
+### [Unreleased] — 2026-06-12 (unified spaces refactor)
+
+#### Changed — **breaking** (pre-publish clean break; no consumers yet)
+
+- **Unified public + private spaces onto a single path family** — public spaces now live
+  under `spaces/{spaceId}/**` with the same OBJECT_COLLECTIONS scopes as private spaces.
+  The separate `pubspaces/{ownerId}/{spaceId}/**` path tree, `pubspace`/`pubstream`
+  collections, and all `pub*` path helpers are removed from the SDK.
+- `Space.type` renamed → `Space.visibility` (`'private' | 'public'`, absent ⇒ `'private'`).
+  New exported type `SpaceVisibility`.
+- `createSpace(session, name)` now accepts an optional third argument
+  `opts?: { visibility?: SpaceVisibility }`. Public-space creation skips the keyring.
+- `isPublicSpaceId` / `psp-` id prefix dropped — visibility is stored in data, not in
+  the id. All spaces mint `sp-*` via `newSpaceId()`.
+- `SpaceEncryptor` / `getSpaceEncryptor` / `buildSpaceEncryptor` / `clearSpaceEncryptors`
+  replaced by `SpaceAccessHandle` / `getSpaceAccess` / `buildSpaceAccess` /
+  `clearSpaceAccessCache`. The new accessor returns `encryptor: null` for public spaces
+  instead of refusing to resolve.
+- `hydrateMemberCaps` + `saveMemberCap` + `removeMemberCap` + `clearMemberCaps` and the
+  separate `hydratePubspaceCaps` / `mergePubspaceAccess` / `localPubspaceEntries` /
+  `getPubspaceAccess` / `savePubspaceAccess` / `removePubspaceAccess` / `clearPubspaceCaps`
+  replaced by the unified **`space-access-store`** API:
+  `hydrateSpaceAccessStore`, `getSpaceAccessEntry`, `saveSpaceAccessEntry`,
+  `removeSpaceAccessEntry`, `localSpaceAccessEntries`, `memberCapsFromStore`,
+  `linkAccessFromStore`, `clearSpaceAccessStore`. Entry shape:
+  `{ kind:'member', cap:string } | { kind:'link', cap, key, write }`.
+- `hydrateMemberCaps` + `recoverPubspaceAccess` consolidated into a single
+  **`recoverSpaceAccess(session, { caps, pubAccess })`** call.
+- `addJoinedPublicSpaceWithAccess` renamed → `addJoinedSpaceWithLinkAccess`.
+- `readPrivateIndexRooms` / `readPrivateSpaceRooms` / `readPublicIndexRooms` replaced by
+  `readSpaceIndexRooms` / `readSpaceRooms`.
+- `pushIndexSeed` now accepts `Encryptor | null` (plaintext push when null).
+- `accountScope` and `linkedDeviceScope` no longer include `'pubspace'` collection or
+  `pubspaces/{userId}/**` paths.
+- `pubspaceScope`, `pubstreamBotScope`, and all `pubObjIndex*` / `pubObjDoc*` /
+  `pubObjLog*` / `pubspaceRooms*` / `pubspaceWebhooks*` / `pubstreamRoom*` path helpers
+  removed. Bot access: mint a narrow-path member cap via `spaceMemberScope`.
+- `PubspaceAccess`, `AccessMap`, `PublicInviteToken` types removed.
+- `isPublicSpaceId`, `publicSpaceAuth`, `publicSpaceClient`,
+  `encodePublicInviteLink` / `decodePublicInvite`,
+  `createPublicSpace`, `createPublicInvite`, `joinPublicSpace`,
+  `readPublicRooms`, `readPublicRoomsDoc`, `createPublicRoom`,
+  `updatePublicSpaceMeta`, `updatePublicRoomsRegistry`, `updatePublicObjectIndex`
+  removed.
+
+#### Added
+
+- `SpaceVisibility` type (`'private' | 'public'`).
+- `SpaceAccessHandle` interface + `getSpaceAccess` / `buildSpaceAccess` /
+  `clearSpaceAccessCache` (unified encryptor resolver; null encryptor = public space).
+- `SpaceAccessEntry` / `SpaceAccessMap` types + full `space-access-store` API.
+- `recoverSpaceAccess(session, { caps, pubAccess })` — single sign-in hydration.
+- `createSpaceInviteLink` / `encodeSpaceInviteLink` / `decodeSpaceInviteLink` /
+  `joinSpaceByLink` — link-based joins for public spaces (token `v:1`, no `ownerId`
+  field — derived from `cap.iss` on accept).
+- `removeSpaceMember(client, spaceId, memberUserId)` — link revocation primitive.
+- `updateObjectIndex(session, spaceId, mutator)` — unified plaintext/encrypted RMW.
+- `addJoinedSpaceWithLinkAccess` (renamed from `addJoinedPublicSpaceWithAccess`).
+- `readSpaceIndexRooms` / `readSpaceRooms` — unified read helpers for both space kinds.
+- `spaceIndexPull` re-exported (was unreachable before).
+
+#### Behaviour note
+
+Write link-bearers can now create rooms in public spaces (`objindex` writeRoles is
+`space:member`). Previously only owners could create rooms (via the `_rooms` plaintext
+registry). This is intentional — "write access = can create channels".
+
 ### [0.1.0] — 2026-06-12
 
 Initial release. Extracted and unified from OctoChat SDK and OctoVault starfish layer.
