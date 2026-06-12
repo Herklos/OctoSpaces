@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="./logo.png" alt="OctoSpaces" width="180" />
+  <img src="./logo.png" alt="OctoSpaces" width="320" />
 
   <h1>OctoSpaces</h1>
 
