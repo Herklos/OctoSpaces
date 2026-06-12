@@ -128,7 +128,7 @@ export function accountScope(userId: string): ScopePreset {
 configureOctoSpaces({
   syncBase: process.env.EXPO_PUBLIC_STARFISH_URL,
   syncNamespace: process.env.EXPO_PUBLIC_STARFISH_NAMESPACE,
-  sharedSpacesNamespace: process.env.EXPO_PUBLIC_STARFISH_SHARED_SPACES_NAMESPACE,
+  spacesNamespace: process.env.EXPO_PUBLIC_STARFISH_SPACES_NAMESPACE,
 });
 ```
 
@@ -272,15 +272,17 @@ step 4 and wipe `pubspaces/` after the index relocate.
 
 ## 5. Infra
 
-### 4a. Add a `shared` namespace app
+### 5a. Add a `spaces` namespace app
 
 File: `Infra/sync/server/drakkar_sync/server.py`
 
-Mount a new `drakkar_sync/apps/shared/` app at `/v1/shared`:
-- Collections: `spaces`, `rooms`, `chatkeyring` only (no `objindex` etc. — space index
-  data is in each app's own namespace).
-- Role enricher: reuse `make_space_role_enricher` + `make_pubspace_role_enricher`.
-- This is what `sharedSpacesNamespace` points to for cross-app space registry sharing.
+Mount `drakkar_sync/apps/spaces/` at `/v1/spaces`:
+- Collections: `spaces`, `rooms`, `chatkeyring`, `spaceindex` only (no `objindex` etc. — space
+  index data lives in each app's own namespace).
+- Role enricher: `make_space_role_enricher` (reads `spaces/{spaceId}/_rooms`).
+- Projection plugin: watches `rooms` writes with `visibility:'public'` → upserts into
+  `_index/spaces/public` (supplements the legacy `pubspace` hook during the migration window).
+- This is what `spacesNamespace` points to for cross-app space registry sharing.
 
 ---
 
@@ -294,4 +296,4 @@ Mount a new `drakkar_sync/apps/shared/` app at `/v1/shared`:
 - [ ] **App**: replace pubspace call sites per the table above
 - [ ] **App** (optional): adopt `octospaces-ui` primitives after theme contract satisfied
 - [ ] **Data migration**: for public spaces — relocate `pubobjindex` to `spaces/{spaceId}/objects/_index` (nodes already correct shape); relocate `pubstream` logs to `spaces/{spaceId}/streams/{roomId}` or accept history loss; synthesize `_rooms` with `visibility:'public'`. For private spaces: nothing to convert (already ObjectNodes).
-- [ ] **Infra**: add `shared` namespace app
+- [ ] **Infra**: add `spaces` namespace app at `/v1/spaces`

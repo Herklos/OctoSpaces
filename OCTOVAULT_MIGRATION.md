@@ -69,8 +69,8 @@ import { configureOctoSpaces } from '@drakkar.software/octospaces-sdk';
 configureOctoSpaces({
   syncBase:  process.env.NEXT_PUBLIC_STARFISH_URL,
   syncNamespace: process.env.NEXT_PUBLIC_STARFISH_NAMESPACE,
-  // Optional — set if OctoVault shares space registry with OctoChat
-  sharedSpacesNamespace: process.env.NEXT_PUBLIC_STARFISH_SHARED_SPACES_NAMESPACE,
+  // Optional — set to share space registry with OctoChat (points to /v1/spaces)
+  spacesNamespace: process.env.NEXT_PUBLIC_STARFISH_SPACES_NAMESPACE,
 });
 ```
 
