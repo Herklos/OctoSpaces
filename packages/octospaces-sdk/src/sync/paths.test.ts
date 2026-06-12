@@ -6,8 +6,8 @@ import {
   nodeMemberScope,
   accountScope,
   linkedDeviceScope,
-  nodeKeyringPull,
-  nodeKeyringPush,
+  keyringPull,
+  keyringPush,
   objIndexPull,
   objIndexPush,
   objPubPull,
@@ -21,8 +21,8 @@ import {
 } from './paths.js';
 
 describe('OBJECT_COLLECTIONS', () => {
-  it('contains nodekeyring (per-node keyrings)', () => {
-    expect(OBJECT_COLLECTIONS).toContain('nodekeyring');
+  it('contains spacekeyring (space-wide keyring)', () => {
+    expect(OBJECT_COLLECTIONS).toContain('spacekeyring');
   });
 
   it('contains the generic object storage collections', () => {
@@ -34,8 +34,8 @@ describe('OBJECT_COLLECTIONS', () => {
     expect(OBJECT_COLLECTIONS).toContain('objpub');
   });
 
-  it('does NOT contain spacekeyring (removed — keyrings are now per-node)', () => {
-    expect(OBJECT_COLLECTIONS).not.toContain('spacekeyring');
+  it('does NOT contain nodekeyring (removed — keyring is now space-wide)', () => {
+    expect(OBJECT_COLLECTIONS).not.toContain('nodekeyring');
   });
 
   it('does NOT contain objinv (invite-only content excluded from broad scope)', () => {
@@ -82,6 +82,11 @@ describe('spaceMemberScope', () => {
     expect(scope.collections).toEqual(OBJECT_COLLECTIONS);
   });
 
+  it('includes spacekeyring (members need to reach the space keyring)', () => {
+    const scope = spaceMemberScope('sp-abc', true);
+    expect(scope.collections).toContain('spacekeyring');
+  });
+
   it('does NOT include objinv in collections', () => {
     const scope = spaceMemberScope('sp-abc', true);
     expect(scope.collections).not.toContain('objinv');
@@ -104,9 +109,14 @@ describe('nodeMemberScope', () => {
     expect(scope.collections).toContain('objinv');
   });
 
-  it('includes nodekeyring (node keyring access)', () => {
+  it('does NOT include nodekeyring (keyring is space-wide, not per-node)', () => {
     const scope = nodeMemberScope('sp-1', 'n-42', true);
-    expect(scope.collections).toContain('nodekeyring');
+    expect(scope.collections).not.toContain('nodekeyring');
+  });
+
+  it('does NOT include spacekeyring (use spaceMemberScope for enc node access)', () => {
+    const scope = nodeMemberScope('sp-1', 'n-42', true);
+    expect(scope.collections).not.toContain('spacekeyring');
   });
 
   it('does NOT include broad space collections', () => {
@@ -145,19 +155,19 @@ describe('accountScope', () => {
 });
 
 describe('linkedDeviceScope', () => {
-  it('contains nodekeyring (per-node keyrings)', () => {
+  it('contains spacekeyring (space-wide keyring)', () => {
     const scope = linkedDeviceScope('user-1');
-    expect(scope.collections).toContain('nodekeyring');
+    expect(scope.collections).toContain('spacekeyring');
+  });
+
+  it('does NOT contain nodekeyring (removed — keyring is space-wide)', () => {
+    const scope = linkedDeviceScope('user-1');
+    expect(scope.collections).not.toContain('nodekeyring');
   });
 
   it('contains standard account collections', () => {
     const scope = linkedDeviceScope('user-1');
     expect(scope.collections).toEqual(expect.arrayContaining(['profile', 'spaces']));
-  });
-
-  it('does NOT contain spacekeyring (removed)', () => {
-    const scope = linkedDeviceScope('user-1');
-    expect(scope.collections).not.toContain('spacekeyring');
   });
 
   it('does NOT contain pubspace', () => {
@@ -177,19 +187,24 @@ describe('objectDirPull', () => {
   });
 });
 
-describe('per-node keyring path helpers', () => {
-  it('nodeKeyringPull / nodeKeyringPush embed spaceId and nodeId', () => {
-    expect(nodeKeyringPull('sp-1', 'n-99')).toContain('sp-1');
-    expect(nodeKeyringPull('sp-1', 'n-99')).toContain('n-99');
-    expect(nodeKeyringPull('sp-1', 'n-99')).toContain('_keyring');
-    expect(nodeKeyringPush('sp-1', 'n-99')).toContain('sp-1');
-    expect(nodeKeyringPush('sp-1', 'n-99')).toContain('n-99');
+describe('space keyring path helpers', () => {
+  it('keyringPull / keyringPush embed spaceId', () => {
+    expect(keyringPull('sp-1')).toContain('sp-1');
+    expect(keyringPull('sp-1')).toContain('_keyring');
+    expect(keyringPush('sp-1')).toContain('sp-1');
+    expect(keyringPush('sp-1')).toContain('_keyring');
   });
 
-  it('nodeKeyringPull and nodeKeyringPush are symmetric (same subpath)', () => {
-    const pull = nodeKeyringPull('sp-1', 'n-1').replace('/pull/', '/');
-    const push = nodeKeyringPush('sp-1', 'n-1').replace('/push/', '/');
+  it('keyringPull and keyringPush are symmetric (same subpath)', () => {
+    const pull = keyringPull('sp-1').replace('/pull/', '/');
+    const push = keyringPush('sp-1').replace('/push/', '/');
     expect(pull).toBe(push);
+  });
+
+  it('keyringPull path does NOT contain a nodeId segment', () => {
+    const path = keyringPull('sp-42');
+    // Space-wide path: spaces/sp-42/_keyring — no /objects/n/ segment.
+    expect(path).not.toContain('/objects/n/');
   });
 });
 

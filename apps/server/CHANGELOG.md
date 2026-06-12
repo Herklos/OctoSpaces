@@ -1,5 +1,23 @@
 # Changelog — @octospaces/server
 
+## 0.3.1 (2026-06-12)
+
+### Changed
+
+- **Minimal cross-app registry.** Trimmed `config.ts` back to the 6 collections that
+  belong in the shared `octospaces` namespace: `spaces`, `spaceregistry`, `spacekeyring`,
+  `profile`, `devices`, `pairing`. Content collections (`objindex`, `objpub`, `objinv`,
+  `objlog`, `objsnap`, `objdoc`, `objblob`, `typeindex`) and the public-node directory
+  (`objectindex`) live in each app's own namespace — not here.
+- **Space-wide keyring restored.** `nodekeyring` (per-node) replaced by `spacekeyring`
+  at `spaces/{spaceId}/_keyring`. ONE keyring per space encrypts all `enc` nodes.
+- **Projection removed.** `projections.ts` is now empty — the `objindex` → `_index/objects`
+  projection belongs in each app's own namespace alongside its `objindex` collection.
+- **Queuing simplified.** Only `spaceregistry` and `spacekeyring` publish
+  `octospaces.space.changed` events.
+
+---
+
 ## 0.3.0 (2026-06-12)
 
 ### Breaking changes

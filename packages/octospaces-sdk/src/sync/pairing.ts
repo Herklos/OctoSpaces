@@ -42,10 +42,11 @@ function randomNonce(): string {
  * Existing device: provision + PIN-seal a new device, publish to rendezvous, return
  * the QR payload.
  *
- * NOTE: Per-node E2EE keyrings are not automatically granted during pairing — each
- * E2EE node's owner must explicitly add the new device via `inviteToNode`. The paired
- * device will have full access to plaintext (`space` and `public`) nodes immediately
- * and to `invite+enc` nodes once its KEM key is added to each node's keyring.
+ * After pairing, call `addDeviceToSpaceKeyring(session, spaceId, newDeviceKeys)` for
+ * each space whose E2EE content the new device should decrypt. ONE space keyring
+ * encrypts ALL `enc` nodes in a space — one call per space unlocks everything.
+ * Plaintext (`space` / `public`) nodes are immediately accessible via the linked-device
+ * cap-cert (no extra keyring step).
  */
 export async function startDevicePairing(session: Session, pin: string): Promise<string> {
   const { deviceKeys, bundle } = await provisionDevice(

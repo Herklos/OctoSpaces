@@ -1,72 +1,15 @@
-import type { WriteEvent } from "@drakkar.software/starfish-protocol";
-import type { Projection, ProjectionOp } from "@drakkar.software/starfish-projection";
+import type { Projection } from "@drakkar.software/starfish-projection";
 
 /**
- * Public-node directory projection.
+ * Projections for the shared `octospaces` namespace.
  *
- * Watches every write to the `objindex` collection
- * (`spaces/{spaceId}/objects/_index`) and maintains a per-space row in the
- * world-readable `_index/objects/public` aggregate (`objectindex` collection).
+ * The `octospaces` namespace is a minimal cross-app registry (spaces, spaceregistry,
+ * spacekeyring, profile, devices, pairing). Public-node discovery — projecting
+ * `objindex` writes into a world-readable `_index/objects/public` directory — belongs
+ * in each app's own namespace alongside its `objindex` collection, not here.
  *
- * Each row is keyed by `spaceId` and carries all of that space's public nodes:
- *   `{ spaceId, nodes: [{ nodeId, parentId, title, emoji, type }], ts }`
+ * `projections` is therefore empty.
  *
- * When a space's index has no public nodes the row is removed (tombstone).
- * Clients read `_index/objects/public` to discover public content without
- * being a space member.
- *
- * Security: fields come from the member-gated `_index` doc. The `spaceId` is
- * taken from the verified `params.spaceId` path parameter, not from the body.
+ * Keep in sync with Infra/sync/server/drakkar_sync/apps/octospaces/projections.py.
  */
-
-interface RawNode {
-  id?: unknown;
-  parentId?: unknown;
-  title?: unknown;
-  emoji?: unknown;
-  type?: unknown;
-  access?: unknown;
-}
-
-function projectObjectIndex(e: WriteEvent): ProjectionOp {
-  const spaceId = e.params.spaceId;
-  if (!spaceId) return null;
-
-  const body = e.body ?? {};
-  const rawObjects = (body as { objects?: unknown }).objects;
-  if (!Array.isArray(rawObjects)) return null;
-
-  const publicNodes = rawObjects
-    .filter((n: unknown) => {
-      const node = n as RawNode;
-      return typeof node.id === "string" && node.access === "public";
-    })
-    .map((n: unknown) => {
-      const node = n as RawNode;
-      return {
-        nodeId: node.id as string,
-        parentId: typeof node.parentId === "string" ? node.parentId : null,
-        title: typeof node.title === "string" ? node.title : null,
-        emoji: typeof node.emoji === "string" ? node.emoji : null,
-        type: typeof node.type === "string" ? node.type : null,
-      };
-    });
-
-  // No public nodes left in this space — remove any existing directory row.
-  if (publicNodes.length === 0) {
-    return { id: spaceId, remove: true };
-  }
-
-  return {
-    id: spaceId,
-    value: { spaceId, nodes: publicNodes, ts: e.timestamp },
-  };
-}
-
-export const projections: Projection[] = [
-  {
-    source: "objindex",
-    target: "_index/objects/public",
-    project: projectObjectIndex,
-  },
-];
+export const projections: Projection[] = [];

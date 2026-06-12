@@ -4,20 +4,26 @@
  * Nodes are the atomic content units of a space (rooms in OctoChat, pages/projects in
  * OctoVault). Each node carries two independent axes:
  *   - `access`: `'public' | 'space' | 'invite'` — who may reach the node.
- *   - `enc`:    `boolean` — whether content is E2EE under the node's own keyring.
+ *   - `enc`:    `boolean` — whether content is E2EE under the SPACE-WIDE keyring.
  *
  * Invalid combo: `access:'public'` + `enc:true` is rejected outright.
+ *
+ * Encryption uses ONE space keyring (at `spaces/{spaceId}/_keyring`). Any space member
+ * holding the keyring can decrypt ALL `enc` nodes in the space — the keyring is coarse-
+ * grained by design. For `access:'invite'` + `enc:true` nodes, inviting someone to the
+ * node also grants them the space key (and thus access to all enc content in the space).
  *
  * Invite flows mirror the space membership flows in `members.ts` but scoped per node.
  *
  * DIRECT INVITE:
- *   - `enc` node: owner adds invitee to node keyring + mints space cap → invitee calls
- *     `acceptNodeInvite`, storing the space cap (keyring is the content gate).
+ *   - `enc` node: owner adds invitee to space keyring + mints space cap → invitee calls
+ *     `acceptNodeInvite`, storing the space cap.
  *   - `invite+plaintext` node: owner mints per-node narrow cap (nodeMemberScope) →
  *     invitee calls `acceptNodeInvite`, storing the per-node cap.
  *
  * LINK INVITE:
- *   - Owner: `createNodeInviteLink` — ephemeral keypair, narrow per-node cap encoded in URL.
+ *   - `enc` node: owner adds ephemeral KEM to space keyring; link cap uses spaceMemberScope.
+ *   - `invite+plaintext` node: ephemeral keypair, narrow per-node cap (nodeMemberScope).
  *   - Bearer: `joinNodeByLink` — stores per-node `{kind:'link'}` entry.
  */
 import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
@@ -29,9 +35,9 @@ import { ownerEnsureKeyring } from '../sync/client.js';
 import type { Session } from '../sync/identity.js';
 import { ownerTrustedAdders } from '../sync/identity.js';
 import {
-  nodeKeyringName,
-  nodeKeyringPull,
-  nodeKeyringPush,
+  keyringName,
+  keyringPull,
+  keyringPush,
   nodeMemberScope,
   spaceMemberScope,
   userIdFromEdPub,
@@ -67,7 +73,7 @@ export interface CreateNodeInput {
   parentId?: string | null;
   /** Who may reach this node. Default: `'space'`. */
   access?: NodeAccess;
-  /** Whether node content is E2EE under its own keyring. Default: `false`. */
+  /** Whether node content is E2EE under the space-wide keyring. Default: `false`. */
   enc?: boolean;
   /** App-specific metadata. */
   meta?: Record<string, unknown>;
@@ -77,7 +83,8 @@ export interface CreateNodeInput {
  * Create a new node in a space's object index.
  *
  * - Rejects the invalid combo `public+enc`.
- * - For `enc` nodes, mints a per-node keyring (owner-only).
+ * - For `enc` nodes, ensures the space-wide keyring exists (minted once per space,
+ *   idempotent on subsequent creates).
  * - Returns the created node as it was inserted into the index.
  */
 export async function createNode(
@@ -93,12 +100,13 @@ export async function createNode(
   const nodeId = `obj-${randomId()}`;
 
   if (enc) {
+    // Ensure the space-wide keyring exists (idempotent — minted once per space).
     const client = getSpaceClient(spaceId, session);
     await ownerEnsureKeyring(
       client,
       session.keys,
-      nodeKeyringPull(spaceId, nodeId),
-      nodeKeyringPush(spaceId, nodeId),
+      keyringPull(spaceId),
+      keyringPush(spaceId),
       ownerTrustedAdders(session),
     );
   }
@@ -130,7 +138,7 @@ export async function createNode(
  * Patch the `access`/`enc` axes of a node in the index.
  *
  * - Rejects `public+enc`.
- * - For enabling `enc`, mints the node keyring (owner-only, idempotent).
+ * - For enabling `enc`, ensures the space keyring exists (idempotent).
  * - Content migration (moving between `objpub`/`objdoc`/`objinv`) is the caller's
  *   responsibility — this only flips the metadata flags.
  */
@@ -144,12 +152,13 @@ export async function setNodeAccess(
   if (patch.access === 'public' && patch.enc) throw new Error('public+enc is not valid.');
 
   if (patch.enc) {
+    // Ensure the space-wide keyring exists (idempotent).
     const client = getSpaceClient(spaceId, session);
     await ownerEnsureKeyring(
       client,
       session.keys,
-      nodeKeyringPull(spaceId, nodeId),
-      nodeKeyringPush(spaceId, nodeId),
+      keyringPull(spaceId),
+      keyringPush(spaceId),
       ownerTrustedAdders(session),
     );
   }
@@ -204,8 +213,8 @@ export interface NodeInviteBundle {
 /**
  * Owner: invite an identity to a specific node.
  *
- * - For `enc` nodes: adds the invitee to the per-node keyring and mints a
- *   space-level member cap so they can read the index + keyring.
+ * - For `enc` nodes: adds the invitee to the space-wide keyring (granting decryption
+ *   access to ALL enc nodes in the space) and mints a space-level member cap.
  * - For `invite+plaintext` nodes: mints both a space-level cap (index) and a
  *   narrow per-node cap (`nodeMemberScope`, covers `objinv` content).
  *
@@ -223,11 +232,11 @@ export async function inviteToNode(
   if (!req.edPub || !req.kemPub || !req.userId) throw new Error('Invalid join request.');
 
   if (node.enc) {
-    // Add invitee's KEM key to the per-node keyring
+    // Add invitee's KEM key to the SPACE-WIDE keyring (grants access to all enc nodes).
     try {
       await addCollectionRecipient(
         session.chatClient,
-        nodeKeyringName(spaceId, nodeId),
+        keyringName(spaceId),
         { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, 8) },
         { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
         { trustedAdders: [session.keys.edPub] },
@@ -304,7 +313,7 @@ export interface NodeInviteLinkToken {
   spaceId: string;
   nodeId: string;
   nodeName: string;
-  /** Per-node narrow cap (nodeMemberScope). */
+  /** Cap scope depends on `enc`: spaceMemberScope for enc nodes, nodeMemberScope for plaintext. */
   cap: unknown;
   /** The ephemeral subject's Ed25519 private key (hex). */
   key: string;
@@ -336,12 +345,12 @@ export function decodeNodeInviteLink(fragment: string): NodeInviteLinkToken {
 /**
  * Owner: create a shareable invite link for a specific node.
  *
- * Mints an ephemeral Ed/KEM keypair, adds its userId to the space roster, and
- * encodes a narrow per-node cap + private key in the URL. For `enc` nodes the
- * ephemeral KEM key is also added to the node keyring.
+ * - For `enc` nodes: adds ephemeral KEM to the space-wide keyring; the link cap uses
+ *   `spaceMemberScope` so the bearer can read the keyring and decrypt enc content.
+ * - For `invite+plaintext` nodes: narrow per-node cap (`nodeMemberScope`), no keyring.
  *
  * Anyone with the link can access the node; revoke by calling
- * `removeSpaceMember(ephemeralUserId)` or rotating the node keyring.
+ * `removeSpaceMember(ephemeralUserId)` (and rotating the space keyring for enc nodes).
  */
 export async function createNodeInviteLink(
   session: Session,
@@ -358,11 +367,11 @@ export async function createNodeInviteLink(
   await addSpaceMember(session.accountClient, spaceId, session.userId, ephemeralUserId);
 
   if (node.enc) {
-    // Add ephemeral KEM to the node keyring
+    // Add ephemeral KEM to the SPACE-WIDE keyring
     try {
       await addCollectionRecipient(
         session.chatClient,
-        nodeKeyringName(spaceId, nodeId),
+        keyringName(spaceId),
         { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, 8) },
         { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
         { trustedAdders: [session.keys.edPub] },
@@ -372,12 +381,16 @@ export async function createNodeInviteLink(
     }
   }
 
+  // enc nodes need space-scoped cap (must reach the space keyring);
+  // plaintext invite nodes use the narrow per-node cap.
   const cap = await mintMemberCap(
     session.keys.edPriv,
     session.keys.edPub,
     { edPubHex: ek.edPub, kemPubHex: ek.kemPub, userIdHex: ephemeralUserId },
     'chat',
-    nodeMemberScope(spaceId, nodeId, write),
+    node.enc
+      ? spaceMemberScope(spaceId, write)
+      : nodeMemberScope(spaceId, nodeId, write),
   );
 
   const token: NodeInviteLinkToken = { v: 1, spaceId, nodeId, nodeName, cap, key: ek.edPriv, write };

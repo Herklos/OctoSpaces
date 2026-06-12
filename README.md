@@ -20,7 +20,7 @@
 
 | Package | Version | Description |
 |---|---|---|
-| [`@drakkar.software/octospaces-sdk`](./packages/octospaces-sdk) | `0.1.0` | Headless spaces core — identity, sync, objects, registry |
+| [`@drakkar.software/octospaces-sdk`](./packages/octospaces-sdk) | `0.4.1` | Headless spaces core — identity, sync, objects, registry |
 | [`@drakkar.software/octospaces-ui`](./packages/octospaces-ui) | `0.1.0` | Shared UI primitives — theme plumbing only, no values |
 
 ---
@@ -29,7 +29,9 @@
 
 Everything in a space is an **`ObjectNode`** — a typed, ordered, tree-able unit with an `id`, `type`, `parentId`, and `order`. The SDK defines **no domain object types**: apps (OctoChat, OctoVault, …) declare their own `type` strings and descriptors in their own SDKs. The SDK ships only the generic tree engine (`buildTree`, `addObject`, `reparentObject`, …) and the spaces infrastructure (keyring, access record, index).
 
-**Spaces are neutral containers.** All nodes live under `spaces/{spaceId}/**` with the same `OBJECT_COLLECTIONS` cap scopes. Visibility and encryption are **per-node** axes — not per-space: `ObjectNode.access` (`'public' | 'space' | 'invite'`) controls who can reach a node; `ObjectNode.enc` adds E2EE under its own per-node keyring. A public node is projected to `_index/objects/public` (`objectindex` collection) for world discovery. The object index (`objindex` collection) is always plaintext — invite nodes have their title/emoji stripped before storage. The [Starfish](https://github.com/Drakkar-Software/Starfish) server never validates or decrypts content — auth is roster-based + cap-scope gated.
+**Spaces are neutral containers.** The shared `octospaces` namespace holds a **minimal cross-app registry only**: `spaces`, `spaceregistry`, `spacekeyring`, `profile`, `devices`, `pairing`. Per-node content collections (`objindex`, `objpub`, `objinv`, `obj*`) live in each **app's own namespace** (OctoChat, OctoVault, …).
+
+Visibility and encryption are **per-node** axes — not per-space: `ObjectNode.access` (`'public' | 'space' | 'invite'`) controls who can reach a node; `ObjectNode.enc` adds E2EE under the **space-wide keyring** at `spaces/{spaceId}/_keyring` (`spacekeyring` collection). All `enc` nodes in a space share one CEK — holding the space key and having reach means you can decrypt every `enc` node in the space (coarse-grained by design). The object index (`objindex` collection, app namespace) is always plaintext — invite nodes have their title/emoji stripped before storage. The [Starfish](https://github.com/Drakkar-Software/Starfish) server never validates or decrypts content — auth is roster-based + cap-scope gated.
 
 Sync is powered by the **[Starfish](https://github.com/Drakkar-Software/Starfish)** protocol (`@drakkar.software/starfish-*`, E2EE, cap-cert auth). OctoChat and OctoVault consume these packages as npm dependencies; concrete theme values, env vars, and app-specific path extensions stay in each app.
 

@@ -36,9 +36,9 @@ export {
   nodeMemberScope,
   accountScope,
   linkedDeviceScope,
-  nodeKeyringName,
-  nodeKeyringPull,
-  nodeKeyringPush,
+  keyringName,
+  keyringPull,
+  keyringPush,
   objIndexPull,
   objIndexPush,
   objPubName,
@@ -177,6 +177,7 @@ export {
   createSpaceInviteLink,
   joinSpaceByLink,
   recoverSpaceAccess,
+  addDeviceToSpaceKeyring,
 } from './spaces/members.js';
 export type { JoinRequest, SpaceInviteLinkToken } from './spaces/members.js';
 

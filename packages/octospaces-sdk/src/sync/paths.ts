@@ -7,10 +7,11 @@
  * space:owner/space:member enricher, and a single `spaces/{spaceId}/**` member cap
  * covers a whole space.
  *
- * **Generic object collections** — scopes use the `obj*` / `node*` collection names
- * (the domain-neutral storage layer). The access record lives at
- * `spaces/{spaceId}/_access` (collection `spaceregistry`); per-node keyrings at
- * `spaces/{spaceId}/objects/n/{nodeId}/_keyring` (collection `nodekeyring`).
+ * **Generic object collections** — scopes use the `obj*` collection names (the
+ * domain-neutral storage layer). The access record lives at
+ * `spaces/{spaceId}/_access` (collection `spaceregistry`); the space-wide keyring at
+ * `spaces/{spaceId}/_keyring` (collection `spacekeyring`). ONE keyring per space
+ * encrypts ALL the space's `enc` nodes.
  *
  * Note: `objinv` (invite-plaintext content) is intentionally EXCLUDED from
  * OBJECT_COLLECTIONS / spaceMemberScope — only a per-node cap can reach it.
@@ -23,14 +24,12 @@ const push = (rest: string) => `/push/${rest}`;
 /** A room id is `sp-<rand>-<name>`; the space is its first two `-` segments. */
 export const spaceIdFromRoomId = (roomId: string) => roomId.split('-').slice(0, 2).join('-');
 
-// ── Per-node keyring (one keyring per E2EE node) ──────────────────────────────
-/** Base name used as the `collectionName` arg to `addCollectionRecipient`. */
-export const nodeKeyringName = (spaceId: string, nodeId: string) =>
-  `spaces/${spaceId}/objects/n/${nodeId}`;
-export const nodeKeyringPull = (spaceId: string, nodeId: string) =>
-  pull(`${nodeKeyringName(spaceId, nodeId)}/_keyring`);
-export const nodeKeyringPush = (spaceId: string, nodeId: string) =>
-  push(`${nodeKeyringName(spaceId, nodeId)}/_keyring`);
+// ── Space-wide keyring (one keyring per space, encrypts all enc nodes) ────────
+/** Base name used as the `collectionName` arg to `addCollectionRecipient`.
+ *  Appending `/_keyring` gives the full storage path. */
+export const keyringName = (spaceId: string) => `spaces/${spaceId}`;
+export const keyringPull = (spaceId: string) => pull(`${keyringName(spaceId)}/_keyring`);
+export const keyringPush = (spaceId: string) => push(`${keyringName(spaceId)}/_keyring`);
 
 // ── Attachments (sealed blobs, in a per-space subtree keyed by room) ──────────
 /** Storage path of one attachment blob — also the AAD bound into its seal. */
@@ -110,8 +109,9 @@ export const objectDirPull = (shard: string = 'public') => pull(objectDirName(sh
 // These are the domain-neutral storage collections both apps migrate onto.
 // IMPORTANT: `objinv` is NOT included here — it is excluded from the broad space
 // member scope so that only per-node caps (nodeMemberScope) can reach it.
+// `spacekeyring` IS included — space members need to reach the keyring to decrypt enc content.
 export const OBJECT_COLLECTIONS: string[] = [
-  'nodekeyring', 'objindex', 'objlog', 'objsnap', 'objdoc', 'objblob', 'typeindex', 'objpub',
+  'spacekeyring', 'objindex', 'objlog', 'objsnap', 'objdoc', 'objblob', 'typeindex', 'objpub',
 ];
 
 // ── Cap scopes ────────────────────────────────────────────────────────────────
@@ -126,7 +126,7 @@ export function ownerScope(): ScopePreset {
 }
 
 /**
- * Member access to one SPACE — its node keyrings, every node's content docs and
+ * Member access to one SPACE — the space keyring, every node's content docs and
  * attachments, all under `spaces/{spaceId}/**`. Does NOT cover `objinv` (invite-
  * plaintext content) — use `nodeMemberScope` for that. One cap covers current AND
  * future nodes.
@@ -141,14 +141,15 @@ export function spaceMemberScope(spaceId: string, canWrite: boolean): ScopePrese
 }
 
 /**
- * Narrow per-node cap for `invite+plaintext` nodes. Covers the node's keyring
- * (for future promotion to E2EE) and its `objinv` content path only.
+ * Narrow per-node cap for `invite+plaintext` nodes. Covers ONLY the node's `objinv`
+ * content path — the space keyring is space-wide and is covered by the broader space
+ * member scope. Use `spaceMemberScope` when the bearer also needs to decrypt enc content.
  */
 export function nodeMemberScope(spaceId: string, nodeId: string, canWrite: boolean): ScopePreset {
   const ops: ('read' | 'write' | 'list')[] = canWrite ? ['read', 'list', 'write'] : ['read', 'list'];
   return {
     ops,
-    collections: ['nodekeyring', 'objinv'],
+    collections: ['objinv'],
     paths: [`spaces/${spaceId}/objects/n/${nodeId}/**`],
   };
 }

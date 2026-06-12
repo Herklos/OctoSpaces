@@ -1,5 +1,50 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.4.1 (2026-06-12)
+
+### Breaking changes
+
+- **Space-wide keyring restored.** `nodeKeyringName`, `nodeKeyringPull`, `nodeKeyringPush`
+  are removed. Replaced by `keyringName`, `keyringPull`, `keyringPush` (one keyring per
+  space, at `spaces/{spaceId}/_keyring`, collection `spacekeyring`).
+- **`nodeMemberScope` no longer includes `'nodekeyring'`** — collections is now
+  `['objinv']` only. Use `spaceMemberScope` when the bearer also needs to decrypt enc
+  content (they need `spacekeyring` + `spaces/{spaceId}/**` path).
+- **`OBJECT_COLLECTIONS` updated**: `'nodekeyring'` → `'spacekeyring'`.
+
+### Added
+
+- **`keyringName(spaceId)`** — base path for `addCollectionRecipient` calls.
+- **`keyringPull(spaceId)` / `keyringPush(spaceId)`** — pull/push paths for the
+  space-wide keyring at `spaces/{spaceId}/_keyring`.
+- **`addDeviceToSpaceKeyring(session, spaceId, device)`** — add a paired device's KEM
+  key to a space's keyring. Call after device pairing for each space the new device
+  should decrypt. ONE call per space unlocks all `enc` nodes.
+
+### Changed
+
+- **`inviteToSpace`** now adds the invitee to the space-wide keyring (if it exists) so
+  they can decrypt `enc` nodes from the start. Silently skips if the keyring doesn't
+  exist yet (no enc nodes in the space).
+- **`createSpaceInviteLink`** adds the ephemeral KEM to the space keyring (if it exists).
+- **`inviteToNode(enc=true)`** adds the invitee to the SPACE keyring (not a per-node
+  keyring) — granting decryption access to ALL enc nodes in the space.
+- **`createNodeInviteLink(enc=true)`** uses `spaceMemberScope` for the cap (so the bearer
+  can reach the space keyring) and adds the ephemeral KEM to the space keyring.
+- **`getNodeAccess`** / **`buildNodeAccess`** open the SPACE keyring (not a per-node
+  keyring) when `node.enc` is true.
+- **`startDevicePairing`** comment updated — post-pairing call `addDeviceToSpaceKeyring`
+  rather than `inviteToNode` per enc node.
+
+### Semantic note
+
+The space keyring is coarse-grained: any keyring-holder with reach can decrypt ALL
+`enc` nodes in the space. Inviting someone to one `enc` node grants them the space key
+and thus access to all enc content. Per-node E2EE isolation requires per-node keyrings
+(which are opt-in at the app level; the shared SDK no longer manages them).
+
+---
+
 ## 0.4.0 (2026-06-12)
 
 ### Breaking changes

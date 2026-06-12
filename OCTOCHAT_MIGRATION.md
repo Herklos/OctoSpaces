@@ -8,46 +8,79 @@ The migration is gated on publishing `octospaces-sdk@0.1.0` to npm.
 
 ---
 
+## ⚡ 0.4.1 Shared namespace trimmed + space-wide keyring restored
+
+`octospaces-sdk@0.4.1` reverts the keyring model to a single space-wide keyring and
+trims the shared `octospaces` namespace back to its intended minimal set.
+
+### Shared `octospaces` namespace (server-side)
+
+The shared `octospaces` namespace (`/v1/octospaces`) holds **only**:
+`spaces`, `spaceregistry`, `spacekeyring` (`spaces/{spaceId}/_keyring`),
+`profile`, `devices`, `pairing`.
+
+Content collections (`objindex`, `objpub`, `objinv`, `objlog`, `objsnap`, `objdoc`,
+`objblob`, `typeindex`) and the public-node directory (`objectindex`) belong in **each
+app's own namespace** — not in `octospaces`. OctoChat must declare and own them in its
+own server config and Infra files.
+
+### Space keyring (restored)
+
+There is ONE keyring per space (`spaces/{spaceId}/_keyring`, collection `spacekeyring`).
+ALL `enc` nodes in the space are encrypted under this single key. `access` gates
+*fetching*; the space keyring gates *decryption* — coarse-grained by design.
+
+**Semantic**: inviting someone to a space (or to any `enc` node) grants them the space
+key → they can decrypt ALL `enc` content in the space.
+
+### SDK / app code changes (0.4.0 → 0.4.1)
+
+1. **Replace `nodeKeyringPull/Push(spaceId, nodeId)`** with `keyringPull/Push(spaceId)`.
+2. **Replace `nodeKeyringName(spaceId, nodeId)`** with `keyringName(spaceId)` in any
+   `addCollectionRecipient` calls.
+3. **`nodeMemberScope` no longer includes `'nodekeyring'`** — it is now `['objinv']` only.
+   For enc node link invites, use `spaceMemberScope` instead of `nodeMemberScope`.
+4. **`addDeviceToSpaceKeyring(session, spaceId, device)` restored** — call after pairing
+   to grant the new device access to a space's enc content.
+5. **`OBJECT_COLLECTIONS`** now contains `'spacekeyring'` instead of `'nodekeyring'`.
+
+### OctoChat server / Infra (app-namespace content)
+
+OctoChat's own server and Infra namespace must own the content collections. The
+`octospaces` shared namespace no longer has them. In OctoChat's own `apps/server`:
+
+1. **Add to OctoChat's own `config.ts`**: `objindex`, `objpub`, `objinv`, `objlog`,
+   `objsnap`, `objdoc`, `objblob`, `typeindex`, `objectindex`.
+2. **Add to OctoChat's own `projections.ts`**: `objindex` → `_index/objects/public`.
+3. **Add to OctoChat's own queuing**: `objindex` publishing `octochat.space.changed`.
+4. **In OctoChat's Infra** (`drakkar_sync/apps/octochat/collections.py`): add the content
+   collections and projection.
+
+### Data migration notes
+
+- `spacekeyring` at `spaces/{spaceId}/_keyring` is restored; any `nodekeyring` docs at
+  `spaces/{spaceId}/objects/n/{nodeId}/_keyring` are orphaned.
+- For fresh deployments: no migration needed.
+- For live deployments: re-mint the space keyring on the next `enc` node access.
+
+---
+
 ## ⚡ 0.4.0 Breaking changes (per-node access + decoupled encryption)
 
 `octospaces-sdk@0.4.0` removes the public/private space distinction entirely.
-Upgrade from 0.3.x requires the following OctoChat-side changes:
-
-### Server (OctoChat's `apps/server`)
-
-1. **Replace `spacekeyring` with `nodekeyring`** in `config.ts`
-   (`storagePath: spaces/{spaceId}/objects/n/{nodeId}/_keyring`).
-2. **Replace `spaceindex` with `objectindex`** (`storagePath: _index/objects/{shard}`).
-3. **Add collections**: `objindex`, `objpub`, `objinv`, `objlog`, `objsnap`, `objdoc`,
-   `objblob`, `typeindex` (see `apps/server/src/config.ts` for full specs).
-4. **Rewrite the projection** to source `objindex` and emit per-space public-node rows.
-5. **Update queuing config**: `spacekeyring` → `nodekeyring`, add `objindex`.
+**Note: the keyring model in 0.4.0 was reverted in 0.4.1 (see above).**
 
 ### SDK / app code
 
 1. **Remove all references to `SpaceVisibility`**, `Space.visibility`, `Space.ownerId`,
    `Space.write`, `SpaceMeta.type`, `SpaceMeta.subtype`.
-2. **Replace `keyringPull/Push`** call sites with `nodeKeyringPull/Push(spaceId, nodeId)`.
-3. **Replace `spaceIndexPull`** call sites with `objectDirPull()`.
-4. **Replace `getSpaceAccess`** call sites with `getNodeAccess(spaceId, nodeId, node, session)`.
-5. **Replace `addDeviceToSpaceKeyring`** — no longer exists. Linked devices get per-node
-   keyring access only when explicitly invited via `inviteToNode`.
-6. **`createSpace(session, name)`** — `opts` arg removed.
-7. **`acceptSpaceInvite`** — no longer verifies keyring access; `cap.iss` is optional.
-8. **Rooms** are `ObjectNode`s — migrate to `createNode(session, spaceId, { type:'room', ... })`.
+2. **Replace `spaceIndexPull`** call sites with `objectDirPull()`.
+3. **Replace `getSpaceAccess`** call sites with `getNodeAccess(spaceId, nodeId, node, session)`.
+4. **`createSpace(session, name)`** — `opts` arg removed.
+5. **`acceptSpaceInvite`** — no longer verifies keyring access; `cap.iss` is optional.
+6. **Rooms** are `ObjectNode`s — migrate to `createNode(session, spaceId, { type:'room', ... })`.
    Use `access:'invite'` for private rooms, `enc:true` to add E2EE.
-9. **`pushIndexSeed(client, spaceId, nodes?)`** — encryptor arg removed.
-
-### Data migration (Infra / production)
-
-Mirror all collection changes in
-`Infra/sync/server/drakkar_sync/apps/octochat/collections.py` and the projection file.
-Key changes:
-- `spacekeyring` → `nodekeyring` path pattern includes `{nodeId}` segment.
-- `spaceindex` → `objectindex` at `_index/objects/{shard}`.
-- Add `objindex` collection (required for projection and change events).
-- Existing `spacekeyring` data is orphaned (no migration needed for new deployments;
-  for live deployments, node keyrings will be lazily re-minted on first `enc` node access).
+7. **`pushIndexSeed(client, spaceId, nodes?)`** — encryptor arg removed.
 
 ---
 

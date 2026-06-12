@@ -8,51 +8,66 @@ The migration is gated on publishing `octospaces-sdk@0.1.0` and `octospaces-ui@0
 
 ---
 
+## ⚡ 0.4.1 Shared namespace trimmed + space-wide keyring restored
+
+`octospaces-sdk@0.4.1` reverts the keyring model to a single space-wide keyring and
+trims the shared `octospaces` namespace back to its intended minimal set.
+
+### Shared `octospaces` namespace
+
+The shared `octospaces` namespace holds **only**: `spaces`, `spaceregistry`,
+`spacekeyring`, `profile`, `devices`, `pairing`. Content collections (`objindex`,
+`objpub`, `objinv`, `obj*`, `objectindex`) belong in **OctoVault's own namespace** —
+not in `octospaces`.
+
+### Space keyring (restored)
+
+ONE keyring per space at `spaces/{spaceId}/_keyring` (`spacekeyring` collection).
+ALL `enc` nodes in the space share this CEK. `access` gates fetching; the keyring gates
+decryption — coarse-grained.
+
+### Node access model (unchanged from 0.4.0)
+
+| Node type | `access` | `enc` | Who can read |
+|---|---|---|---|
+| Public project / page | `'public'` | `false` | World-readable via `objpub` |
+| Members-only page | `'space'` (default) | `false` | Space members only |
+| Members-only E2EE page | `'space'` | `true` | Space members holding the space key |
+| Invite-only page (plaintext) | `'invite'` | `false` | Invited identities (per-node cap) |
+| Invite-only page (E2EE) | `'invite'` | `true` | Invited identities holding the space key |
+
+### SDK / app changes (0.4.0 → 0.4.1)
+
+1. **Replace `nodeKeyringPull/Push(spaceId, nodeId)`** with `keyringPull/Push(spaceId)`.
+2. **`nodeMemberScope` now `['objinv']` only** — use `spaceMemberScope` for enc invite links.
+3. **`addDeviceToSpaceKeyring(session, spaceId, device)` restored**.
+4. **`OBJECT_COLLECTIONS`** contains `'spacekeyring'` instead of `'nodekeyring'`.
+
+### OctoVault server / Infra (app-namespace content)
+
+Add to OctoVault's own namespace (NOT the shared `octospaces` namespace):
+- `objindex`, `objpub`, `objinv`, `objlog`, `objsnap`, `objdoc`, `objblob`, `typeindex`,
+  `objectindex` — with projection sourcing `objindex`.
+
+---
+
 ## ⚡ 0.4.0 Breaking changes (per-node access + decoupled encryption)
 
-`octospaces-sdk@0.4.0` is the release OctoVault has been designed for: every page or project
-is an `ObjectNode` with an independent `access` axis and optional `enc` flag.
-
-### What this unlocks for OctoVault
-
-| Node type | `access` | `enc` | Effect |
-|---|---|---|---|
-| Public project / page | `'public'` | `false` | World-readable via `_index/objects/public` + `objpub` |
-| Members-only page | `'space'` (default) | `false` | Only space members can read |
-| Invite-only page (plaintext) | `'invite'` | `false` | Only invited identities (per-node cap) |
-| Invite-only page (E2EE) | `'invite'` | `true` | Only invited identities + keyring holders |
-
-### Server changes (OctoVault's `apps/server` or Infra)
-
-1. **Replace `spacekeyring` with `nodekeyring`**.
-2. **Replace `spaceindex` with `objectindex`**.
-3. **Add `objindex`, `objpub`, `objinv`** (see `apps/server/src/config.ts` for specs).
-4. **Rewrite projection** to source `objindex`, emit public-node rows per space.
-5. **Update queuing**: add `nodekeyring` and `objindex`.
+**Note: the keyring model in 0.4.0 was reverted in 0.4.1 (see above).**
 
 ### SDK / app changes
 
 1. **Remove `SpaceVisibility`**, `Space.visibility`/`ownerId`/`write`,
    `SpaceMeta.type`/`subtype` references.
-2. **Replace `keyringPull/Push`** with `nodeKeyringPull/Push(spaceId, nodeId)`.
-3. **Replace `spaceIndexPull`** with `objectDirPull()` (reads `_index/objects/public`).
-4. **Replace `getSpaceAccess`** with `getNodeAccess(spaceId, nodeId, node, session)`.
-5. **Projects and pages** are `ObjectNode`s — create with
+2. **Replace `spaceIndexPull`** with `objectDirPull()` (reads `_index/objects/public`).
+3. **Replace `getSpaceAccess`** with `getNodeAccess(spaceId, nodeId, node, session)`.
+4. **Projects and pages** are `ObjectNode`s — create with
    `createNode(session, spaceId, { type:'project'|'page', title, access, enc })`.
-6. **Anonymous browsing**: pull `objectDirPull()` to list public projects; read content
+5. **Anonymous browsing**: pull `objectDirPull()` to list public projects; read content
    from `objPubPull(spaceId, nodeId)` without authentication.
-7. **Invite sharing**: use `createNodeInviteLink` (for `invite` nodes) or
+6. **Invite sharing**: use `createNodeInviteLink` (for `invite` nodes) or
    `inviteToNode` (for direct invites by identity).
-8. **`createSpace(session, name)`** — `opts` removed.
-
-### Data migration (Infra / production)
-
-Same as OctoChat:
-- `spacekeyring` → `nodekeyring` (path gains `{nodeId}` segment).
-- `spaceindex` → `objectindex`.
-- Add `objindex` (needed for projection + change events).
-- Existing pages/projects in public spaces need their `access` field set to `'public'`
-  in the index so the projection picks them up.
+7. **`createSpace(session, name)`** — `opts` removed.
 
 ---
 

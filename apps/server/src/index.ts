@@ -12,10 +12,8 @@ import { FilesystemObjectStore } from "@drakkar.software/starfish-server/node";
 import { identitiesServerPlugin } from "@drakkar.software/starfish-identities";
 import { sharingServerPlugin } from "@drakkar.software/starfish-sharing";
 import { createQueuingServerPlugin } from "@drakkar.software/starfish-queuing";
-import { createProjectionServerPlugin } from "@drakkar.software/starfish-projection";
 
 import { config } from "./config.js";
-import { projections } from "./projections.js";
 import { createNatsQueue } from "./queue.js";
 import { createFileRevocationStore } from "./revocation-store.js";
 import { makeSpaceRoleEnricher } from "./space-role.js";
@@ -51,7 +49,7 @@ const revocationStore = createFileRevocationStore(`${DATA_DIR}/_revocations.json
 const roleResolver = createCapCertRoleResolver({
   nonceCache,
   revocationStore,
-  allowAnonymous: true, // public-read collections (profile, pairing, objectindex, objpub)
+  allowAnonymous: true, // public-read collections (profile, pairing)
   plugins: [identitiesServerPlugin, sharingServerPlugin],
   maxBodyBytes: 11_534_336,
 });
@@ -64,10 +62,8 @@ const queuing = createQueuingServerPlugin({
   collections: {
     // Space access record changes (member added/removed, name/image updated).
     spaceregistry: { topic: "octospaces.space.changed", includeParams: true, includeIdentity: false },
-    // Per-node keyring changes (owner invite/revoke for E2EE nodes).
-    nodekeyring: { topic: "octospaces.space.changed", includeParams: true, includeIdentity: false },
-    // Object index changes (node tree updates — add/rename/archive/access change).
-    objindex: { topic: "octospaces.space.changed", includeParams: true, includeIdentity: false },
+    // Space-wide keyring changes (owner invite/revoke for E2EE nodes).
+    spacekeyring: { topic: "octospaces.space.changed", includeParams: true, includeIdentity: false },
   },
 });
 
@@ -75,17 +71,12 @@ const queuing = createQueuingServerPlugin({
 // Shared between the sync router and the /events proxy.
 const spaceEnricher = makeSpaceRoleEnricher(store);
 
-// Upserts public-node directory entries into `_index/objects/public` on each
-// `objindex` write. Rows are keyed by spaceId and contain all public nodes for that
-// space. The `objectindex` collection is pullOnly — clients read it; only this writes it.
-const projection = createProjectionServerPlugin({ store, projections });
-
 const syncRouter = createSyncRouter({
   store,
   config,
   roleResolver,
   roleEnricher: spaceEnricher,
-  plugins: [queuing, projection],
+  plugins: [queuing],
 });
 
 await saveConfig(store, config);

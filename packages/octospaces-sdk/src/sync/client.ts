@@ -52,7 +52,7 @@ export function makeClient(cap: unknown, devEdPrivHex: string, namespaceOverride
  * (unreachable server / no keyring yet / not a recipient).
  *
  * `keyringPullPath` is the full `/pull/.../_keyring` path (e.g. from
- * `nodeKeyringPull(spaceId, nodeId)`). A `SpaceAccessError` is a hard access
+ * `keyringPull(spaceId)`). A `SpaceAccessError` is a hard access
  * denial; any other thrown error is a transient offline state.
  */
 export async function openEncryptor(
@@ -98,7 +98,7 @@ export async function buildEncryptor(
  * Owner-side: create a per-node keyring if missing, return an encryptor.
  *
  * `keyringPullPath` / `keyringPushPath` are the full `/pull|push/.../_keyring`
- * paths (e.g. from `nodeKeyringPull`/`nodeKeyringPush`).
+ * paths (e.g. from `keyringPull`/`keyringPush`).
  */
 export async function ownerEnsureKeyring(
   client: StarfishClient,

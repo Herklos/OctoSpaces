@@ -1,16 +1,21 @@
 /**
  * Space membership — invite-based (member cap) and link-based (open access).
  *
- * MEMBER join: the owner records the invitee in the roster and mints a space-scoped
- * member cap. The invitee stores a `{kind:'member'}` entry. Encryption lives at the
- * per-node level — there is no space-wide keyring.
+ * MEMBER join: the owner records the invitee in the roster, mints a space-scoped
+ * member cap, and adds the invitee to the space-wide keyring (if it exists) so they
+ * can decrypt `enc` content. The invitee stores a `{kind:'member'}` entry.
  *
  * LINK join: the owner mints an ephemeral Ed/KEM keypair whose *private* key ships
  * inside a URL-fragment token, adds the ephemeral userId to the roster so the server
  * grants `space:member`, and mints a member cap scoped to that ephemeral subject.
  * Any bearer of the link stores a `{kind:'link'}` entry. Revocation = `removeSpaceMember`.
+ *
+ * DEVICE PAIRING: after pairing, call `addDeviceToSpaceKeyring(session, spaceId, device)`
+ * for each space the paired device should decrypt. ONE keyring per space encrypts all
+ * `enc` nodes; adding the device once unlocks the whole space's E2EE content.
  */
 import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
+import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
 import { mintMemberCap } from '@drakkar.software/starfish-sharing';
 
 import type { Space } from '../core/types.js';
@@ -21,7 +26,7 @@ import {
   localSpaceAccessEntries,
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
-import { spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
+import { keyringName, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
 import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, readSpaces, updateSpacesDoc } from './registry.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
 import { toBase64Url, fromBase64Url } from '../sync/base64url.js';
@@ -37,6 +42,14 @@ export function makeJoinRequest(session: Session): string {
   return JSON.stringify(req);
 }
 
+function isAlreadyPresentRecipient(err: unknown): boolean {
+  return err instanceof Error && /already present in epoch/.test(err.message);
+}
+
+function isKeyringMissing(err: unknown): boolean {
+  return err instanceof Error && /not found|404|does not exist/i.test(err.message);
+}
+
 interface SpaceInvite {
   spaceId: string;
   spaceName: string;
@@ -44,8 +57,9 @@ interface SpaceInvite {
 }
 
 /**
- * Owner: invite an identity into a space. Records them in the roster and mints a
- * space-scoped member cap. Encryption is per-node — there is no space keyring.
+ * Owner: invite an identity into a space. Records them in the roster, mints a
+ * space-scoped member cap, and adds them to the space-wide keyring if it exists
+ * (so they can decrypt `enc` nodes from the start).
  * Returns the invite bundle JSON.
  */
 export async function inviteToSpace(
@@ -58,6 +72,24 @@ export async function inviteToSpace(
   const req = JSON.parse(requestJson) as JoinRequest;
   if (!req.edPub || !req.kemPub || !req.userId) throw new Error('That is not a valid join request.');
   await addSpaceMember(session.accountClient, spaceId, session.userId, req.userId);
+
+  // Add invitee to the space-wide keyring so they can decrypt enc nodes.
+  // Silently skip if the keyring doesn't exist yet (no enc nodes in the space).
+  try {
+    await addCollectionRecipient(
+      session.chatClient,
+      keyringName(spaceId),
+      { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, 8) },
+      { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
+      { trustedAdders: [session.keys.edPub] },
+    );
+  } catch (err) {
+    if (!isAlreadyPresentRecipient(err) && !isKeyringMissing(err)) {
+      // Only rethrow unexpected errors — missing keyring (no enc nodes yet) is normal.
+      console.warn('[octospaces] inviteToSpace: keyring add skipped', err);
+    }
+  }
+
   // NOTE: 'chat' is the cap collection the deployed server's space-member enricher recognises.
   const cap = await mintMemberCap(
     session.keys.edPriv,
@@ -155,6 +187,23 @@ export async function createSpaceInviteLink(
   );
   // Add the ephemeral userId to the roster so the server grants `space:member`
   await addSpaceMember(session.accountClient, spaceId, session.userId, ephemeralUserId);
+
+  // Add ephemeral KEM to the space keyring so link-bearers can decrypt enc content.
+  // Silently skip if the keyring doesn't exist yet (no enc nodes).
+  try {
+    await addCollectionRecipient(
+      session.chatClient,
+      keyringName(spaceId),
+      { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, 8) },
+      { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
+      { trustedAdders: [session.keys.edPub] },
+    );
+  } catch (err) {
+    if (!isAlreadyPresentRecipient(err) && !isKeyringMissing(err)) {
+      console.warn('[octospaces] createSpaceInviteLink: keyring add skipped', err);
+    }
+  }
+
   const token: SpaceInviteLinkToken = { v: 1, spaceId, spaceName, cap, key: ek.edPriv, write };
   return { token, link: encodeSpaceInviteLink(origin, token) };
 }
@@ -176,6 +225,32 @@ export async function joinSpaceByLink(session: Session, token: SpaceInviteLinkTo
   await addJoinedSpaceWithLinkAccess(session.accountClient, session.userId, space, sealed);
   saveSpaceAccessEntry(token.spaceId, { kind: 'link', cap: token.cap, key: token.key, write: token.write });
   return space;
+}
+
+/**
+ * Add a device's KEM key as a recipient of a space's keyring.
+ *
+ * Call this after device pairing (for each space the new device should be able to
+ * decrypt). ONE space keyring encrypts ALL the space's `enc` nodes — adding the device
+ * once unlocks the whole space's E2EE content. Silently a no-op if the keyring doesn't
+ * exist yet.
+ */
+export async function addDeviceToSpaceKeyring(
+  session: Session,
+  spaceId: string,
+  device: { kemPub: string; edPub: string; userId: string },
+): Promise<void> {
+  try {
+    await addCollectionRecipient(
+      session.chatClient,
+      keyringName(spaceId),
+      { subKem: device.kemPub, userId: device.userId, label: device.userId.slice(0, 8) },
+      { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
+      { trustedAdders: [session.keys.edPub] },
+    );
+  } catch (err) {
+    if (!isAlreadyPresentRecipient(err) && !isKeyringMissing(err)) throw err;
+  }
 }
 
 /**

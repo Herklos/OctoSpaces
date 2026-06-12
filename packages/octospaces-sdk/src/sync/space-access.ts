@@ -1,22 +1,23 @@
 /**
  * Space and node access resolver.
  *
- * Spaces are always plaintext (no space keyring). Encryption lives at the
- * per-node level: each `enc:true` node has its own keyring at
- * `objects/n/{nodeId}/_keyring`.
+ * Encryption is per-node (each node has an `enc` flag) but keyed under ONE
+ * space-wide keyring at `spaces/{spaceId}/_keyring`. All `enc` nodes in a space
+ * share the same CEK; `access` gates *fetching*, the keyring gates *decryption*.
  *
  * Two entry points:
  *   - `getSpaceClient`  — returns the right StarfishClient for member-gated
  *     space docs (index, _access). No encryptor.
  *   - `getNodeAccess`   — resolves the (client, encryptor) for a specific node's
- *     CONTENT. Encryptor is null for plaintext nodes.
+ *     CONTENT. Encryptor is null for plaintext nodes; for enc nodes the encryptor
+ *     opens the SPACE keyring (not a per-node keyring).
  *
  * Resolution order for `getNodeAccess`:
- *   1. Per-node link entry  → sign as ephemeral identity; encryptor from keyring.
- *   2. Per-node member entry → open node keyring as recipient.
- *   3. Space-level link entry → same client; open keyring if enc.
- *   4. Space-level member entry → open keyring if enc.
- *   5. No entry, owner        → mint node keyring if enc; plain client otherwise.
+ *   1. Per-node link entry  → sign as ephemeral identity; encryptor from space keyring.
+ *   2. Per-node member entry → open space keyring as recipient.
+ *   3. Space-level link entry → same client; open space keyring if enc.
+ *   4. Space-level member entry → open space keyring if enc.
+ *   5. No entry, owner        → mint space keyring if enc; plain client otherwise.
  *   6. No entry, non-owner   → SpaceAccessError if enc; plain client otherwise.
  */
 import type { Encryptor, StarfishClient } from '@drakkar.software/starfish-client';
@@ -26,7 +27,7 @@ import type { Session } from './identity.js';
 import { ownerTrustedAdders } from './identity.js';
 import { getNodeAccessEntry, getSpaceAccessEntry } from './space-access-store.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
-import { nodeKeyringPull, nodeKeyringPush } from './paths.js';
+import { keyringPull, keyringPush } from './paths.js';
 import type { NodeAccess } from '../core/types.js';
 
 // Re-export so existing importers keep reaching SpaceAccessError through this module.
@@ -35,7 +36,7 @@ export { SpaceAccessError };
 export interface NodeAccessHandle {
   encryptor: Encryptor | null;
   client: StarfishClient;
-  /** True when opened as the space OWNER (may seed / mint the node keyring). */
+  /** True when opened as the space OWNER (may seed / mint the space keyring). */
   isOwnerOpen: boolean;
 }
 
@@ -106,8 +107,8 @@ export function getNodeAccess(
       return { encryptor: null, client, isOwnerOpen };
     }
 
-    // E2EE node — resolve the per-node keyring.
-    const pullPath = nodeKeyringPull(spaceId, nodeId);
+    // E2EE node — resolve the SPACE-WIDE keyring.
+    const spacePullPath = keyringPull(spaceId);
     const trustedAdders = capIss
       ? [capIss]
       : reg?.owner
@@ -115,7 +116,7 @@ export function getNodeAccess(
         : ownerTrustedAdders(session);
 
     if (activeEntry?.kind === 'member' || activeEntry?.kind === 'link') {
-      const encryptor = await openEncryptor(client, session.keys, pullPath, trustedAdders);
+      const encryptor = await openEncryptor(client, session.keys, spacePullPath, trustedAdders);
       return { encryptor, client, isOwnerOpen: false };
     }
 
@@ -125,15 +126,15 @@ export function getNodeAccess(
     if (owner !== null && owner !== session.userId) {
       throw new SpaceAccessError(
         members.includes(session.userId)
-          ? "You're a member of this space, but this node's key isn't on this device yet — ask the owner to invite you."
+          ? "You're a member of this space, but the space key isn't on this device yet — ask the owner to invite you."
           : "You don't have access to this node.",
       );
     }
     const encryptor = await ownerEnsureKeyring(
       session.chatClient,
       session.keys,
-      pullPath,
-      nodeKeyringPush(spaceId, nodeId),
+      spacePullPath,
+      keyringPush(spaceId),
       ownerTrustedAdders(session),
     );
     return { encryptor, client: session.chatClient, isOwnerOpen: true };
@@ -173,7 +174,8 @@ export async function buildNodeAccess(
 
   if (!node.enc) return { client, encryptor: null };
 
-  const pullPath = nodeKeyringPull(spaceId, nodeId);
-  const encryptor = await buildEncryptor(client, session.keys, pullPath, trustedAdders);
+  // Soft-open the SPACE-WIDE keyring.
+  const spacePullPath = keyringPull(spaceId);
+  const encryptor = await buildEncryptor(client, session.keys, spacePullPath, trustedAdders);
   return encryptor ? { client, encryptor } : null;
 }

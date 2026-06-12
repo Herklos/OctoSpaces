@@ -112,8 +112,9 @@ export interface ObjectNode {
   contentKind?: ObjectContentKind;
   /** Who may access this node's content. Absent ⇒ `'space'`. */
   access?: NodeAccess;
-  /** True ⇒ this node's content is E2EE under its own per-node keyring at
-   *  `objects/n/{id}/_keyring`. The combination `public + enc` is invalid. */
+  /** True ⇒ this node's content is E2EE under the SPACE-WIDE keyring at
+   *  `spaces/{spaceId}/_keyring`. All `enc` nodes in a space share one CEK.
+   *  The combination `public + enc` is invalid. */
   enc?: boolean;
   /** App-specific fields. Apps store type-specific metadata here. */
   meta?: Record<string, unknown>;
