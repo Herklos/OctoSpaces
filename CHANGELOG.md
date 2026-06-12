@@ -8,6 +8,35 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## `@drakkar.software/octospaces-sdk`
 
+### [0.4.3] — 2026-06-12 (generic utilities: search, live-sync bus, invite preview)
+
+#### Added
+
+- **`matchTitle(query, title)`** / **`rankResults(query, items, limit?)`** — pure title
+  matcher + ranker for quick-find over object trees. Four-tier relevance (prefix → word
+  boundary → substring → fuzzy subsequence); ties broken by `updatedAt` DESC.
+  Exports: `matchTitle`, `rankResults`, `fold`, `isWordStart`, types `MatchRange`,
+  `TitleMatch`, `RankedResult`.
+- **`registerPull(docPath, fn)`** / **`dispatchDocChange(docPath)`** / **`emitSseStatus`** /
+  **`onSseStatus`** / **`clearLiveSyncBus`** — generic live-sync dispatch bus for wiring
+  SSE doc-change events to active pull hooks. Zero dependencies; call `clearLiveSyncBus()`
+  on account switch.
+- **`previewInvite(raw)`** — classify + decode an invite string (URL fragment, raw fragment,
+  or private member-bundle JSON) into a typed `InvitePreview` discriminated union
+  (`'space-link' | 'node-link' | 'member-bundle'`) without joining. Uses only
+  `decodeSpaceInviteLink` / `decodeNodeInviteLink` internally. Safe to surface error
+  messages verbatim.
+  Exports: `previewInvite`, type `InvitePreview`.
+
+#### Added (0.4.2 — published separately)
+
+- **`MuteValue`**, **`ReadValue`**, **`PresenceStatus`**, **`VerificationLevel`** — exported
+  from `core/types` (were declared but not exported). `VerificationLevel` now includes `'none'`
+  for unknown/not-yet-verified state.
+- **`objIndexName`**, **`objLogName`**, **`objDocName`**, **`objectBlobName`**,
+  **`typesIndexName`**, **`attachmentName`**, **`spaceIdFromRoomId`** — path `*Name` helpers
+  exported from the barrel (were internal-only).
+
 ### [0.3.0] — 2026-06-12 (typed + subtyped public space directory)
 
 #### Added

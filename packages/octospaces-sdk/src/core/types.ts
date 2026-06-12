@@ -21,8 +21,9 @@ export type ID = string;
 /** A user's presence indicator. The theme maps each to a color (app-side). */
 export type PresenceStatus = 'online' | 'away' | 'dnd' | 'offline';
 
-/** A security item's verification state. The theme maps each to a color (app-side). */
-export type VerificationLevel = 'verified' | 'pending' | 'unverified';
+/** A security item's verification state. The theme maps each to a color (app-side).
+ *  `none` = unknown / not yet verified; maps to a neutral/muted color in the theme. */
+export type VerificationLevel = 'verified' | 'pending' | 'unverified' | 'none';
 
 /** Maps a joined space's id → its owner-issued member cap-cert (serialized JSON).
  *  Persisted both in device-local kv and, for durability, in the user's own synced

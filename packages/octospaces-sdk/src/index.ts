@@ -20,9 +20,13 @@ export type {
   CapMap,
   PubAccessMap,
   DmMap,
+  MuteValue,
   MutePrefs,
+  ReadValue,
   ReadPrefs,
   ArchivedDms,
+  PresenceStatus,
+  VerificationLevel,
 } from './core/types.js';
 
 // Ids
@@ -39,6 +43,7 @@ export {
   keyringName,
   keyringPull,
   keyringPush,
+  objIndexName,
   objIndexPull,
   objIndexPush,
   objPubName,
@@ -55,16 +60,22 @@ export {
   spaceAccessPush,
   profilePull,
   profilePush,
+  objLogName,
   objLogPull,
   objLogPush,
+  objDocName,
   objDocPull,
   objDocPush,
+  objectBlobName,
   objectBlobPull,
   objectBlobPush,
+  typesIndexName,
   typesIndexPull,
   typesIndexPush,
+  attachmentName,
   attachmentPull,
   attachmentPush,
+  spaceIdFromRoomId,
   userIdFromEdPub,
   bytesToHex,
 } from './sync/paths.js';
@@ -233,3 +244,12 @@ export { fetchWithTimeout, CONNECT_TIMEOUT_MS } from './sync/fetch-timeout.js';
 // Base64
 export { starfishBase64 } from './sync/base64.js';
 export { toBase64Url, fromBase64Url } from './sync/base64url.js';
+
+// Utilities
+export { matchTitle, rankResults, fold, isWordStart } from './utils/search-match.js';
+export type { MatchRange, TitleMatch, RankedResult } from './utils/search-match.js';
+
+export { registerPull, dispatchDocChange, emitSseStatus, onSseStatus, clearLiveSyncBus } from './utils/live-sync-bus.js';
+
+export { previewInvite } from './utils/invite-preview.js';
+export type { InvitePreview } from './utils/invite-preview.js';
