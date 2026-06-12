@@ -1,0 +1,50 @@
+{
+  "name": "@drakkar.software/octospaces-sdk",
+  "version": "0.1.0",
+  "description": "Shared headless spaces core — identity, registry, objects, and sync plumbing.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./platform": {
+      "react-native": "./dist/platform/index.native.js",
+      "import": "./dist/platform/index.js",
+      "types": "./dist/platform/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
+    "@scure/bip39": "^2.0.0",
+    "hash-wasm": "^4.12.0"
+  },
+  "peerDependencies": {
+    "@drakkar.software/starfish-client": ">=3.0.0-alpha.27",
+    "@drakkar.software/starfish-identities": ">=3.0.0-alpha.27",
+    "@drakkar.software/starfish-keyring": ">=3.0.0-alpha.27",
+    "@drakkar.software/starfish-protocol": ">=3.0.0-alpha.27",
+    "@drakkar.software/starfish-sharing": ">=3.0.0-alpha.27"
+  },
+  "devDependencies": {
+    "@drakkar.software/starfish-client": "3.0.0-alpha.27",
+    "@drakkar.software/starfish-identities": "3.0.0-alpha.27",
+    "@drakkar.software/starfish-keyring": "3.0.0-alpha.27",
+    "@drakkar.software/starfish-protocol": "3.0.0-alpha.27",
+    "@drakkar.software/starfish-sharing": "3.0.0-alpha.27",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "~6.0.3",
+    "vitest": "^3.0.0"
+  }
+}
