@@ -195,7 +195,122 @@ Peer: `react-native-quick-crypto >=0.7`.
 
 ---
 
-## 11. Server follow-ups (other repos — documented here for tracking)
+## 11. Data migration: stored data → ObjectNode tree
+
+> OctoVault is a **knowledge app**, not a chat app — its room/channel machinery is vestigial
+> residue from the OctoChat lineage. No room or message data needs migrating. The real content
+> — pages, boards, tasks, files — is already `ObjectNode`-shaped everywhere.
+
+### 11.0 — Rooms and categories: REMOVED, not migrated
+
+As part of adopting `octospaces-sdk`, the OctoVault SDK removes rooms and categories entirely
+from its data model:
+
+- `type:'room'` and `type:'category'` are deleted from `BuiltinObjectType`.
+- `Room`, `RoomKind`, `RoomSubtype`, `ObjectNode.subtype`, `objectsToRoomCategories`, `categoryId`,
+  `DEFAULT_CATEGORY`, `seedIndexNodes` room/category seeding, and dead chat types
+  (`Message`/`Thread`/`Reaction`) are removed from the OctoVault SDK.
+- The **automation** concept (previously `type:'room' + subtype:'automation'`) is promoted to a
+  first-class `type:'automation'` — the `AutomationMeta` config and stream-bot transport are kept
+  unchanged.
+- Generic room-named infra (space-open hooks, registry provider, live-sync event bus,
+  access-record read/write) is **renamed** to space/doc names — it was always generic, just
+  misleadingly named from the OctoChat lineage.
+- The `_rooms` storage leaf and `spaceregistry` server collection stay **byte-compatible** — only
+  TypeScript symbol names change.
+
+New private spaces land directly on the "Write your first page" empty state; no general/channel
+room is seeded.
+
+### 11.1 — Private spaces: nothing to convert
+
+OctoVault pages, boards, tasks, files, and folders are already `ObjectNode`s stored in the
+encrypted `spaces/{spaceId}/objects/_index` doc. The `octospaces-sdk` reads the same doc shape
+(`{ objects: ObjectNode[] }`). **No data migration needed for private spaces.**
+
+Vestigial `general` room + `cat-channels` category nodes that exist in live spaces are tolerated
+by `buildTree` (which reparents orphans to root) and hidden by `showsInWorkTree`. A lazy cleanup
+helper (`stripRoomNodes`) strips them on the next index write — no forced migration pass required.
+
+### 11.2 — Keep bespoke (do not convert)
+
+| Data | Why it stays bespoke |
+|---|---|
+| `Space` container doc / `_spaces` SpacesDoc | Account-level registry — not object-tree content |
+| `_rooms` ACL doc `{v, owner, members, name, image}` | Access control record; same storage path |
+| `typeindex` custom-type registry | Schema metadata — not content nodes |
+| Profile, devices, keyring | Identity/auth data — outside object tree |
+| Device-local `Vault` | Local encrypted storage — never on the object path |
+
+### 11.3 — Public spaces: relocate the existing object index (NOT a shape conversion)
+
+OctoVault public content is **already** plaintext `ObjectNode`s at the old path:
+
+```
+pubspaces/{ownerId}/{spaceId}/objects/_index     ← OLD (pubObjIndex)
+pubspaces/{ownerId}/{spaceId}/objects/docs/{id}
+pubspaces/{ownerId}/{spaceId}/objects/logs/{id}
+```
+
+The unified-spaces SDK reads from the new path — only the path changes, not the node shape:
+
+```
+spaces/{spaceId}/objects/_index                  ← NEW
+spaces/{spaceId}/objects/docs/{id}
+spaces/{spaceId}/objects/logs/{id}
+```
+
+**Decide first:** dev-only spaces → abandon (wipe `pubspaces/` namespace, clean break).
+Production spaces with real content → run the relocate below.
+
+**Relocate recipe** (run once per owner, with that owner's session):
+
+```ts
+import { updateObjectIndex, readSpaceIndexRooms } from '@drakkar.software/octospaces-sdk';
+
+for (const entry of await listPublicSpaces(ownerId)) {
+  const { spaceId, name, image } = entry;
+
+  // 1. Read old plaintext index doc verbatim
+  const oldIndex = await readPubObjIndex(ownerId, spaceId); // { objects: ObjectNode[] }
+
+  // 2. Strip vestigial room/category nodes; re-tag automation nodes to new type
+  const cleaned = oldIndex.objects
+    .filter(n => n.type !== 'room' && n.type !== 'category')
+    .map(n =>
+      n.type === 'room' && (n as any).subtype === 'automation'
+        ? { ...n, type: 'automation' as const, subtype: undefined }
+        : n,
+    );
+  // buildTree() re-homes any children whose parent was stripped → no orphan crash
+
+  // 3. Write cleaned index to new path (encryptor null = plaintext)
+  await updateObjectIndex(session, spaceId, () => ({ objects: cleaned }), reg);
+
+  // 4. Synthesize the new _rooms access record (name/image from old PublicSpaceDoc)
+  await writeSpaceAccess(reg.client, spaceId, {
+    v: 1, owner: ownerId, members: [], visibility: 'public', name, image,
+  });
+
+  // 5. Copy pubObjDoc/pubObjLog content docs to new path unchanged
+  //    (pubspaces/{ownerId}/{spaceId}/objects/docs/* → spaces/{spaceId}/objects/docs/*)
+  await relocateObjectContentDocs(ownerId, spaceId);
+
+  // 6. Copy typeindex (custom type registry) to new path as-is
+  //    pubspaces/{ownerId}/{spaceId}/typeindex → spaces/{spaceId}/typeindex
+  await relocateTypeindex(ownerId, spaceId);
+}
+
+// Verify: relocated index reads back correctly
+await readSpaceIndexRooms(session, spaceId, reg); // should return [] for vault (no rooms)
+```
+
+Note: OctoVault public spaces contain **no message streams** (no chat) — no stream relocate is
+needed.
+
+---
+
+## 12. Server follow-ups (other repos — documented here for tracking)
 
 These are independent of the OctoVault codebase but may be required for public spaces
 in OctoVault deployments:
@@ -221,4 +336,5 @@ in OctoVault deployments:
 - [ ] **Paths**: extend `accountScope` with vault-specific collections if needed
 - [ ] **UI**: wrap root in `OctoSpacesThemeProvider` (theme already satisfies the contract)
 - [ ] **Native** (if applicable): add `platform` import
+- [ ] **Data migration**: for public spaces — relocate `pubObjIndex` to `spaces/{spaceId}/objects/_index`; strip room/category nodes; re-tag `type:'room'+subtype:'automation'` → `type:'automation'`; synthesize `_rooms` from `PublicSpaceDoc.name`/`.image`. For private spaces: nothing to convert (already ObjectNodes); vestigial room/category nodes cleaned lazily on next index write.
 - [ ] **Server**: rebuild public-space directory projection

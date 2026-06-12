@@ -190,7 +190,87 @@ Then replace `import { ... } from '@/components/ui'` with
 
 ---
 
-## 4. Infra
+## 4. Data migration: stored data → ObjectNode tree
+
+### 4.0 — Private spaces: nothing to convert
+
+OctoChat private rooms, categories, pages, tasks, etc. are already `ObjectNode`s stored in the
+encrypted `spaces/{spaceId}/objects/_index` doc. The `octospaces-sdk` reads the same doc shape
+(`{ objects: ObjectNode[] }`). **No data migration needed for private spaces.**
+
+### 4.1 — Keep bespoke (do not convert)
+
+| Data | Why it stays bespoke |
+|---|---|
+| Chat messages / reactions / edits / pins | `streams/{roomId}` append-log; `contentKind:'append'` — **never** fold into the node tree |
+| `dminbox` delivery docs | DM delivery queue; OctoChat-specific scope |
+| `_spaces` SpacesDoc | Account-level registry — not object-tree content |
+| `_rooms` ACL doc `{v, owner, members, name, image}` | Access control record; same storage path |
+| Profile, devices, keyring | Identity/auth data — outside object tree |
+
+Chat messages are append-only logs keyed by the room node's `id` (`streams/{roomId}`). They carry
+`contentKind:'append'` on the room `ObjectNode` — the log stays separate from the node tree by
+design. **Do not convert messages to object nodes.**
+
+### 4.2 — Public spaces: relocate node index + streams
+
+Public-space content is already `ObjectNode`s at the old paths:
+
+```
+pubspaces/{ownerId}/{spaceId}/objects/_index     ← OLD (pubobjindex)
+pubspaces/{ownerId}/{spaceId}/streams/{roomId}   ← OLD (message append-logs)
+```
+
+The unified-spaces SDK reads from the new paths:
+
+```
+spaces/{spaceId}/objects/_index                  ← NEW
+spaces/{spaceId}/streams/{roomId}                ← NEW
+```
+
+**Decide first:** dev-only spaces → abandon (wipe `pubspaces/` namespace, clean break).
+Production spaces with real content → run the relocate below.
+
+**Relocate recipe** (run once per owner, with that owner's session):
+
+```ts
+import { updateObjectIndex, readSpaceIndexRooms } from '@drakkar.software/octospaces-sdk';
+
+for (const entry of await listPublicSpaces(ownerId)) {
+  const { spaceId, name, image } = entry;
+
+  // 1. Read old plaintext index doc verbatim (nodes already correct shape)
+  const oldIndex = await readPubObjIndex(ownerId, spaceId); // { objects: ObjectNode[] }
+
+  // 2. Write verbatim to new path (encryptor null = plaintext)
+  await updateObjectIndex(session, spaceId, () => oldIndex, reg);
+
+  // 3. Synthesize the new _rooms access record
+  await writeSpaceAccess(reg.client, spaceId, {
+    v: 1, owner: ownerId, members: [], visibility: 'public', name, image,
+  });
+
+  // 4. Relocate message streams (or accept history loss for public spaces)
+  for (const roomNode of oldIndex.objects.filter(n => n.type === 'room')) {
+    // copy  pubspaces/{ownerId}/{spaceId}/streams/{roomId}
+    //   →   spaces/{spaceId}/streams/{roomId}  (append-only log, unchanged shape)
+    await relocateStream(ownerId, spaceId, roomNode.id);
+  }
+}
+
+// Verify: relocated index reads back correctly with room nodes intact
+await readSpaceIndexRooms(session, spaceId, reg);
+```
+
+Stream relocation is optional — if message history in public spaces is acceptable to lose, skip
+step 4 and wipe `pubspaces/` after the index relocate.
+
+> **Note:** keep the old `pubspace`/`pubstream` collection hooks alive in the server projection
+> during the transition window (old clients still write there). See section 1a.
+
+---
+
+## 5. Infra
 
 ### 4a. Add a `shared` namespace app
 
@@ -213,4 +293,5 @@ Mount a new `drakkar_sync/apps/shared/` app at `/v1/shared`:
 - [ ] **App**: `Space.type` → `Space.visibility` global search-replace
 - [ ] **App**: replace pubspace call sites per the table above
 - [ ] **App** (optional): adopt `octospaces-ui` primitives after theme contract satisfied
+- [ ] **Data migration**: for public spaces — relocate `pubobjindex` to `spaces/{spaceId}/objects/_index` (nodes already correct shape); relocate `pubstream` logs to `spaces/{spaceId}/streams/{roomId}` or accept history loss; synthesize `_rooms` with `visibility:'public'`. For private spaces: nothing to convert (already ObjectNodes).
 - [ ] **Infra**: add `shared` namespace app
