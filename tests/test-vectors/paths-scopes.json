@@ -1,0 +1,162 @@
+{
+  "description": "Cross-language vector for path builder functions and capability scopes.",
+  "paths": {
+    "keyringPull": "/pull/spaces/space-abc123/_keyring",
+    "keyringPush": "/push/spaces/space-abc123/_keyring",
+    "objIndexPull": "/pull/spaces/space-abc123/objects/_index",
+    "objIndexPush": "/push/spaces/space-abc123/objects/_index",
+    "profilePull": "/pull/user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/profile",
+    "profilePush": "/push/user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/profile",
+    "spacesPull": "/pull/user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_spaces",
+    "spacesPush": "/push/user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_spaces",
+    "spaceAccessPull": "/pull/spaces/space-abc123/_access",
+    "spaceAccessPush": "/push/spaces/space-abc123/_access"
+  },
+  "path_inputs": {
+    "spaceId": "space-abc123",
+    "nodeId": "node-xyz789",
+    "userId": "u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "scopes": {
+    "owner": {
+      "ops": [
+        "read",
+        "list",
+        "write"
+      ],
+      "collections": [
+        "spacekeyring",
+        "objindex",
+        "objlog",
+        "objsnap",
+        "objdoc",
+        "objblob",
+        "typeindex",
+        "objpub"
+      ],
+      "paths": [
+        "spaces/**"
+      ]
+    },
+    "spaceMember_write": {
+      "ops": [
+        "read",
+        "list",
+        "write"
+      ],
+      "collections": [
+        "spacekeyring",
+        "objindex",
+        "objlog",
+        "objsnap",
+        "objdoc",
+        "objblob",
+        "typeindex",
+        "objpub"
+      ],
+      "paths": [
+        "spaces/space-abc123/**"
+      ]
+    },
+    "spaceMember_read": {
+      "ops": [
+        "read",
+        "list"
+      ],
+      "collections": [
+        "spacekeyring",
+        "objindex",
+        "objlog",
+        "objsnap",
+        "objdoc",
+        "objblob",
+        "typeindex",
+        "objpub"
+      ],
+      "paths": [
+        "spaces/space-abc123/**"
+      ]
+    },
+    "nodeMember_write": {
+      "ops": [
+        "read",
+        "list",
+        "write"
+      ],
+      "collections": [
+        "objinv"
+      ],
+      "paths": [
+        "spaces/space-abc123/objects/n/node-xyz789/**"
+      ]
+    },
+    "nodeMember_read": {
+      "ops": [
+        "read",
+        "list"
+      ],
+      "collections": [
+        "objinv"
+      ],
+      "paths": [
+        "spaces/space-abc123/objects/n/node-xyz789/**"
+      ]
+    },
+    "account": {
+      "ops": [
+        "read",
+        "list",
+        "write"
+      ],
+      "collections": [
+        "profile",
+        "devices",
+        "spaces",
+        "spaceregistry"
+      ],
+      "paths": [
+        "user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/profile",
+        "users/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_devices",
+        "user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_spaces",
+        "spaces/**"
+      ]
+    },
+    "linkedDevice": {
+      "ops": [
+        "read",
+        "list",
+        "write"
+      ],
+      "collections": [
+        "spacekeyring",
+        "objindex",
+        "objlog",
+        "objsnap",
+        "objdoc",
+        "objblob",
+        "typeindex",
+        "objpub",
+        "profile",
+        "devices",
+        "spaces",
+        "spaceregistry"
+      ],
+      "paths": [
+        "spaces/**",
+        "user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/profile",
+        "users/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_devices",
+        "user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_spaces"
+      ]
+    }
+  },
+  "OBJECT_COLLECTIONS": [
+    "spacekeyring",
+    "objindex",
+    "objlog",
+    "objsnap",
+    "objdoc",
+    "objblob",
+    "typeindex",
+    "objpub"
+  ]
+}

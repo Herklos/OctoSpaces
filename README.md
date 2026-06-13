@@ -18,10 +18,18 @@
 
 ## Packages
 
+**TypeScript**
+
 | Package | Version | Description |
 |---|---|---|
-| [`@drakkar.software/octospaces-sdk`](./packages/octospaces-sdk) | `0.4.1` | Headless spaces core — identity, sync, objects, registry |
-| [`@drakkar.software/octospaces-ui`](./packages/octospaces-ui) | `0.1.0` | Shared UI primitives — theme plumbing only, no values |
+| [`@drakkar.software/octospaces-sdk`](./packages/ts/octospaces-sdk) | `0.4.3` | Headless spaces core — identity, sync, objects, registry |
+| [`@drakkar.software/octospaces-ui`](./packages/ts/octospaces-ui) | `0.1.0` | Shared UI primitives — theme plumbing only, no values |
+
+**Python**
+
+| Package | Version | Description |
+|---|---|---|
+| [`octospaces-sdk`](./packages/python/octospaces-sdk) | `0.4.3` | Python port of the headless spaces core — see [PYTHON_SDK.md](./PYTHON_SDK.md) |
 
 ---
 
@@ -38,18 +46,25 @@ Sync is powered by the **[Starfish](https://github.com/Drakkar-Software/Starfish
 ```
 octospaces/
 ├── packages/
-│   ├── octospaces-sdk/          # headless core
-│   │   └── src/
-│   │       ├── core/            # config, types, ids, adapters, errors
-│   │       ├── sync/            # identity, client, paths, encryptors, pairing, caps
-│   │       ├── spaces/          # registry, members, object-index, pubspace
-│   │       ├── objects/         # ObjectNode tree, reducers (generic — no domain types)
-│   │       └── platform/        # kv / crypto split (.ts + .native.ts)
-│   └── octospaces-ui/           # UI primitives
-│       └── src/
-│           └── theme/           # Palette/Theme types, provider, hook, helpers
+│   ├── ts/
+│   │   ├── octospaces-sdk/          # headless core (TypeScript)
+│   │   │   └── src/
+│   │   │       ├── core/            # config, types, ids, adapters, errors
+│   │   │       ├── sync/            # identity, client, paths, encryptors, pairing, caps
+│   │   │       ├── spaces/          # registry, members, object-index
+│   │   │       ├── objects/         # ObjectNode tree, reducers (generic — no domain types)
+│   │   │       └── platform/        # kv / crypto split (.ts + .native.ts)
+│   │   └── octospaces-ui/           # UI primitives
+│   │       └── src/
+│   │           └── theme/           # Palette/Theme types, provider, hook, helpers
+│   └── python/
+│       └── octospaces-sdk/          # Python port (uv / pytest — see PYTHON_SDK.md)
+│           └── octospaces_sdk/      # mirrors packages/ts/octospaces-sdk/src/
+├── tests/
+│   └── test-vectors/                # shared JSON vectors (TS vitest + Python pytest)
 ├── tsconfig.base.json
 ├── pnpm-workspace.yaml
+├── PYTHON_SDK.md
 └── package.json
 ```
 

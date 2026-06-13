@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typescript:
+    name: TypeScript SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -r build
+
+      - name: Test (includes shared vector tests)
+        run: pnpm -r test
+
+  python:
+    name: Python SDK
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone satellite (starfish Python deps)
+        uses: actions/checkout@v4
+        with:
+          repository: Drakkar-Software/satellite
+          path: satellite
+          # Uses default GitHub Actions token; set a PAT in secrets for private repos
+          token: ${{ secrets.SATELLITE_GITHUB_TOKEN || github.token }}
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Python SDK
+        working-directory: packages/python/octospaces-sdk
+        run: uv sync --dev
+
+      - name: Verify vectors are up to date
+        run: |
+          for f in tests/test-vectors/_generators/*.py; do
+            python3 "$f"
+          done
+          git diff --exit-code tests/test-vectors/ || (echo "Vectors are stale — re-run generators" && exit 1)
+
+      - name: Run tests (shared vector tests + unit tests)
+        working-directory: packages/python/octospaces-sdk
+        run: uv run pytest -v

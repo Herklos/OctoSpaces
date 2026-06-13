@@ -1,0 +1,37 @@
+{
+  "description": "Cross-language vector for room_slug (ASCII inputs only). Pipeline: lowercase → replace non-[a-z0-9] runs with '-' → strip leading/trailing '-' → truncate 40 → fallback 'room'. Non-ASCII inputs are excluded — TS and Python differ on how accented characters are handled (TS strips them, Python normalises first).",
+  "vectors": [
+    {
+      "input": "Hello World",
+      "expected": "hello-world"
+    },
+    {
+      "input": "My-Project 2024",
+      "expected": "my-project-2024"
+    },
+    {
+      "input": "ALL CAPS",
+      "expected": "all-caps"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "input": "",
+      "expected": "room"
+    },
+    {
+      "input": "!!! @@@",
+      "expected": "room"
+    },
+    {
+      "input": "simple",
+      "expected": "simple"
+    },
+    {
+      "input": "abc-123-xyz",
+      "expected": "abc-123-xyz"
+    }
+  ]
+}

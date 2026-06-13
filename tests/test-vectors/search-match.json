@@ -1,0 +1,183 @@
+{
+  "description": "Cross-language vector for search-match utilities. fold (NFD-first-unit + lowercase), isWordStart, matchTitle tiers, rankResults. Both TS and Python must reproduce these outputs.",
+  "constants": {
+    "PREFIX_SCORE_BASE": 4000,
+    "WORD_SCORE_BASE": 3000,
+    "SUBSTRING_SCORE_BASE": 2000,
+    "FUZZY_SCORE_BASE": 1000
+  },
+  "fold": [
+    {
+      "input": "Hello World",
+      "expected": "hello world"
+    },
+    {
+      "input": "café",
+      "expected": "cafe",
+      "note": "diacritic stripped"
+    },
+    {
+      "input": "mañana",
+      "expected": "manana"
+    },
+    {
+      "input": "crêpe",
+      "expected": "crepe",
+      "note": "length preserved"
+    },
+    {
+      "input": "NOTES",
+      "expected": "notes"
+    },
+    {
+      "input": "🐙notes",
+      "length_preserved": true,
+      "note": "surrogate pair — length preserved in both languages (property check only)"
+    }
+  ],
+  "isWordStart": [
+    {
+      "folded": "hello",
+      "i": 0,
+      "expected": true,
+      "note": "position 0 always word start"
+    },
+    {
+      "folded": "hello world",
+      "i": 6,
+      "expected": true,
+      "note": "after space"
+    },
+    {
+      "folded": "hello",
+      "i": 2,
+      "expected": false,
+      "note": "mid-word"
+    },
+    {
+      "folded": "hello-world",
+      "i": 6,
+      "expected": true,
+      "note": "after dash"
+    },
+    {
+      "folded": "hello.world",
+      "i": 6,
+      "expected": true,
+      "note": "after dot"
+    }
+  ],
+  "matchTitle": [
+    {
+      "query": "",
+      "title": "Notes",
+      "expected": null,
+      "note": "empty query"
+    },
+    {
+      "query": "xyz",
+      "title": "Notes",
+      "expected": null,
+      "note": "miss"
+    },
+    {
+      "query": "not",
+      "title": "Notes",
+      "min_score": 3900,
+      "expected_ranges": [
+        {
+          "start": 0,
+          "end": 3
+        }
+      ],
+      "tier": "PREFIX"
+    },
+    {
+      "query": "pa",
+      "title": "New page",
+      "min_score": 2900,
+      "max_score": 4000,
+      "expected_range_start": 4,
+      "tier": "WORD"
+    },
+    {
+      "query": "page",
+      "title": "Homepage",
+      "min_score": 1900,
+      "max_score": 3000,
+      "tier": "SUBSTRING"
+    },
+    {
+      "query": "rdm",
+      "title": "Roadmap",
+      "min_score": 900,
+      "max_score": 2000,
+      "tier": "FUZZY"
+    },
+    {
+      "query": "NOTE",
+      "title": "notes",
+      "expected_match": true,
+      "note": "case-insensitive"
+    },
+    {
+      "query": "note",
+      "title": "NOTES",
+      "expected_match": true,
+      "note": "case-insensitive"
+    },
+    {
+      "query": "no",
+      "title": "Notes",
+      "tier": "PREFIX",
+      "note": "prefix tier"
+    }
+  ],
+  "rankResults": [
+    {
+      "query": "note",
+      "items": [
+        {
+          "id": "1",
+          "title": "Notebook"
+        },
+        {
+          "id": "2",
+          "title": "New Notes"
+        },
+        {
+          "id": "3",
+          "title": "Random"
+        },
+        {
+          "id": "4",
+          "title": "keynote"
+        }
+      ],
+      "expected_top_id": "1",
+      "note": "Notebook has prefix match; New Notes is WORD; keynote is SUBSTRING"
+    },
+    {
+      "query": "pg",
+      "items": [
+        {
+          "id": "1",
+          "title": "Page"
+        },
+        {
+          "id": "2",
+          "title": "Programming"
+        },
+        {
+          "id": "3",
+          "title": "Unrelated"
+        }
+      ],
+      "expected_match_ids": [
+        "1",
+        "2"
+      ],
+      "note": "'pg' matches Page (PREFIX) and Programming (FUZZY)"
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "description": "Cross-language vector for invite link encode/decode. encode_space_invite_link: '{origin}/join#{base64url(token)}'. encode_node_invite_link: '{origin}/join/node#{base64url(token)}'. Decode by parsing fragment as base64url JSON. Assertion: decode(fragment) == original token.",
+  "origin": "https://app.octospaces.dev",
+  "spaceToken": {
+    "token": {
+      "v": 1,
+      "spaceId": "space-test-abc123",
+      "spaceName": "My Test Space",
+      "cap": {
+        "iss": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sub": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "iat": 1700000000,
+        "exp": 1702592000,
+        "scope": {
+          "collection": "chat",
+          "spaceId": "space-test-abc123",
+          "write": true
+        },
+        "sig": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "key": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "write": true
+    },
+    "encoded_fragment": "eyJ2IjoxLCJzcGFjZUlkIjoic3BhY2UtdGVzdC1hYmMxMjMiLCJzcGFjZU5hbWUiOiJNeSBUZXN0IFNwYWNlIiwiY2FwIjp7ImlzcyI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJzdWIiOiJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDI1OTIwMDAsInNjb3BlIjp7ImNvbGxlY3Rpb24iOiJjaGF0Iiwic3BhY2VJZCI6InNwYWNlLXRlc3QtYWJjMTIzIiwid3JpdGUiOnRydWV9LCJzaWciOiJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyJ9LCJrZXkiOiJkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkIiwid3JpdGUiOnRydWV9",
+    "full_link": "https://app.octospaces.dev/join#eyJ2IjoxLCJzcGFjZUlkIjoic3BhY2UtdGVzdC1hYmMxMjMiLCJzcGFjZU5hbWUiOiJNeSBUZXN0IFNwYWNlIiwiY2FwIjp7ImlzcyI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJzdWIiOiJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDI1OTIwMDAsInNjb3BlIjp7ImNvbGxlY3Rpb24iOiJjaGF0Iiwic3BhY2VJZCI6InNwYWNlLXRlc3QtYWJjMTIzIiwid3JpdGUiOnRydWV9LCJzaWciOiJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyJ9LCJrZXkiOiJkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkIiwid3JpdGUiOnRydWV9",
+    "decoded": {
+      "v": 1,
+      "spaceId": "space-test-abc123",
+      "spaceName": "My Test Space",
+      "cap": {
+        "iss": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sub": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "iat": 1700000000,
+        "exp": 1702592000,
+        "scope": {
+          "collection": "chat",
+          "spaceId": "space-test-abc123",
+          "write": true
+        },
+        "sig": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "key": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "write": true
+    }
+  },
+  "nodeToken": {
+    "token": {
+      "v": 1,
+      "spaceId": "space-test-abc123",
+      "nodeId": "node-test-xyz789",
+      "nodeName": "Meeting Notes",
+      "cap": {
+        "iss": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sub": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "iat": 1700000000,
+        "exp": 1702592000,
+        "scope": {
+          "collection": "chat",
+          "spaceId": "space-test-abc123",
+          "write": true
+        },
+        "sig": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "key": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "write": false
+    },
+    "encoded_fragment": "eyJ2IjoxLCJzcGFjZUlkIjoic3BhY2UtdGVzdC1hYmMxMjMiLCJub2RlSWQiOiJub2RlLXRlc3QteHl6Nzg5Iiwibm9kZU5hbWUiOiJNZWV0aW5nIE5vdGVzIiwiY2FwIjp7ImlzcyI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJzdWIiOiJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDI1OTIwMDAsInNjb3BlIjp7ImNvbGxlY3Rpb24iOiJjaGF0Iiwic3BhY2VJZCI6InNwYWNlLXRlc3QtYWJjMTIzIiwid3JpdGUiOnRydWV9LCJzaWciOiJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyJ9LCJrZXkiOiJlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlIiwid3JpdGUiOmZhbHNlfQ",
+    "full_link": "https://app.octospaces.dev/join/node#eyJ2IjoxLCJzcGFjZUlkIjoic3BhY2UtdGVzdC1hYmMxMjMiLCJub2RlSWQiOiJub2RlLXRlc3QteHl6Nzg5Iiwibm9kZU5hbWUiOiJNZWV0aW5nIE5vdGVzIiwiY2FwIjp7ImlzcyI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJzdWIiOiJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDI1OTIwMDAsInNjb3BlIjp7ImNvbGxlY3Rpb24iOiJjaGF0Iiwic3BhY2VJZCI6InNwYWNlLXRlc3QtYWJjMTIzIiwid3JpdGUiOnRydWV9LCJzaWciOiJjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyJ9LCJrZXkiOiJlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlIiwid3JpdGUiOmZhbHNlfQ",
+    "decoded": {
+      "v": 1,
+      "spaceId": "space-test-abc123",
+      "nodeId": "node-test-xyz789",
+      "nodeName": "Meeting Notes",
+      "cap": {
+        "iss": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sub": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "iat": 1700000000,
+        "exp": 1702592000,
+        "scope": {
+          "collection": "chat",
+          "spaceId": "space-test-abc123",
+          "write": true
+        },
+        "sig": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "key": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "write": false
+    }
+  }
+}

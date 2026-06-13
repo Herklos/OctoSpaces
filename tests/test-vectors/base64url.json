@@ -1,0 +1,55 @@
+{
+  "description": "Cross-language vector for base64url encode/decode. to_base64_url: JSON.stringify (compact, no spaces) → urlsafe base64 no padding. from_base64_url_json: inverse. Assertion: decode(encode(obj)) == obj.",
+  "vectors": [
+    {
+      "object": {
+        "v": 1,
+        "spaceId": "abc",
+        "spaceName": "Test Space"
+      },
+      "encoded": "eyJ2IjoxLCJzcGFjZUlkIjoiYWJjIiwic3BhY2VOYW1lIjoiVGVzdCBTcGFjZSJ9",
+      "roundtrip": {
+        "v": 1,
+        "spaceId": "abc",
+        "spaceName": "Test Space"
+      }
+    },
+    {
+      "object": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "b": true,
+        "c": null
+      },
+      "encoded": "eyJhIjpbMSwyLDNdLCJiIjp0cnVlLCJjIjpudWxsfQ",
+      "roundtrip": {
+        "a": [
+          1,
+          2,
+          3
+        ],
+        "b": true,
+        "c": null
+      }
+    },
+    {
+      "object": {
+        "key": "hello world",
+        "emoji": "🐙"
+      },
+      "encoded": "eyJrZXkiOiJoZWxsbyB3b3JsZCIsImVtb2ppIjoi8J-QmSJ9",
+      "roundtrip": {
+        "key": "hello world",
+        "emoji": "🐙"
+      }
+    },
+    {
+      "object": {},
+      "encoded": "e30",
+      "roundtrip": {}
+    }
+  ]
+}

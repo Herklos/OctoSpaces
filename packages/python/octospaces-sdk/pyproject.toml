@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "octospaces-sdk"
+version = "0.4.3"
+description = "Python port of the OctoSpaces headless spaces core — identity, sync, objects, registry."
+requires-python = ">=3.11"
+dependencies = [
+    "starfish-protocol>=3.0.0a25",
+    "starfish-keyring>=3.0.0a25",
+    "starfish-identities>=3.0.0a25",
+    "starfish-sharing>=3.0.0a25",
+    "starfish-sdk>=3.0.0a25",
+    "cryptography>=41.0",
+    "argon2-cffi>=25.1.0",
+    "httpx>=0.25",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+# ---------------------------------------------------------------------------
+# Local dev: resolve the Starfish packages from the sibling satellite checkout
+# instead of PyPI.  CI / end users install from PyPI (no [tool.uv.sources]).
+# Mirror the exact pattern used in satellite/packages/python/*/pyproject.toml.
+# ---------------------------------------------------------------------------
+[tool.uv.sources]
+starfish-protocol   = { path = "../../../../satellite/packages/python/protocol",   editable = true }
+starfish-keyring    = { path = "../../../../satellite/packages/python/keyring",     editable = true }
+starfish-identities = { path = "../../../../satellite/packages/python/identities",  editable = true }
+starfish-sharing    = { path = "../../../../satellite/packages/python/sharing",     editable = true }
+starfish-sdk        = { path = "../../../../satellite/packages/python/client",      editable = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
+]

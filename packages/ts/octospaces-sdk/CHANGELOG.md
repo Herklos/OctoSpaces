@@ -1,5 +1,23 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.4.3 (2026-06-13)
+
+### Added
+
+- **Python SDK** (`packages/python/octospaces-sdk`) — full functional port of the TS
+  SDK, backed by the `starfish-*` Python packages. Provides identity, registry, objects,
+  invite flows, and sync plumbing. Install via `pip install octospaces-sdk`.
+- **Shared cross-language test vectors** (`tests/test-vectors/*.json`) — 7 JSON fixtures
+  consumed by both vitest and pytest: `objects-tree`, `search-match`, `paths-scopes`,
+  `user-id`, `room-slug`, `base64url`, `invite-links`.
+- **TS vector test files** (`*.vectors.test.ts`) — 4 new vitest files asserting the TS
+  SDK against the shared vectors (objects, search-match, paths/scopes/base64url, invite links).
+- **CI workflow** (`.github/workflows/ci.yml`) — TypeScript job (pnpm + vitest) and
+  Python job (uv, matrix 3.11/3.12/3.13) both asserting the shared vectors.
+- **Monorepo restructure** — `packages/octospaces-sdk` → `packages/ts/octospaces-sdk`
+  and `packages/octospaces-ui` → `packages/ts/octospaces-ui` (satellite layout;
+  `pnpm-workspace.yaml` updated to `packages/ts/*`).
+
 ## 0.4.1 (2026-06-12)
 
 ### Breaking changes

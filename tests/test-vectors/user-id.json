@@ -1,0 +1,21 @@
+{
+  "description": "Cross-language vector for userId derivation: sha256(bytes.fromhex(edPub))[:16].hex() — must be 32 hex chars.",
+  "vectors": [
+    {
+      "edPub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "userId": "e0e77a507412b120f6ede61f62295b1a"
+    },
+    {
+      "edPub": "0000000000000000000000000000000000000000000000000000000000000000",
+      "userId": "66687aadf862bd776c8fc18b8e9f8e20"
+    },
+    {
+      "edPub": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+      "userId": "8200cf0ce11447bf6353cbac964d07d1"
+    },
+    {
+      "edPub": "cafe1234cafe1234cafe1234cafe1234cafe1234cafe1234cafe1234cafe1234",
+      "userId": "6f0c1818ab920a822ade6e6d6dd04886"
+    }
+  ]
+}
