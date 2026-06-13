@@ -437,10 +437,11 @@ in OctoVault deployments:
 - [x] **Types**: `Space.type`/`ownerId`/`write` removed; per-node `access`/`enc` model adopted
 - [x] **Call sites**: pubspace call sites replaced — `isPublicSpaceId` branches removed; `getSpaceEncryptor` → `getNodeAccess`; `recoverPubspaceAccess` → `recoverSpaceAccess`; `joinPublicSpace` → `joinSpaceByLink`/`joinNodeByLink`/`acceptSpaceInvite`
 - [x] **Paths**: vault `accountScope` extended in `paths.ts`; `objLogName`/`objDocName`/`attachmentName`/etc. re-exported from octospaces-sdk@0.4.3
-- [ ] **UI**: wrap root in `OctoSpacesThemeProvider` (theme adapter + `resolveOctoSpacesTheme` still pending — Phase 4)
+- [x] **UI**: `OctoSpacesThemeProvider` wrapped at root; `resolveOctoSpacesTheme(scheme)` adapter in `apps/mobile/src/theme.ts` maps vault tokens (canvas→background, paper→surface, dnd→busy, pending→partial, unverified→none) to the octospaces-ui `Theme` contract; `@drakkar.software/octospaces-ui@0.1.0` added as dependency
 - [x] **Native**: `platform` import added at boot
 - [x] **Data migration — access record**: enricher flipped to `_access`; collections renamed `spaceregistry`/`spacekeyring`; `objindex` encryption changed to `none`; `objpub`/`objinv` added. **Dev clean break** — wipe `STARFISH_DATA_DIR` before first boot with new config.
 - [x] **Data migration — public spaces**: pubspaces removed (per-node `access:'public'` replaces them). No relocation for dev data — clean break.
 - [x] **Server/Infra**: `apps/server/src/config.ts` + `Infra/…/octovault/collections.py` updated in lockstep; Infra `__init__.py` drops `make_pubspace_role_enricher` and passes `registry_path="spaces/{id}/_access"`
 - [ ] **Server**: rebuild public-space directory projection from `objpub`-collection writes (deferred — Phase 5)
-- [ ] **Promoted to octospaces-sdk@0.4.3**: `previewInvite`, `matchTitle`/`rankResults`, `registerPull`/`dispatchDocChange` live-sync bus; `MuteValue`/`ReadValue`/`PresenceStatus`/`VerificationLevel`/`*Name` path helpers exported
+- [x] **Promoted to octospaces-sdk@0.4.3**: `previewInvite`, `matchTitle`/`rankResults`, `registerPull`/`dispatchDocChange` live-sync bus; `MuteValue`/`ReadValue`/`PresenceStatus`/`VerificationLevel`/`*Name` path helpers exported; vault SDK re-exports all three from octospaces-sdk@0.4.3
+- [x] **Deprecated symbol cleanup**: `isPublicSpaceId`, `createPublicInvite`, `updatePublicSpaceMeta`, `publicSpaceAuth` dead branches removed from all 9 affected app files; `if (!encryptor) return null` bug in `use-merge-doc.ts` fixed (was blocking all plaintext merge-docs)
