@@ -8,6 +8,15 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## `@drakkar.software/octospaces-sdk`
 
+### [0.6.0] — 2026-06-14 (removeJoinedSpace + moveSpace)
+
+#### Added
+
+- **`removeJoinedSpace(client, userId, spaceId)`** — drop a space from the identity's
+  own `_spaces` list, erasing its cap and `pubAccess` credential atomically. Idempotent.
+- **`moveSpace(client, userId, spaceId, toIndex)`** — move one space to an absolute
+  index in the `_spaces` list (clamped, no-op when already there or absent).
+
 ### [0.4.3] — 2026-06-12 (generic utilities: search, live-sync bus, invite preview)
 
 #### Added

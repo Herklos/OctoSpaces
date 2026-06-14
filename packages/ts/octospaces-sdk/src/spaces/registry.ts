@@ -359,6 +359,31 @@ export async function removeSpaceMember(
   await writeSpaceAccess(client, spaceId, owner ?? memberUserId, members.filter((m) => m !== memberUserId), hash, { name, image });
 }
 
+/** Invitee/owner-side: drop a space from the identity's own list + forget its cap
+ *  and link-access credential. Idempotent (no-op when absent). */
+export async function removeJoinedSpace(client: StarfishClient, userId: string, spaceId: string): Promise<void> {
+  await updateSpacesDoc(client, userId, (cur) => {
+    if (!cur.spaces.some((s) => s.id === spaceId)) return cur;
+    const caps = { ...cur.caps }; delete caps[spaceId];
+    const pubAccess = { ...cur.pubAccess }; delete pubAccess[spaceId];
+    return { spaces: cur.spaces.filter((s) => s.id !== spaceId), caps, pubAccess };
+  });
+}
+
+/** Move one space to an absolute index in the list (clamped). No-op if absent or
+ *  already there. For relative up/down, callers pass `currentIndex ± 1`. */
+export async function moveSpace(client: StarfishClient, userId: string, spaceId: string, toIndex: number): Promise<void> {
+  await updateSpacesDoc(client, userId, (cur) => {
+    const from = cur.spaces.findIndex((s) => s.id === spaceId);
+    if (from === -1) return cur;
+    const next = [...cur.spaces];
+    const [moved] = next.splice(from, 1);
+    next.splice(Math.max(0, Math.min(toIndex, next.length)), 0, moved);
+    if (next.every((s, i) => s === cur.spaces[i])) return cur;
+    return { spaces: next, caps: cur.caps, pubAccess: cur.pubAccess };
+  });
+}
+
 export async function addJoinedSpace(client: StarfishClient, userId: string, space: Space): Promise<void> {
   await updateSpacesDoc(client, userId, (cur) =>
     cur.spaces.some((s) => s.id === space.id)

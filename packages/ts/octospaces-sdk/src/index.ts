@@ -164,6 +164,8 @@ export {
   setDmMapping,
   writeSpaces,
   reorderSpaces,
+  removeJoinedSpace,
+  moveSpace,
   readSpaceAccess,
   writeSpaceAccess,
   addSpaceMember,
