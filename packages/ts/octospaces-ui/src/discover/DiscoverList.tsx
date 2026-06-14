@@ -5,7 +5,7 @@
  * imports from any specific OctoSpaces app.
  */
 import React, { useCallback } from 'react';
-import { FlatList, Text, View } from 'react-native';
+import { FlatList, RefreshControl, Text, View } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
 import { DiscoverRow } from './DiscoverRow.js';
@@ -19,6 +19,10 @@ export interface DiscoverListProps {
   onOpen: (entry: DiscoverEntry) => void;
   /** Text shown when `entries` is empty (default: "No public objects found"). */
   emptyMessage?: string;
+  /** Whether a pull-to-refresh is currently in progress. */
+  refreshing?: boolean;
+  /** Called when the user pulls to refresh. */
+  onRefresh?: () => void;
 }
 
 export function DiscoverList({
@@ -26,6 +30,8 @@ export function DiscoverList({
   renderIcon,
   onOpen,
   emptyMessage = 'No public objects found',
+  refreshing,
+  onRefresh,
 }: DiscoverListProps) {
   const theme = useOctoSpacesTheme();
 
@@ -72,6 +78,15 @@ export function DiscoverList({
       contentContainerStyle={{ paddingVertical: (theme.spacing['1'] as number) ?? 4 }}
       showsVerticalScrollIndicator={false}
       removeClippedSubviews
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing ?? false}
+            onRefresh={onRefresh}
+            tintColor={theme.colors.primary}
+          />
+        ) : undefined
+      }
     />
   );
 }

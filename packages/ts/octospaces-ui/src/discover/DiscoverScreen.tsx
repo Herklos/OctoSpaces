@@ -17,7 +17,7 @@
  *   idle → loading → (ready | error)
  *   Any pull of `loadEntries` updates the entries; errors show a retry button.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, TextInput, View, type TextStyle } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
@@ -56,6 +56,18 @@ export interface DiscoverScreenProps {
    * @default true
    */
   searchEnabled?: boolean;
+  /**
+   * Optional ref whose `.current` is set to a `reload()` function once mounted.
+   * Lets a host (e.g. a tab screen) trigger a soft-refresh on focus without
+   * blanking the existing list — identical to pull-to-refresh behaviour.
+   *
+   * ```tsx
+   * const reloadRef = useRef<() => void>(null);
+   * useFocusEffect(useCallback(() => { reloadRef.current?.(); }, []));
+   * <DiscoverScreen reloadRef={reloadRef} ... />
+   * ```
+   */
+  reloadRef?: React.RefObject<(() => void) | null>;
 }
 
 type State =
@@ -72,10 +84,12 @@ export function DiscoverScreen({
   emptyMessage = 'No public objects yet',
   emptySearchMessage,
   searchEnabled = true,
+  reloadRef,
 }: DiscoverScreenProps) {
   const theme = useOctoSpacesTheme();
   const [state, setState] = useState<State>({ status: 'idle' });
   const [query, setQuery] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   const cancelledRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -92,6 +106,23 @@ export function DiscoverScreen({
       });
     }
   }, [loadEntries]);
+
+  /** Pull-to-refresh: re-fetches without blanking the existing list. */
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const raw = await loadEntries();
+      if (cancelledRef.current) return;
+      setState({ status: 'ready', entries: sortDiscoverEntries(raw) });
+    } catch {
+      // keep the existing list on refresh failure; the retry button remains for error state
+    } finally {
+      if (!cancelledRef.current) setRefreshing(false);
+    }
+  }, [loadEntries]);
+
+  // Expose handleRefresh via reloadRef so a host can trigger a soft reload on focus.
+  useImperativeHandle(reloadRef, () => handleRefresh, [handleRefresh]);
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -215,6 +246,8 @@ export function DiscoverScreen({
           renderIcon={renderIcon}
           onOpen={onOpen}
           emptyMessage={resolvedEmptyMessage}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
         />
       )}
     </View>
