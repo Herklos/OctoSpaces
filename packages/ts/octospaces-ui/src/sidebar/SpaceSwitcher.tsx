@@ -2,12 +2,13 @@
  * Headless themed space-switcher component.
  *
  * Renders a trigger button (active-space avatar + name + chevron) that opens a
- * dropdown listing all spaces with per-row selection, a "join or create" action,
+ * dropdown listing all spaces with per-row selection (+ optional unread badges),
+ * a "see all" overflow row, a "join or create" action, a "browse spaces" action,
  * optional space settings, and an app-provided footer slot (account section, etc.).
  *
  * The popup container (Popover on desktop, Sheet on mobile) is fully delegated to
  * the host via `renderContainer` so this package stays free of modal dependencies.
- * Avatars and icons are delegated via render-props for the same reason.
+ * Avatars, icons and badges are delegated via render-props for the same reason.
  *
  * @example
  * ```tsx
@@ -27,13 +28,34 @@
  *   )}
  *   renderIcon={(name, size, color) => <Icon name={SWITCHER_ICON[name]} size={size} color={color} />}
  *   renderContainer={({ isOpen, onClose, anchorRef, children }) => (
- *     <>
- *       <Popover visible={isOpen} onClose={onClose} anchorRef={anchorRef} placement="bottom-start" width={240}>
- *         {children}
- *       </Popover>
- *     </>
+ *     <Popover visible={isOpen} onClose={onClose} anchorRef={anchorRef} placement="bottom-start" width={240}>
+ *       {children}
+ *     </Popover>
  *   )}
- *   footerSlot={<AccountSwitcher onRequestClose={...} onViewProfile={...} />}
+ *   footerSlot={(close) => <AccountSwitcher onRequestClose={close} onViewProfile={...} />}
+ * />
+ *
+ * // OctoChat — appbar variant with bottom Sheet, overflow + badges
+ * <SpaceSwitcher
+ *   spaces={spaces}
+ *   activeId={activeId}
+ *   onSelect={(id) => { tapFeedback(); setActiveId(id); }}
+ *   onAdd={() => router.push('/join')}
+ *   onBrowse={() => router.push('/spaces/explore')}
+ *   onSettings={() => router.push(`/space/${activeId}`)}
+ *   maxVisible={5}
+ *   onSeeAll={() => router.push('/spaces')}
+ *   seeAllLabel="See all spaces"
+ *   variant="appbar"
+ *   renderTriggerAvatar={(space, size) => <Avatar label={space?.short ?? ''} image={space?.image} size={size} />}
+ *   renderSpaceAvatar={(space, size) => <Avatar label={space.short ?? ''} image={space.image} size={size} />}
+ *   renderIcon={(name, size, color) => <Icon name={SWITCHER_ICON[name]} size={size} color={color} />}
+ *   renderBadge={(count) => <Badge count={count} />}
+ *   renderTriggerBadge={() => <UnreadDot />}
+ *   renderContainer={({ isOpen, onClose, children }) => (
+ *     <BottomSheet visible={isOpen} onClose={onClose}>{children}</BottomSheet>
+ *   )}
+ *   footerSlot={(close) => <AccountSwitcher onRequestClose={close} onViewProfile={...} />}
  * />
  * ```
  */
@@ -53,20 +75,35 @@ export interface SwitcherSpace {
   short?: string;
   /** Uploaded space image URI; absent → host renders monogram. */
   image?: string;
+  /** Unread message count displayed as a badge on the row. */
+  unread?: number;
 }
 
 /** Icon name union for the switcher's built-in glyphs. */
-export type SwitcherIconName = 'chevron-down' | 'check' | 'plus' | 'gear';
+export type SwitcherIconName =
+  | 'chevron-down'
+  | 'chevron-right'
+  | 'check'
+  | 'plus'
+  | 'gear'
+  | 'globe';
 
 export interface SpaceSwitcherProps {
   spaces: SwitcherSpace[];
   activeId?: string | null;
   /** Called when the user taps a space row. */
   onSelect: (id: string) => void;
+
   /** "Join or create a space" action. Omit to hide the row. */
   onAdd?: () => void;
   /** Override the add-row label. @default "Join or create a space" */
   addLabel?: string;
+
+  /** "Browse spaces" action (e.g. a public directory). Omit to hide the row. */
+  onBrowse?: () => void;
+  /** Override the browse-row label. @default "Browse spaces" */
+  browseLabel?: string;
+
   /**
    * "Space settings" action. Only shown when both `onSettings` and `activeId`
    * are provided. Omit to hide.
@@ -74,6 +111,19 @@ export interface SpaceSwitcherProps {
   onSettings?: () => void;
   /** Override the settings-row label. @default "Space settings" */
   settingsLabel?: string;
+
+  /**
+   * When set, limits how many space rows are rendered inline.
+   * If `spaces.length > maxVisible` AND `onSeeAll` is also set, a "See all"
+   * row is appended after the visible rows. Without `onSeeAll`, overflow rows
+   * are simply hidden.
+   */
+  maxVisible?: number;
+  /** Called when the user taps the "See all" overflow row. */
+  onSeeAll?: () => void;
+  /** Override the see-all-row label. @default "See all spaces" */
+  seeAllLabel?: string;
+
   /**
    * Visual variant:
    * - `'sidebar'` — compact left-aligned trigger for the desktop sidebar header.
@@ -101,6 +151,12 @@ export interface SpaceSwitcherProps {
   renderTriggerAvatar?: (space: SwitcherSpace | null, size: number) => React.ReactNode;
 
   /**
+   * Render an overlay node anchored top-right of the trigger avatar — used for
+   * an "other spaces have unread" aggregate indicator. Omit to hide the overlay.
+   */
+  renderTriggerBadge?: () => React.ReactNode;
+
+  /**
    * Render a space row's leading avatar.
    * Receives the `SwitcherSpace` and a pixel size.
    * Omit to render nothing in the leading slot.
@@ -108,16 +164,23 @@ export interface SpaceSwitcherProps {
   renderSpaceAvatar?: (space: SwitcherSpace, size: number) => React.ReactNode;
 
   /**
-   * Render an icon glyph. Name is one of `'chevron-down' | 'check' | 'plus' | 'gear'`.
+   * Render an icon glyph. Name is one of the `SwitcherIconName` union values.
    * Omit to hide chevron, check, and action icons (spaces remain selectable).
    */
   renderIcon?: (name: SwitcherIconName, size: number, color: string) => React.ReactNode;
 
   /**
-   * Footer rendered below the space list + action rows — use for account-switcher
-   * sections (with separator if needed). Fully app-owned.
+   * Render an unread-count badge on a space row.
+   * Receives the count (always > 0 when called). Omit to hide badges.
    */
-  footerSlot?: React.ReactNode;
+  renderBadge?: (count: number) => React.ReactNode;
+
+  /**
+   * Footer rendered below the space list + action rows — use for account-switcher
+   * sections. Receives `close` so the account section can dismiss the dropdown after
+   * an action (e.g. `<AccountSwitcher onRequestClose={close} />`). Fully app-owned.
+   */
+  footerSlot?: (close: () => void) => React.ReactNode;
 }
 
 // ── Hover-aware Pressable (RN-Web) ────────────────────────────────────────────
@@ -135,13 +198,20 @@ export function SpaceSwitcher({
   onSelect,
   onAdd,
   addLabel = 'Join or create a space',
+  onBrowse,
+  browseLabel = 'Browse spaces',
   onSettings,
   settingsLabel = 'Space settings',
+  maxVisible,
+  onSeeAll,
+  seeAllLabel = 'See all spaces',
   variant,
   renderContainer,
   renderTriggerAvatar,
+  renderTriggerBadge,
   renderSpaceAvatar,
   renderIcon,
+  renderBadge,
   footerSlot,
 }: SpaceSwitcherProps) {
   const theme = useOctoSpacesTheme();
@@ -154,34 +224,32 @@ export function SpaceSwitcher({
   const active = spaces.find((s) => s.id === activeId) ?? spaces[0] ?? null;
 
   const close = () => setOpen(false);
-  const handleSelect = (id: string) => {
-    close();
-    onSelect(id);
-  };
-  const handleAdd = () => {
-    close();
-    onAdd?.();
-  };
-  const handleSettings = () => {
-    close();
-    onSettings?.();
-  };
+  const handleSelect = (id: string) => { close(); onSelect(id); };
+  const handleAdd    = () => { close(); onAdd?.(); };
+  const handleBrowse = () => { close(); onBrowse?.(); };
+  const handleSettings = () => { close(); onSettings?.(); };
+  const handleSeeAll   = () => { close(); onSeeAll?.(); };
 
   // ── spacing lookups ──────────────────────────────────────────────────────
-  const sp1 = (sp['1'] as number | undefined) ?? 4;
-  const sp2 = (sp['2'] as number | undefined) ?? 8;
-  const sp3 = (sp['3'] as number | undefined) ?? 12;
-  const sp4 = (sp['4'] as number | undefined) ?? 16;
+  const sp1  = (sp['1'] as number | undefined) ?? 4;
+  const sp2  = (sp['2'] as number | undefined) ?? 8;
+  const sp3  = (sp['3'] as number | undefined) ?? 12;
+  const sp4  = (sp['4'] as number | undefined) ?? 16;
   const radMd = (radii['md'] as number | undefined) ?? 6;
 
-  const bodyFont = fonts['body'] ?? undefined;
-  const bodySize = typeScale['callout']?.size ?? 13;
-  const bodyLine = typeScale['callout']?.lineHeight ?? 18;
+  const bodyFont  = fonts['body'] ?? undefined;
+  const bodySize  = typeScale['callout']?.size ?? 13;
+  const bodyLine  = typeScale['callout']?.lineHeight ?? 18;
   const labelSize = typeScale['caption']?.size ?? 11;
   const labelLine = typeScale['caption']?.lineHeight ?? 16;
 
+  // ── overflow: which rows to show inline ─────────────────────────────────
+  const overflow =
+    maxVisible != null && onSeeAll != null && spaces.length > maxVisible;
+  const visibleSpaces = overflow ? spaces.slice(0, maxVisible) : spaces;
+
   // ── trigger style ────────────────────────────────────────────────────────
-  const triggerStyle =
+  const baseStyle =
     variant === 'sidebar'
       ? {
           flex: 1 as const,
@@ -192,9 +260,6 @@ export function SpaceSwitcher({
           paddingVertical: sp1 + 2,
           borderRadius: radMd,
           minWidth: 0,
-          backgroundColor: triggerHovered
-            ? (colors.primarySubtle ?? 'rgba(0,0,0,0.05)')
-            : 'transparent',
         }
       : {
           flexDirection: 'row' as const,
@@ -204,9 +269,6 @@ export function SpaceSwitcher({
           paddingHorizontal: sp2,
           paddingVertical: sp1,
           borderRadius: radMd,
-          backgroundColor: triggerHovered
-            ? (colors.primarySubtle ?? 'rgba(0,0,0,0.05)')
-            : 'transparent',
         };
 
   // ── dropdown content ─────────────────────────────────────────────────────
@@ -224,7 +286,7 @@ export function SpaceSwitcher({
         />
       ) : null}
 
-      {spaces.map((s) => (
+      {visibleSpaces.map((s) => (
         <SpaceRow
           key={s.id}
           space={s}
@@ -232,6 +294,7 @@ export function SpaceSwitcher({
           onPress={() => handleSelect(s.id)}
           renderAvatar={renderSpaceAvatar}
           renderIcon={renderIcon}
+          renderBadge={renderBadge}
           colors={colors}
           bodyFont={bodyFont}
           bodySize={bodySize}
@@ -243,11 +306,45 @@ export function SpaceSwitcher({
         />
       ))}
 
+      {overflow ? (
+        <ActionRow
+          label={seeAllLabel}
+          iconName="chevron-right"
+          onPress={handleSeeAll}
+          renderIcon={renderIcon}
+          colors={colors}
+          bodyFont={bodyFont}
+          bodySize={bodySize}
+          bodyLine={bodyLine}
+          sp2={sp2}
+          sp3={sp3}
+          sp4={sp4}
+          radMd={radMd}
+        />
+      ) : null}
+
       {onAdd ? (
         <ActionRow
           label={spaces.length > 0 ? addLabel : 'Create your first space'}
           iconName="plus"
           onPress={handleAdd}
+          renderIcon={renderIcon}
+          colors={colors}
+          bodyFont={bodyFont}
+          bodySize={bodySize}
+          bodyLine={bodyLine}
+          sp2={sp2}
+          sp3={sp3}
+          sp4={sp4}
+          radMd={radMd}
+        />
+      ) : null}
+
+      {onBrowse ? (
+        <ActionRow
+          label={browseLabel}
+          iconName="globe"
+          onPress={handleBrowse}
           renderIcon={renderIcon}
           colors={colors}
           bodyFont={bodyFont}
@@ -287,7 +384,7 @@ export function SpaceSwitcher({
               marginHorizontal: sp2,
             }}
           />
-          {footerSlot}
+          {footerSlot(close)}
         </>
       ) : null}
     </View>
@@ -304,9 +401,25 @@ export function SpaceSwitcher({
         onPress={() => setOpen(true)}
         onMouseEnter={() => setTriggerHovered(true)}
         onMouseLeave={() => setTriggerHovered(false)}
-        style={triggerStyle}
+        style={({ pressed }) => [
+          baseStyle,
+          {
+            backgroundColor: pressed
+              ? (colors.primarySubtle ?? 'rgba(0,0,0,0.08)')
+              : triggerHovered
+                ? (colors.primarySubtle ?? 'rgba(0,0,0,0.05)')
+                : 'transparent',
+          },
+        ]}
       >
-        {renderTriggerAvatar ? renderTriggerAvatar(active, 22) : null}
+        {renderTriggerAvatar != null || renderTriggerBadge != null ? (
+          <View style={styles.avatarWrap}>
+            {renderTriggerAvatar ? renderTriggerAvatar(active, 22) : null}
+            {renderTriggerBadge ? (
+              <View style={styles.triggerBadge}>{renderTriggerBadge()}</View>
+            ) : null}
+          </View>
+        ) : null}
         <Text
           numberOfLines={1}
           style={
@@ -333,6 +446,11 @@ export function SpaceSwitcher({
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  avatarWrap: { position: 'relative' },
+  triggerBadge: { position: 'absolute', top: -2, right: -2 },
+});
 
 interface SectionLabelProps {
   label: string;
@@ -372,6 +490,7 @@ interface SpaceRowProps {
   onPress: () => void;
   renderAvatar?: (space: SwitcherSpace, size: number) => React.ReactNode;
   renderIcon?: (name: SwitcherIconName, size: number, color: string) => React.ReactNode;
+  renderBadge?: (count: number) => React.ReactNode;
   colors: ReturnType<typeof useOctoSpacesTheme>['colors'];
   bodyFont: string | undefined;
   bodySize: number;
@@ -388,6 +507,7 @@ function SpaceRow({
   onPress,
   renderAvatar,
   renderIcon,
+  renderBadge,
   colors,
   bodyFont,
   bodySize,
@@ -398,10 +518,7 @@ function SpaceRow({
   radMd,
 }: SpaceRowProps) {
   const [hovered, setHovered] = useState(false);
-
-  const bg = hovered
-    ? (colors.primarySubtle ?? 'rgba(0,0,0,0.04)')
-    : 'transparent';
+  const unread = space.unread ?? 0;
 
   return (
     <Pressable
@@ -411,15 +528,19 @@ function SpaceRow({
       onPress={onPress}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
+      style={({ pressed }) => ({
+        flexDirection: 'row' as const,
+        alignItems: 'center' as const,
         gap: sp3,
         paddingHorizontal: sp4,
         paddingVertical: sp2,
         borderRadius: radMd,
-        backgroundColor: bg,
-      }}
+        backgroundColor: pressed
+          ? (colors.primarySubtle ?? 'rgba(0,0,0,0.08)')
+          : hovered
+            ? (colors.primarySubtle ?? 'rgba(0,0,0,0.04)')
+            : 'transparent',
+      })}
     >
       {renderAvatar ? renderAvatar(space, 24) : null}
       <Text
@@ -438,6 +559,7 @@ function SpaceRow({
       >
         {space.name}
       </Text>
+      {unread > 0 && renderBadge ? renderBadge(unread) : null}
       {active && renderIcon ? renderIcon('check', 15, colors.primary) : null}
     </Pressable>
   );
@@ -474,10 +596,6 @@ function ActionRow({
 }: ActionRowProps) {
   const [hovered, setHovered] = useState(false);
 
-  const bg = hovered
-    ? (colors.primarySubtle ?? 'rgba(0,0,0,0.04)')
-    : 'transparent';
-
   return (
     <Pressable
       accessibilityRole="menuitem"
@@ -485,15 +603,19 @@ function ActionRow({
       onPress={onPress}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
+      style={({ pressed }) => ({
+        flexDirection: 'row' as const,
+        alignItems: 'center' as const,
         gap: sp3,
         paddingHorizontal: sp4,
         paddingVertical: sp2,
         borderRadius: radMd,
-        backgroundColor: bg,
-      }}
+        backgroundColor: pressed
+          ? (colors.primarySubtle ?? 'rgba(0,0,0,0.08)')
+          : hovered
+            ? (colors.primarySubtle ?? 'rgba(0,0,0,0.04)')
+            : 'transparent',
+      })}
     >
       {renderIcon ? (
         <View style={{ width: 24, alignItems: 'center', justifyContent: 'center' }}>

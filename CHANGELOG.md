@@ -8,6 +8,36 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## `@drakkar.software/octospaces-ui`
 
+### [0.4.2] — 2026-06-14 (SpaceSwitcher — overflow, badges, browse, trigger badge)
+
+#### Changed
+
+- **`footerSlot`** signature changed from `ReactNode` → `(close: () => void) => ReactNode`
+  so the account section can dismiss the dropdown after an action
+  (`onRequestClose={close}`). No existing published consumer used this prop.
+- **`SwitcherIconName`** extended with `'chevron-right'` (see-all row) and `'globe'`
+  (browse row). Existing `renderIcon` adapters can add these two names; any unhandled
+  name is a TS error only if the adapter uses a discriminated `Record`.
+
+#### Added
+
+- **`SwitcherSpace.unread?: number`** — per-row unread count; rendered as a badge when
+  `renderBadge` is provided and count > 0.
+- **`renderBadge?: (count: number) => ReactNode`** — per-row unread badge (host injects
+  its `Badge`). Shown between the space name and the active check.
+- **`maxVisible?: number`** + **`onSeeAll?: () => void`** + **`seeAllLabel?`** — limits
+  inline rows to `maxVisible`; appends a "See all spaces" `ActionRow` (icon
+  `'chevron-right'`) when both props are set and the list overflows. Without `onSeeAll`
+  the overflow rows are silently hidden.
+- **`onBrowse?: () => void`** + **`browseLabel?`** — renders a "Browse spaces" row (icon
+  `'globe'`) after the "Join or create" row. Omit to hide.
+- **`renderTriggerBadge?: () => ReactNode`** — overlay node absolutely-positioned
+  top-right of the trigger avatar (aggregate "other spaces have unread" dot). The trigger
+  renders the avatar in a relative-position `View` with a `position:absolute` wrapper
+  for this node. Omit to hide.
+- Trigger `Pressable` now includes a **pressed** background state (mirrors hover bg)
+  for native tap feedback.
+
 ### [0.4.1] — 2026-06-14 (SpaceSwitcher)
 
 #### Added
