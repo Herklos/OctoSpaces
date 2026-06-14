@@ -37,3 +37,15 @@ export {
   focusRingStyle,
   statusColor,
 } from './theme/helpers.js';
+
+// Discover surface — generic themed components for browsing public-object directories.
+// Components are headless: they read the injected Theme via useOctoSpacesTheme() and
+// delegate all app-specific behaviour (icon rendering, navigation) to props.
+export type { DiscoverEntry } from './discover/types.js';
+export { filterDiscoverEntries, sortDiscoverEntries } from './discover/filter.js';
+export type { DiscoverRowProps } from './discover/DiscoverRow.js';
+export { DiscoverRow } from './discover/DiscoverRow.js';
+export type { DiscoverListProps } from './discover/DiscoverList.js';
+export { DiscoverList } from './discover/DiscoverList.js';
+export type { DiscoverScreenProps } from './discover/DiscoverScreen.js';
+export { DiscoverScreen } from './discover/DiscoverScreen.js';

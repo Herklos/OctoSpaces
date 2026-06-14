@@ -228,6 +228,10 @@ export {
   readObjectTree,
 } from './spaces/object-index.js';
 
+// Public object directory (world-readable, server-maintained projection)
+export { readObjectDirectory, parseObjectDirectoryDoc } from './spaces/object-directory.js';
+export type { PublicObjectDirEntry } from './spaces/object-directory.js';
+
 // Pairing
 export { startDevicePairing, completeDevicePairing, PAIR_PREFIX } from './sync/pairing.js';
 export type { PairResult } from './sync/pairing.js';
