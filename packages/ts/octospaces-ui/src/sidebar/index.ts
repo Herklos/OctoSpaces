@@ -1,0 +1,13 @@
+export type { RailSpace, RailIconName } from './types.js';
+export type { SpacesRailProps } from './SpacesRail.js';
+export { SpacesRail } from './SpacesRail.js';
+export type { SidebarProps } from './Sidebar.js';
+export { Sidebar } from './Sidebar.js';
+export type { SidebarHeaderProps } from './SidebarHeader.js';
+export { SidebarHeader } from './SidebarHeader.js';
+export type { SidebarActionButtonProps } from './SidebarActionButton.js';
+export { SidebarActionButton } from './SidebarActionButton.js';
+export type { SidebarItemProps } from './SidebarItem.js';
+export { SidebarItem } from './SidebarItem.js';
+export type { SwitcherSpace, SwitcherIconName, SpaceSwitcherProps } from './SpaceSwitcher.js';
+export { SpaceSwitcher } from './SpaceSwitcher.js';

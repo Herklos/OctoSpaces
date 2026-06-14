@@ -8,6 +8,39 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## `@drakkar.software/octospaces-ui`
 
+### [0.4.1] — 2026-06-14 (SpaceSwitcher)
+
+#### Added
+
+- **`SpaceSwitcher`** — headless space-switcher component with a variant-aware
+  trigger button (active-space avatar + name + chevron) and an inline space list
+  (select, add, settings) rendered via RN primitives themed from
+  `useOctoSpacesTheme()`. All avatars and icons injected via render-props; the
+  popup container (Popover or Sheet) delegated to `renderContainer` so the
+  package gains no modal dependency. Optional `footerSlot` for the account
+  section.
+  - Types: `SwitcherSpace`, `SwitcherIconName`, `SpaceSwitcherProps`.
+  - Variants: `'sidebar'` (left-aligned flex trigger) · `'appbar'` (centered).
+
+### [0.4.0] — 2026-06-14 (Sidebar shell + SidebarHeader + SidebarItem + Lightbox)
+
+#### Added
+
+- **`Sidebar`** — headless 240–248px panel shell (background, border, scroll,
+  header/footer slots). Width defaults to `layout.sidebarWidth ?? 248`. Uses
+  `colors.sidebarPanel` (new token in this release).
+- **`SidebarHeader`** — themed header strip: `leading` (flex) + `actions` row +
+  optional `extra` slot below. Host passes its own icon buttons.
+- **`SidebarItem`** — themed nav row: icon + label + optional badge + trailing.
+  Active rows highlighted with `colors.sidebarActive`.
+- **`SidebarActionButton`** — square icon-button primitive with hover/press wash,
+  for headless consumers that don't have a richer host button.
+- **`Lightbox`** — full-screen scrim overlay for media previews. Close + action
+  buttons injected via render-props.
+- `Palette.sidebarPanel` token — background for the 248px sidebar panel,
+  distinct from `sidebar` (the rail). Host apps must add this token to their
+  `resolveOctoSpacesTheme` bridge.
+
 ### [0.3.0] — 2026-06-14 (SpacesRail — headless spaces rail component)
 
 #### Added

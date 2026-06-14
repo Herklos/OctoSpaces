@@ -50,9 +50,26 @@ export { DiscoverList } from './discover/DiscoverList.js';
 export type { DiscoverScreenProps } from './discover/DiscoverScreen.js';
 export { DiscoverScreen } from './discover/DiscoverScreen.js';
 
-// Sidebar surface — the vertical spaces rail (icon tiles + DM home + add + foot).
+// Sidebar surface — the vertical spaces rail (icon tiles + DM home + add + foot)
+// AND the sidebar panel shell + header strip (Sidebar / SidebarHeader / SidebarItem).
 // Headless: icons, images, badges and the account foot are injected via props so
 // the package stays free of expo-image / @expo/vector-icons / reanimated.
 export type { RailSpace, RailIconName } from './sidebar/types.js';
 export type { SpacesRailProps } from './sidebar/SpacesRail.js';
 export { SpacesRail } from './sidebar/SpacesRail.js';
+export type { SidebarProps } from './sidebar/Sidebar.js';
+export { Sidebar } from './sidebar/Sidebar.js';
+export type { SidebarHeaderProps } from './sidebar/SidebarHeader.js';
+export { SidebarHeader } from './sidebar/SidebarHeader.js';
+export type { SidebarActionButtonProps } from './sidebar/SidebarActionButton.js';
+export { SidebarActionButton } from './sidebar/SidebarActionButton.js';
+export type { SidebarItemProps } from './sidebar/SidebarItem.js';
+export { SidebarItem } from './sidebar/SidebarItem.js';
+export type { SwitcherSpace, SwitcherIconName, SpaceSwitcherProps } from './sidebar/SpaceSwitcher.js';
+export { SpaceSwitcher } from './sidebar/SpaceSwitcher.js';
+
+// Lightbox surface — full-screen scrim overlay for media previews.
+// Headless: the image and all button chrome are injected by the host app so
+// this package stays free of expo-image / @expo/vector-icons / reanimated.
+export type { LightboxProps } from './lightbox/Lightbox.js';
+export { Lightbox } from './lightbox/Lightbox.js';

@@ -18,6 +18,7 @@ const mockPalette: Palette = {
   surfaceModal: '#333',
   surfaceInput: '#444',
   sidebar: '#555',
+  sidebarPanel: '#55a',
   sidebarActive: '#666',
   border: '#777',
   borderSubtle: '#888',

@@ -27,6 +27,7 @@ export interface Palette {
   surfaceModal: string;
   surfaceInput: string;
   sidebar: string;
+  sidebarPanel: string;
   sidebarActive: string;
 
   // ── Borders + dividers ────────────────────────────────────────────────────
