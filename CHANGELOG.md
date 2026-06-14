@@ -8,7 +8,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## `@drakkar.software/octospaces-ui`
 
-### [0.4.2] — 2026-06-14 (SpaceSwitcher — overflow, badges, browse, trigger badge)
+### [0.4.3] — 2026-06-14 (SpaceSwitcher — overflow, badges, browse, trigger badge)
 
 #### Changed
 
