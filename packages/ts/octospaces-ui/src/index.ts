@@ -49,3 +49,10 @@ export type { DiscoverListProps } from './discover/DiscoverList.js';
 export { DiscoverList } from './discover/DiscoverList.js';
 export type { DiscoverScreenProps } from './discover/DiscoverScreen.js';
 export { DiscoverScreen } from './discover/DiscoverScreen.js';
+
+// Sidebar surface — the vertical spaces rail (icon tiles + DM home + add + foot).
+// Headless: icons, images, badges and the account foot are injected via props so
+// the package stays free of expo-image / @expo/vector-icons / reanimated.
+export type { RailSpace, RailIconName } from './sidebar/types.js';
+export type { SpacesRailProps } from './sidebar/SpacesRail.js';
+export { SpacesRail } from './sidebar/SpacesRail.js';

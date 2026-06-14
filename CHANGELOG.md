@@ -6,6 +6,29 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## `@drakkar.software/octospaces-ui`
+
+### [0.3.0] — 2026-06-14 (SpacesRail — headless spaces rail component)
+
+#### Added
+
+- **`SpacesRail`** — headless, abstractly-themed vertical spaces rail component.
+  Reads the host app's `Theme` via `useOctoSpacesTheme()`; delegates all app-specific
+  concerns (icons, tile images, badges, account foot) to render props. Zero new
+  runtime or peer dependencies (still `react` + `react-native` only).
+  - Per-tile states: active (filled + glow), hovered (tinted), resting, and DnD
+    drop-over (accent border).
+  - E2EE lock corner + mute corner badges via `renderIcon`.
+  - Unread count badges via `renderBadge`.
+  - Web drag-reorder via `useTileDnd` hook-injection seam.
+  - Optional `swatches` keys (`railTile`, `railTileHoverBorder`, `railGlow`,
+    `railTileHoverInk`) for fine-tuned rail colors; each falls back to a core
+    palette token.
+- **`RailSpace`** — structural item type (no SDK import).
+- **`RailIconName`** — `'dm' | 'lock' | 'mute' | 'add'` union.
+
+---
+
 ## `@drakkar.software/octospaces-sdk`
 
 ### [0.6.0] — 2026-06-14 (removeJoinedSpace + moveSpace)
