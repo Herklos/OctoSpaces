@@ -1,7 +1,7 @@
 /** @drakkar.software/octospaces-sdk — public surface */
 
 // Configuration
-export { configureOctoSpaces, getSyncBase, getSyncNamespace, getSyncPrefix, getSharedSpacesNamespace } from './core/config.js';
+export { configureOctoSpaces, getSyncBase, getSyncNamespace, getSyncPrefix, getSharedSpacesNamespace, getEventsUrl } from './core/config.js';
 export type { OctoSpacesConfig } from './core/config.js';
 
 // KV adapter
@@ -256,6 +256,10 @@ export { matchTitle, rankResults, fold, isWordStart } from './utils/search-match
 export type { MatchRange, TitleMatch, RankedResult } from './utils/search-match.js';
 
 export { registerPull, dispatchDocChange, emitSseStatus, onSseStatus, clearLiveSyncBus } from './utils/live-sync-bus.js';
+
+// SSE events transport (generic, parse-injected)
+export { buildSignedEventsRequest, parseSseFrames, subscribeChanges } from './sync/events.js';
+export type { SubscribeChangesOptions } from './sync/events.js';
 
 export { previewInvite } from './utils/invite-preview.js';
 export type { InvitePreview } from './utils/invite-preview.js';

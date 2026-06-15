@@ -1,5 +1,30 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.7.0 (2026-06-15)
+
+### Added
+
+- **`buildSignedEventsRequest(spaceIds, config?)`** — pure helper that builds the
+  fetch URL and signed `pathAndQuery` for a Starfish `/events` SSE request. Strips
+  the `syncBase` mount prefix from the signed path (so nginx-fronted deployments
+  where the mount is rewritten before reaching the origin continue to authenticate
+  correctly) and encodes the space-id comma as `%2C` (CDN-normalisation-safe).
+  Reads from global `configureOctoSpaces()` config by default; `config` override
+  accepts `{ eventsUrl?, syncBase? }` for use in tests.
+- **`parseSseFrames(chunk, carry)`** — incremental WHATWG SSE frame parser. Returns
+  `{ events, carry }` — `events` is an array of parsed `data:` payloads from
+  completed frames; `carry` is the leftover text to prepend on the next chunk.
+  Normalises `\r\n` line endings and skips `id:`, `event:`, and `:` (comment/heartbeat)
+  lines per the SSE spec.
+- **`subscribeChanges<T>(opts)`** — single auto-reconnecting SSE subscription.
+  App-specific payload parsing is injected via `opts.parse(data) => T | null` so
+  the transport is domain-agnostic. Uses capped exponential backoff
+  (`minReconnectMs` → `maxReconnectMs`, reset after a successful connect). Returns
+  an unsubscribe function. Options: `spaces`, `authHeaders`, `parse`, `onChange`,
+  `onStatus?`, `minReconnectMs? = 1000`, `maxReconnectMs? = 30000`.
+- **`SubscribeChangesOptions<T>`** type exported from the barrel.
+- **`getEventsUrl()`** now exported from the barrel (was previously internal).
+
 ## 0.4.3 (2026-06-13)
 
 ### Added
