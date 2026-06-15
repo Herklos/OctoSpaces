@@ -455,3 +455,113 @@ in OctoVault deployments:
 - [x] **Phase 5 — OctoVault Discover tab**: 5th tab wired in `_layout.tsx` + `_layout.native.tsx` (globe icon); `(tabs)/discover/index.tsx` composes `DiscoverScreen` with type-registry icon + expo-router navigation; `access:'public'` enabled in `CreateTypeMenu` (was `disabled:true`)
 - [ ] **Phase 5 — SSE end-to-end smoke test**: full two-client live-update verification requires NATS + Whistlers running locally; not yet exercised in CI (stream falls back gracefully to the 4 s poll without them)
 - [ ] **Phase 5 follow-up — read-only public content renderer**: `PageView` reads `walDoc` only; public nodes route to `objpub` merge-doc (`mergeDoc`), so content doesn't fully render in the existing viewer — needs a `mergeDoc → Block[]` read-only renderer in `octospaces-ui`
+
+---
+
+## ⚡ Phase A — octospaces backend unification (delete the octovault Infra app)
+
+> **Goal:** collapse the `octovault` Infra namespace-app into the shared `octospaces` generic backend.
+> OctoVault has zero bespoke server logic — everything it needs (space-role enricher, `obj*` collections,
+> `objindex`→public projection, object-changed queue, space-gated SSE) is fully generic and can be
+> hosted by octospaces directly. After this phase, OctoVault points its sync namespace at `octospaces`
+> and the `apps/octovault/` Infra app is deleted.
+>
+> **Context:** the shared `object_store` already backs every namespace (one physical store);
+> moving to octospaces is a **pure HTTP-routing change**. E2EE is unaffected — all collections stay
+> `delegated`/`none`, the server gains no crypto. Cross-app object visibility is made coherent by
+> the generic object `type` field; each client filters the shared object index by its declared set
+> of supported `type`s (e.g. `folder`/`page`/`board`/`task` for OctoVault).
+
+### A1 — Infra: absorb octovault collections + plugins into octospaces
+
+**`Infra/sync/server/drakkar_sync/apps/octospaces/collections.py`**
+- Copy the full generic object family verbatim from `apps/octovault/collections.py`:
+  `objindex`, `objpub`, `objinv`, `objlog`, `objsnap`, `objdoc`, `objblob`, `typeindex`.
+- Add the `objectindex` pull-only public directory collection (`_index/objects/{shard}`,
+  `read=["public"]`, `pull_only=True`) — projection target for the public object directory.
+- `spaceregistry` + `spacekeyring` + `profile` + `devices` + `spaces` + `pairing` already present.
+
+**`Infra/sync/server/drakkar_sync/apps/octospaces/projections.py`**
+- Move `_project_objindex_public` from `apps/octovault/projections.py`.
+- Add `Projection(source="objindex", target="_index/objects/public", project=_project_objindex_public)`
+  to `OCTOSPACES_PROJECTIONS` (was empty `[]`).
+- Also add octochat's two projections here (ahead of Phase B, or as part of Phase B): they share the
+  same `source="objindex"` and write to different target shards — no collision.
+
+**`Infra/sync/server/drakkar_sync/apps/octospaces/queue.py`** (new)
+- Model on `apps/octovault/queue.py`; subject names changed to **content-type–keyed** (not app-keyed):
+  - `octospaces.object.changed` — fires on `objindex`/`objdoc`/`objpub`/`typeindex`, `include_identity=False`.
+  - `octospaces.log.changed` — fires on `objlog`/`objpublog`/`objinvlog` (when added in Phase B),
+    `include_identity=True` (the FCM push worker subscribes to this subject).
+
+**`Infra/sync/server/drakkar_sync/apps/octospaces/events.py`** (new)
+- Model on `apps/octovault/events.py`. Shares `make_space_role_enricher(store, allow_tofu=False)`.
+- `topic_mapper` returns the `octospaces.*` whistler subjects; extend in Phase B for log subjects.
+- Add `WHISTLERS_INTERNAL_URL_OCTOSPACES` env + `namespaces.octospaces` block in whistlers-sse config.
+
+**`Infra/sync/server/drakkar_sync/apps/octospaces/__init__.py`**
+- Add optional `queue` param to `create_octospaces_app`; export `create_octospaces_events_router`
+  (mirrors octovault's structure).
+
+**`Infra/sync/server/drakkar_sync/server.py`**
+- In the octospaces block: wire `create_queuing_server_plugin` + mount the events router
+  (currently octospaces only has the sync router + empty projection plugin).
+- Add `sp_queue.close()` to the `lifespan` finally block.
+
+### A2 — SDK: bump octospaces-sdk + update TS dev-server mirrors
+
+**`octospaces/packages/ts/octospaces-sdk/src/sync/paths.ts`**
+- No change to the OctoVault client — it is a pure re-export shim; it inherits SDK changes on version bump.
+
+**`apps/server/src/config.ts`** (OctoVault TS dev-server)
+- The OctoVault dev-server must mirror the new octospaces collection set. After Phase A, OctoVault's
+  dev-server `syncNamespace` points at `octospaces`; its `config.ts` collection list is already the
+  generic set and needs only the `SYNC_NAMESPACE` env updated.
+
+**Queue subjects lockstep:** update `buildWhistlersTopic` in octospaces-sdk + any FCM worker that
+subscribed to `octovault.object.changed` → now `octospaces.object.changed`.
+
+### A3 — OctoVault app: flip `.env` namespace
+
+**`/Users/user/Documents/dev/POC/OctoVault/.env`** (and `.env.example`)
+- `NEXT_PUBLIC_STARFISH_NAMESPACE=octovault` → `NEXT_PUBLIC_STARFISH_NAMESPACE=octospaces`
+  (or set `STARFISH_NAMESPACE=octospaces` depending on the key name used).
+- No code change needed — OctoVault's SDK reads the namespace from config at boot.
+
+### A4 — Tests: repoint octovault Infra suite → octospaces
+
+**`Infra/sync/tests/apps/octovault/`**
+- Update the namespace/app reference in every test fixture/setup from `octovault` → `octospaces`.
+- The assertions stay identical (same collection shapes, same projection behavior, same membership gating).
+- These tests are **not deleted** — they become the regression proof that the generic backend behaves
+  identically after the octovault app is gone.
+
+**Fix 3 pre-existing failures (unrelated to this migration but blocking the suite):**
+1. `test_starfish_enricher_equivalence.py` imports `make_pubspace_role_enricher` from the deleted
+   `drakkar_sync.apps.octochat.pubspace_role` — remove the import + the parametrize rows using it.
+2. The `pubspace`/`pubstream` parametrize rows in that file — remove.
+3. `tests/utils/caps.py:98` defaults `collections=("pubspace",)` — change to `("spaceregistry",)`.
+
+### A5 — Delete the octovault Infra app
+
+- Delete `Infra/sync/server/drakkar_sync/apps/octovault/` (entire directory).
+- Remove the octovault block from `server.py` (`create_octovault_app`, `ov_queue`, events mount,
+  lifespan close).
+- Delete `apps/octovault/` from the OctoVault repo's Infra config (if it has its own copy).
+
+### Phase A checklist
+
+- [ ] **A1** `octospaces/collections.py` — add `obj*` family + `objectindex`
+- [ ] **A1** `octospaces/projections.py` — add `objindex→_index/objects/public`
+- [ ] **A1** `octospaces/queue.py` — new; subjects `octospaces.object.changed` + `octospaces.log.changed`
+- [ ] **A1** `octospaces/events.py` — new; space-membership gating + topic_mapper
+- [ ] **A1** `octospaces/__init__.py` — add queue param + export events factory
+- [ ] **A1** `server.py` — wire queue plugin + events router in octospaces block; close queue in lifespan
+- [ ] **A1** `whistlers-sse` — add `namespaces.octospaces` block + `WHISTLERS_INTERNAL_URL_OCTOSPACES` env
+- [ ] **A2** octospaces-sdk `buildWhistlersTopic` + FCM worker — update to `octospaces.*` subjects
+- [ ] **A2** OctoVault TS dev-server `config.ts` — verify collection parity with octospaces Python; update `SYNC_NAMESPACE`
+- [ ] **A3** OctoVault `.env` / `.env.example` — flip `STARFISH_NAMESPACE` → `octospaces`
+- [ ] **A4** `tests/apps/octovault/` — repoint all fixtures to `octospaces` namespace/app; fix 3 pre-existing failures
+- [ ] **A5** Delete `apps/octovault/` Infra dir + server.py block
+- [ ] **Verify** wipe `STARFISH_DATA_DIR` + boot octospaces unified server; run repointed octovault suite + octospaces suite — all green
+- [ ] **Verify** OctoVault loads from octospaces namespace; public object directory populated from projection; SSE live-sync works

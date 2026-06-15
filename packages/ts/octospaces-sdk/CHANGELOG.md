@@ -1,5 +1,40 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.8.0 (2026-06-15)
+
+### Added
+
+- **`objPubLogName/Pull/Push(spaceId, nodeId)`** — path helpers for the public
+  append-log collection (`objpublog`): `spaces/{spaceId}/objects/pub/{nodeId}/log`.
+  For `access:'public'` nodes with an append-log content kind (e.g. public chat rooms).
+  Public-read + member-write. Covered by `spaceMemberScope`.
+- **`objInvLogName/Pull/Push(spaceId, nodeId)`** — path helpers for the invite-only
+  append-log collection (`objinvlog`): `spaces/{spaceId}/objects/n/{nodeId}/log`.
+  For `access:'invite'` nodes with an append-log content kind. Cap-gated via the sharing
+  plugin — excluded from `spaceMemberScope`, same as `objinv`.
+- **`objOwnerName/Pull/Push(spaceId, nodeId)`** — path helpers for the owner-only content
+  collection (`objowner`): `spaces/{spaceId}/objects/owner/{nodeId}`. For `access:'owner'`
+  nodes (webhooks, private config). Only `spaceOwnerScope` / `ownerScope` reach it.
+- **`inboxName/Pull/Push(identity, shard?)`** — path helpers for the identity inbox
+  collection (`inbox`): `inbox/{identity}/{shard}`. Public-write, `cap:read:inbox`-gated
+  read. Time-sharded by UTC month. Identity-scoped (NOT under `spaces/`).
+- **`spaceDirName/Pull(shard?)`** — path helpers for the public space directory
+  projection at `_index/spaces/{shard}`. Default shard `'public'` (spaces with at least
+  one public room); `'meta'` shard carries name+image for all spaces.
+- **`spaceOwnerScope(spaceId)`** — new scope: owner r/w access to ONE space, covering
+  `OBJECT_COLLECTIONS + ['objowner']` under `spaces/{spaceId}/**`.
+- **`OBJECT_COLLECTIONS`** extended with `'objpublog'` — space members can write to
+  public append-logs, so it belongs in the broad member scope.
+
+### Changed
+
+- **`ownerScope()`** now includes `'objowner'` (the owner content tier) in its
+  collection list alongside `OBJECT_COLLECTIONS`.
+- **`linkedDeviceScope(userId)`** extended with `'objowner'` (linked device acts as
+  owner) and `'inbox'` (reads the identity's DM inbox), plus `inbox/${userId}/**` path.
+- **`accountScope(userId)`** extended with `'inbox'` collection and
+  `inbox/${userId}/**` path so the identity can read their own DM inbox.
+
 ## 0.7.0 (2026-06-15)
 
 ### Added

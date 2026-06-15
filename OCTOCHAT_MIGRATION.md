@@ -420,3 +420,138 @@ until OctoChat completes the §4.2 leaf rename.
 - [ ] **Data migration — access record**: copy `_rooms` → `_access` per space; flip enricher to `_access`; rename collections `rooms`→`spaceregistry`, `chatkeyring`→`spacekeyring` (§4.2)
 - [ ] **Data migration — public spaces**: relocate `pubobjindex` to `spaces/{spaceId}/objects/_index`; relocate `pubstream` logs; synthesize access record with `visibility:'public'` (§4.4)
 - [ ] **Infra**: add `octospaces` namespace app at `/v1/octospaces` (§5a)
+
+---
+
+## ⚡ Phase B — octospaces backend unification (delete the octochat Infra app)
+
+> **Goal:** collapse the `octochat` Infra namespace-app into `octospaces`, making octospaces the
+> single generic backend for all data. This requires:
+> (1) adding new generic primitives to the octospaces object model to cover the chat-specific shapes;
+> (2) rewiring OctoChat's client-side SDK to use the generic collection names + the `octospaces` namespace;
+> (3) deleting the `apps/octochat/` Infra app.
+>
+> Prerequisite: **Phase A** (octovault unification) must be complete first — octospaces must already
+> host the generic object backend before chat content moves there.
+>
+> **E2EE invariant:** all collections stay `delegated`/`none`; the server gains no crypto. The
+> namespace move is a pure HTTP-routing change. Grep `apps/octospaces/` for any seal/unseal of
+> message/keyring/DM bodies after each step → must be none.
+
+### B1 — octospaces-sdk: add new generic primitives
+
+**`octospaces/packages/ts/octospaces-sdk/src/sync/paths.ts`**
+
+Add path helpers + cap-scope entries for four new primitives alongside the existing `objLog*`/`objBlob*`/`objPub*`/`objInv*`:
+
+| New primitive | Description | Collection shape |
+|---|---|---|
+| `objpublog` | Public-read plaintext append-log | `enc=none`, `read=["public"]`, `write=["space:member"]`, `append_only{by_timestamp}` |
+| `objinvlog` | Cap-gated plaintext append-log | `enc=none`, `read=[]`, `write=[]`, `append_only{by_timestamp}` |
+| `objowner` | **Owner access tier** — owner-private per-space object node (`access:"owner"`) | `enc=none`, `read=["space:owner"]`, `write=["space:owner"]` |
+| `inbox` | Identity-keyed public drop-box mailbox | `enc=none`, `write=["public"]`, `read=["cap:read:inbox"]`, `append_only{max_items, require_author_signature=False}`, IP rate_limit |
+
+- `objpublog` = `objpub` + `append_only` (public-read + member-write log). Path: `spaces/{spaceId}/objects/publog/{nodeId}`.
+- `objinvlog` = `objinv` + `append_only` (cap-gated log). Path: `spaces/{spaceId}/objects/invlog/{nodeId}/log`.
+- `objowner` = the **owner tier of the object model** (`access:"owner"` sibling of `access:"public"`/`"space"`/`"invite"`). Path: `spaces/{spaceId}/objects/owner/{nodeId}`. Any object with `access:"owner"` stores its content here. A webhook is just `type:"webhook", access:"owner"`.
+- `inbox` = identity-scoped mailbox (not under `spaces/`). Path: `inbox/{identity}/{shard}`. Cap minting: `cap:read:inbox` (renamed from `cap:read:dminbox`).
+
+Extend `OBJECT_COLLECTIONS` to include the new collection names. Extend `spaceMemberScope(spaceId)` to cover `objpublog`/`objinvlog`; extend `spaceOwnerScope(spaceId)` (or create one) to cover `objowner`. `inbox` is NOT in `OBJECT_COLLECTIONS` (it's identity-scoped) — add its own cap builder.
+
+**Object-type filtering (cross-app visibility):** both OctoVault and OctoChat now write to the same `octospaces` namespace. Each client declares its **supported object `type` set** (e.g. OctoVault: `folder`/`page`/`board`/`task`/…; OctoChat: `room`/`category`/`dm`/`automation`) and filters `objindex` reads by those types. The filter is generic and app-agnostic — no app identity in the index.
+
+### B2 — Infra: add new primitives to octospaces
+
+**`Infra/sync/server/drakkar_sync/apps/octospaces/collections.py`**
+- Add `objpublog` (`spaces/{spaceId}/objects/publog/{nodeId}`, `none`, `read=["public"]`, `write=["space:member"]`, `append_only={"type":"by_timestamp"}`).
+- Add `objinvlog` (`spaces/{spaceId}/objects/invlog/{nodeId}/log`, `none`, `read=[]`, `write=[]`, `append_only={"type":"by_timestamp"}`).
+- Add `objowner` (`spaces/{spaceId}/objects/owner/{nodeId}`, `none`, `read=["space:owner"]`, `write=["space:owner"]`).
+- Add `inbox` (`inbox/{identity}/{shard}`, `none`, `write=["public"]`, `read=["cap:read:inbox"]`, `append_only={"type":"by_timestamp", "max_items":500, "require_author_signature":False}`, `rate_limit=push:RateLimitRule(window_ms=60_000, max_requests=30, bucket="ip")`).
+  - **Correctness fix:** `require_author_signature=False` — the current `dminbox` inherits `True` (the schema default) but public-write logs must set it `False` since anonymous callers have no identity.
+- Add `spaceindex` (`_index/spaces/{shard}`, `none`, `read=["public"]`, `pull_only=True`) — projection target for the space public directory.
+
+**`Infra/sync/server/drakkar_sync/apps/octospaces/projections.py`**
+- Add octochat's two projectors (move from `apps/octochat/projections.py`):
+  - `Projection(source="objindex", target="_index/spaces/public", project=_project_objindex)` — counts public `type=="room"` nodes per space.
+  - `Projection(source="spaceregistry", target="_index/spaces/meta", project=_project_space_registry)` — `_access` write → `{name, image}` in `_index/spaces/meta`.
+
+**`Infra/sync/server/drakkar_sync/apps/octospaces/queue.py`**
+- Add `objpublog`/`objinvlog` to the `octospaces.log.changed` subject (alongside `objlog`).
+
+**`Infra/sync/server/drakkar_sync/apps/octospaces/events.py`**
+- Extend `topic_mapper` to include the log subjects when `objpublog`/`objinvlog` are written.
+- Extend the public-gating predicate to support public-read spaces/rooms (OctoChat previously used `psp-` prefix; now use `access:"public"` from the access record instead).
+
+### B3 — OctoChat SDK (fork): repoint namespace + replace bespoke path families
+
+The namespace is a **per-client construction property**. The repoint concentrates at two chokepoints:
+
+**Chokepoint 1 — `packages/sdk/src/starfish/identity.ts`**
+In `buildSession` and `buildLinkedSession`, change the namespace of `chatClient`/`accountClient` from the default `octochat` namespace to `octospaces`:
+```ts
+// Before (implicit octochat namespace via getSyncNamespace())
+const chatClient = makeClient(chatCap, keys.edPriv);
+const accountClient = makeClient(accountCap, keys.edPriv);
+
+// After — all content now routes through octospaces
+const chatClient = makeClient(chatCap, keys.edPriv, getSharedObjectNamespace());
+const accountClient = makeClient(accountCap, keys.edPriv, getSharedObjectNamespace());
+```
+Add `getSharedObjectNamespace()` in `apps/mobile/src/lib/octochat-config.ts` reading `EXPO_PUBLIC_OCTOSPACES_NAMESPACE` (same value as `SHARED_SPACES_NAMESPACE`). This single change moves **all** stream + object + attachment traffic (the ~42 stream + ~9 object call sites need NO edits — they all route through `getSpaceClient`/`getNodeAccess` with already-generic path strings).
+
+**Chokepoint 2 — `packages/sdk/src/starfish/paths.ts`: replace 3 bespoke path families**
+- `streamRoom*`/`streamPubRoom*`/`streamInvRoom*` → `objLog*`/`objPubLog*`/`objInvLog*` (generic append-log paths)
+- `spaceWebhooksName` → `objOwnerName(spaceId, nodeId)` (owner-tier path)
+- `dminboxName`/`dmInboxShard(s)` → `inboxName(identity, shard)` (generic inbox path)
+- Update cap-scope collection lists: `CHAT_COLLECTIONS`, `accountScope`, `linkedDeviceScope` — replace `streamchat`/`streampub`/`streaminv`/`attachments`/`webhooks`/`dminbox` with the generic collection names.
+- Update the `nodeRoomScope(spaceId, roomId)` cap helper — the cap-scope collection is now `objinvlog` (was `streaminv`).
+
+**`apps/mobile/src/lib/use-webhooks.ts:27`** (one line)
+- Swap `session.accountClient` → the octospaces-namespaced client. After the `identity.ts` chokepoint is applied, `session.accountClient` already targets octospaces, so this may be a no-op.
+
+**`packages/sdk/src/starfish/dm-inbox.ts:146`**
+- Read client already follows `session.accountClient` → no change after the chokepoint.
+- Update the cap scope: `cap:read:inbox` (was `cap:read:dminbox`).
+
+**`packages/sdk/src/starfish/dm-link.ts:169`** (the anonymous append — one wrinkle)
+- `postSignedAppend` signs a **bare path** + namespace prefix explicitly. Change the `signPath` arg from the `dminboxPush(...)` path + `octochat` prefix to `inboxPush(...)` path + `octospaces` prefix. This is the one site where the namespace prefix is explicit rather than injected by a client.
+
+**`apps/server/src/{config,projections}.ts`** (OctoChat TS dev-server, lockstep)
+- Update collection names, paths, queue subjects, and projection target keys to match the new octospaces Python config byte-for-byte.
+
+### B4 — Tests: repoint octochat Infra suite → octospaces
+
+**`Infra/sync/tests/apps/octochat/`**
+- Update namespace/app reference in every fixture/setup from `octochat` → `octospaces`.
+- All assertions stay — they are the regression proof that chat collections behave identically on the generic backend.
+- Extend with cases for the new primitives: `objpublog` (public read / member append), `objinvlog` (cap-gated append), `objowner` (owner-only), `inbox` (public write, cap read, `max_items=500`, IP rate-limit, `require_author_signature=False`).
+
+**OctoChat SDK/mobile test suites**
+- Update test mocks for the path/collection name changes: `streamchat`→`objlog`, `streampub`→`objpublog`, `streaminv`→`objinvlog`, `dminbox`→`inbox`, `_webhooks`→`objowner` path.
+- The existing 0.4.3 migration tests stay green — they test behavior, not collection names.
+
+### B5 — Delete the octochat Infra app
+
+- Delete `Infra/sync/server/drakkar_sync/apps/octochat/` (entire directory).
+- Remove the octochat block from `server.py` (`create_octochat_app`, `oc_queue`, events mount, lifespan close).
+
+### Phase B checklist
+
+- [ ] **B1** octospaces-sdk `paths.ts` — add `objPubLog*`, `objInvLog*`, `objOwner*`, `inbox*` helpers + extend `OBJECT_COLLECTIONS` + scope builders
+- [ ] **B2** `octospaces/collections.py` — add `objpublog`, `objinvlog`, `objowner`, `inbox` (with `require_author_signature=False` fix), `spaceindex`
+- [ ] **B2** `octospaces/projections.py` — add octochat's two projectors (`objindex→_index/spaces/public`, `spaceregistry→_index/spaces/meta`)
+- [ ] **B2** `octospaces/queue.py` — add `objpublog`/`objinvlog` to `octospaces.log.changed` subject
+- [ ] **B2** `octospaces/events.py` — extend topic_mapper for log subjects; update public-gating predicate
+- [ ] **B3** `identity.ts` — repoint `chatClient`/`accountClient` to `octospaces` namespace; add `getSharedObjectNamespace()` config helper
+- [ ] **B3** OctoChat `paths.ts` — replace `streamRoom*`/`streamPubRoom*`/`streamInvRoom*` → `objLog*`/`objPubLog*`/`objInvLog*`; replace `spaceWebhooksName` → `objOwnerName`; replace `dminboxName`/`dmInboxShard` → `inboxName`; update cap-scope collection lists
+- [ ] **B3** `use-webhooks.ts:27` — verify client targets octospaces after identity.ts change (likely no-op)
+- [ ] **B3** `dm-inbox.ts:146` — update cap scope to `cap:read:inbox`
+- [ ] **B3** `dm-link.ts:169` — update `postSignedAppend` signPath prefix to octospaces + `inboxPush(...)` path
+- [ ] **B3** OctoChat TS dev-server `apps/server/src/{config,projections}.ts` — update in lockstep with Python octospaces config (collection names, paths, queue subjects, projection target keys)
+- [ ] **B4** `tests/apps/octochat/` — repoint all fixtures to octospaces namespace/app; add new-primitive test cases
+- [ ] **B4** OctoChat SDK/mobile suites — update mocks for renamed collections; all suites green
+- [ ] **B5** Delete `apps/octochat/` Infra dir + server.py block
+- [ ] **Verify** wipe `STARFISH_DATA_DIR` + boot octospaces unified server; run both repointed Infra suites (octovault + octochat) + octospaces suite — all green
+- [ ] **Verify** chat flows: E2EE room (`objlog`), public room (`objpublog`, anon read + member append), invite-plaintext room (`objinvlog` via per-node cap), attachments (`objblob`), owner webhook config (`objowner`), DM drop-box (`inbox` public write + cap read + rate-limit)
+- [ ] **Verify E2EE** grep octospaces server for seal/unseal of message/keyring/DM bodies → none; every collection `enc=none` or `enc=delegated` only
+- [ ] **Verify object-type filtering** OctoVault shows only vault object types; OctoChat shows only room types; neither sees the other's objects in the UI

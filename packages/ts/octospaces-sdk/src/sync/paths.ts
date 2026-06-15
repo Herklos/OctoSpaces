@@ -105,23 +105,82 @@ export const typesIndexPush = (spaceId: string) => push(typesIndexName(spaceId))
 export const objectDirName = (shard: string = 'public') => `_index/objects/${shard}`;
 export const objectDirPull = (shard: string = 'public') => pull(objectDirName(shard));
 
+// ── Global space directory (server-maintained projection) ────────────────────
+// Pull `_index/spaces/{shard}` to discover public spaces (Explore screen).
+// Shard 'public' = spaces with at least one public room; 'meta' = name+image for all spaces.
+export const spaceDirName = (shard: string = 'public') => `_index/spaces/${shard}`;
+export const spaceDirPull = (shard: string = 'public') => pull(spaceDirName(shard));
+
+// ── Public append-log (access:'public' streams) ───────────────────────────────
+// For access:'public' nodes with an append-log content kind (e.g. public chat rooms).
+// Path sits under objects/pub/{nodeId}/log — sibling of the objpub merge-doc.
+// Public-read + member-write. Keep in sync with objpublog in server collections.
+export const objPubLogName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/pub/${nodeId}/log`;
+export const objPubLogPull = (spaceId: string, nodeId: string) => pull(objPubLogName(spaceId, nodeId));
+export const objPubLogPush = (spaceId: string, nodeId: string) => push(objPubLogName(spaceId, nodeId));
+
+// ── Invite-only append-log (cap-gated) ───────────────────────────────────────
+// For access:'invite'+enc:false nodes with an append-log content kind. Gated by per-node
+// cap via the sharing plugin — NOT space:member. Excluded from spaceMemberScope.
+// Keep in sync with objinvlog in server collections.
+export const objInvLogName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/n/${nodeId}/log`;
+export const objInvLogPull = (spaceId: string, nodeId: string) => pull(objInvLogName(spaceId, nodeId));
+export const objInvLogPush = (spaceId: string, nodeId: string) => push(objInvLogName(spaceId, nodeId));
+
+// ── Owner-only node content (access:'owner') ──────────────────────────────────
+// For access:'owner' nodes — readable and writable only by the space owner.
+// The owner tier of the generic object model (webhooks, private config, etc.).
+// Excluded from spaceMemberScope; covered by ownerScope / spaceOwnerScope.
+// Keep in sync with objowner in server collections.
+export const objOwnerName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/owner/${nodeId}`;
+export const objOwnerPull = (spaceId: string, nodeId: string) => pull(objOwnerName(spaceId, nodeId));
+export const objOwnerPush = (spaceId: string, nodeId: string) => push(objOwnerName(spaceId, nodeId));
+
+// ── Identity inbox (public-write, cap-read) ───────────────────────────────────
+// Per-identity DM drop-box. Anyone appends; only the recipient reads via cap:read:inbox.
+// Time-sharded by UTC month (shard = 'YYYY-MM'). Path is identity-scoped, NOT under spaces/.
+// Keep in sync with inbox in server collections.
+export const inboxName = (identity: string, shard: string = 'default') => `inbox/${identity}/${shard}`;
+export const inboxPull = (identity: string, shard?: string) => pull(inboxName(identity, shard));
+export const inboxPush = (identity: string, shard?: string) => push(inboxName(identity, shard));
+
 // ── Generic object collections — used in cap scopes ──────────────────────────
-// These are the domain-neutral storage collections both apps migrate onto.
-// IMPORTANT: `objinv` is NOT included here — it is excluded from the broad space
-// member scope so that only per-node caps (nodeMemberScope) can reach it.
-// `spacekeyring` IS included — space members need to reach the keyring to decrypt enc content.
+// Domain-neutral storage collections covered by the broad space:member scope.
+// EXCLUDED (intentionally, require narrower caps):
+//   objinv    — invite-only content (per-node cap via nodeMemberScope)
+//   objinvlog — invite-only append-log (per-node cap)
+//   objowner  — owner-only content (spaceOwnerScope / ownerScope only)
+//   inbox     — identity-scoped, not under spaces/**
+// `spacekeyring` IS included — space members need the keyring to decrypt enc content.
+// `objpublog` IS included — space members may write to public append-logs.
 export const OBJECT_COLLECTIONS: string[] = [
-  'spacekeyring', 'objindex', 'objlog', 'objsnap', 'objdoc', 'objblob', 'typeindex', 'objpub',
+  'spacekeyring', 'objindex', 'objlog', 'objsnap', 'objdoc', 'objblob', 'typeindex', 'objpub', 'objpublog',
 ];
+
+// OWNER_COLLECTIONS extends member collections with the owner-only content tier.
+const OWNER_COLLECTIONS: string[] = [...OBJECT_COLLECTIONS, 'objowner'];
 
 // ── Cap scopes ────────────────────────────────────────────────────────────────
 
-/** Full owner/device access to every space the identity owns. */
+/** Full owner/device access to every space the identity owns (all tiers). */
 export function ownerScope(): ScopePreset {
   return {
     ops: ['read', 'list', 'write'],
-    collections: OBJECT_COLLECTIONS,
+    collections: OWNER_COLLECTIONS,
     paths: ['spaces/**'],
+  };
+}
+
+/**
+ * Owner access to ONE space — covers all member collections plus the owner-only
+ * content tier (`objowner`). Use when minting a per-space cap for a space owner
+ * (e.g. webhook config, private-config nodes).
+ */
+export function spaceOwnerScope(spaceId: string): ScopePreset {
+  return {
+    ops: ['read', 'list', 'write'],
+    collections: OWNER_COLLECTIONS,
+    paths: [`spaces/${spaceId}/**`],
   };
 }
 
@@ -155,19 +214,19 @@ export function nodeMemberScope(spaceId: string, nodeId: string, canWrite: boole
 }
 
 /**
- * Personal cap: profile + space registry + device directory + all spaces.
- * Note: app-specific collections like `'dminbox'` (chat) are NOT included here —
- * add them in the consumer's own `paths.ts` extension.
+ * Personal cap: profile + space registry + device directory + all spaces + inbox.
+ * Covers reading the identity's own DM inbox (`cap:read:inbox` via `inbox/{userId}/**`).
  */
 export function accountScope(userId: string): ScopePreset {
   return {
     ops: ['read', 'list', 'write'],
-    collections: ['profile', 'devices', 'spaces', 'spaceregistry'],
+    collections: ['profile', 'devices', 'spaces', 'spaceregistry', 'inbox'],
     paths: [
       `user/${userId}/profile`,
       `users/${userId}/_devices`,
       `user/${userId}/_spaces`,
       'spaces/**',
+      `inbox/${userId}/**`,
     ],
   };
 }
@@ -176,16 +235,18 @@ export function accountScope(userId: string): ScopePreset {
  * The single cap-cert scope granted to a PAIRED (linked) device. Covers both the
  * object-store client (ownerScope) and the account client (accountScope), deduped,
  * because a paired device cannot self-mint — it presents one root-signed cap-cert.
+ * Includes `objowner` (linked device acts as owner) and `inbox` (reads DMs).
  */
 export function linkedDeviceScope(userId: string): ScopePreset {
   return {
     ops: ['read', 'list', 'write'],
-    collections: [...OBJECT_COLLECTIONS, 'profile', 'devices', 'spaces', 'spaceregistry'],
+    collections: [...OWNER_COLLECTIONS, 'profile', 'devices', 'spaces', 'spaceregistry', 'inbox'],
     paths: [
       'spaces/**',
       `user/${userId}/profile`,
       `users/${userId}/_devices`,
       `user/${userId}/_spaces`,
+      `inbox/${userId}/**`,
     ],
   };
 }
