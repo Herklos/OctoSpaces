@@ -12,7 +12,7 @@ import type { CapCert } from '@drakkar.software/starfish-protocol';
 import { makeClient, ensureProfileKeys, ensurePseudo, type DeviceKeys } from './client.js';
 import { accountScope, ownerScope } from './paths.js';
 import { getSharedSpacesNamespace } from '../core/config.js';
-import type { DerivedIdentity } from '../core/storage-types.js';
+import type { DerivedIdentity, PersistedSession, Vault } from '../core/storage-types.js';
 
 export interface Session {
   userId: string;
@@ -155,4 +155,30 @@ export async function deriveSession(seedWords: string[], name?: string): Promise
 /** The cached root identity (userId + keys) carried by a built session. */
 export function rootIdentityOf(s: Session): DerivedIdentity {
   return { userId: s.userId, keys: s.keys };
+}
+
+/**
+ * Rebuild a live Session from a persisted vault entry — WITHOUT React.
+ * Prefers the cached `derived` identity (skips Argon2id); falls back to the seed.
+ * Nostr-derived accounts have no seed and MUST have usable `derived`.
+ */
+export async function sessionFromPersisted(p: PersistedSession): Promise<Session> {
+  if (p.capCert && p.derived) {
+    return buildLinkedSession({ userId: p.derived.userId, keys: p.derived.keys, capCert: p.capCert }, p.name);
+  }
+  if (p.derived) {
+    try {
+      return await buildSession(p.derived, p.name);
+    } catch {
+      /* cached keys unusable — fall through to a full re-derive from the seed */
+    }
+  }
+  if (p.seed) return deriveSession(p.seed, p.name);
+  throw new Error('Persisted account has neither usable derived keys nor a recovery seed.');
+}
+
+/** The active account in a vault: the one matching `activeId`, else the first. */
+export function activeAccountOf(v: Vault): PersistedSession | null {
+  if (v.accounts.length === 0) return null;
+  return v.accounts.find((a) => a.derived?.userId === v.activeId) ?? v.accounts[0];
 }

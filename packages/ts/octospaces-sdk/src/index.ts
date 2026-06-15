@@ -123,6 +123,8 @@ export {
   generateSeedWords,
   isValidSeed,
   fingerprintFromUserId,
+  sessionFromPersisted,
+  activeAccountOf,
 } from './sync/identity.js';
 export type { Session, LinkedIdentity } from './sync/identity.js';
 
