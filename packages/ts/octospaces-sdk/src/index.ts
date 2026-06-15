@@ -104,6 +104,10 @@ export {
   bytesToHex,
 } from './sync/paths.js';
 
+// Attachments
+export type { ByteSealer, AttachmentRef, AttachmentStore } from './sync/attachments.js';
+export { MAX_ATTACHMENT_BYTES, attachmentKind, createAttachmentStore } from './sync/attachments.js';
+
 // Client
 export {
   makeClient,
