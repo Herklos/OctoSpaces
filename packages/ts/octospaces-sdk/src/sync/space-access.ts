@@ -23,9 +23,11 @@
 import type { Encryptor, StarfishClient } from '@drakkar.software/starfish-client';
 
 import { buildEncryptor, makeClient, openEncryptor, ownerEnsureKeyring } from './client.js';
+import type { DeviceKeys } from './client.js';
 import type { Session } from './identity.js';
 import { ownerTrustedAdders } from './identity.js';
 import { getNodeAccessEntry, getSpaceAccessEntry } from './space-access-store.js';
+import type { SpaceAccessEntry } from './space-access-store.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
 import { keyringPull, keyringPush } from './paths.js';
 import type { NodeAccess } from '../core/types.js';
@@ -59,6 +61,21 @@ export function getSpaceClient(spaceId: string, session: Session): StarfishClien
     return makeClient(cap, session.keys.edPriv);
   }
   return session.chatClient;
+}
+
+/**
+ * Pick the KEM keypair to use when opening the space keyring for a given access entry.
+ *
+ * Link entries carry the EPHEMERAL recipient keypair minted by `createSpaceInviteLink` —
+ * that ephemeral kemPub is what was added to the keyring, so the joiner's own device keys
+ * are NOT keyring recipients. Member entries (and legacy link entries that predate 0.8.6,
+ * which lack the ephemeral KEM) fall back to `session.keys`, preserving existing behaviour.
+ */
+function decryptKeysFor(entry: SpaceAccessEntry | null | undefined, session: Session): DeviceKeys {
+  if (entry?.kind === 'link' && entry.kemPriv && entry.kemPub) {
+    return { edPriv: entry.key, edPub: '', kemPriv: entry.kemPriv, kemPub: entry.kemPub };
+  }
+  return session.keys;
 }
 
 /**
@@ -116,7 +133,7 @@ export function getNodeAccess(
         : ownerTrustedAdders(session);
 
     if (activeEntry?.kind === 'member' || activeEntry?.kind === 'link') {
-      const encryptor = await openEncryptor(client, session.keys, spacePullPath, trustedAdders);
+      const encryptor = await openEncryptor(client, decryptKeysFor(activeEntry, session), spacePullPath, trustedAdders);
       return { encryptor, client, isOwnerOpen: false };
     }
 
@@ -182,7 +199,7 @@ export async function buildNodeAccess(
 
   // Soft-open the SPACE-WIDE keyring.
   const spacePullPath = keyringPull(spaceId);
-  const encryptor = await buildEncryptor(client, session.keys, spacePullPath, trustedAdders);
+  const encryptor = await buildEncryptor(client, decryptKeysFor(activeEntry, session), spacePullPath, trustedAdders);
   if (encryptor) return { client, encryptor };
 
   // No keyring found. If the caller is the owner, self-heal by minting the keyring.

@@ -138,6 +138,17 @@ export interface SpaceInviteLinkToken {
   cap: unknown;
   /** The throwaway ephemeral subject's Ed25519 private key (hex). */
   key: string;
+  /**
+   * The throwaway ephemeral subject's X25519 KEM private key (hex) — needed to
+   * decrypt the space keyring. Absent in legacy tokens (pre-0.8.6); fall back to
+   * session keys in that case (produces the same SpaceAccessError as before).
+   */
+  kemPriv?: string;
+  /**
+   * The throwaway ephemeral subject's X25519 KEM public key (hex) — identifies
+   * this token's recipient entry in the space keyring.
+   */
+  kemPub?: string;
   write: boolean;
 }
 
@@ -158,6 +169,8 @@ export function decodeSpaceInviteLink(fragment: string): SpaceInviteLinkToken {
     spaceName: tok.spaceName ?? 'Space',
     cap: tok.cap,
     key: tok.key,
+    kemPriv: tok.kemPriv,
+    kemPub: tok.kemPub,
     write: !!tok.write,
   };
 }
@@ -202,7 +215,9 @@ export async function createSpaceInviteLink(
     if (!isAlreadyPresentRecipient(err)) throw err;
   }
 
-  const token: SpaceInviteLinkToken = { v: 1, spaceId, spaceName, cap, key: ek.edPriv, write };
+  const token: SpaceInviteLinkToken = {
+    v: 1, spaceId, spaceName, cap, key: ek.edPriv, kemPriv: ek.kemPriv, kemPub: ek.kemPub, write,
+  };
   return { token, link: encodeSpaceInviteLink(origin, token) };
 }
 
@@ -218,10 +233,12 @@ export async function joinSpaceByLink(session: Session, token: SpaceInviteLinkTo
     short: name.slice(0, 2).toUpperCase(),
     members: 1,
   };
-  const accessPayload = { cap: token.cap, key: token.key, write: token.write };
+  const accessPayload = { cap: token.cap, key: token.key, kemPriv: token.kemPriv, kemPub: token.kemPub, write: token.write };
   const sealed = await sealToSelf(session, JSON.stringify(accessPayload));
   await addJoinedSpaceWithLinkAccess(session.accountClient, session.userId, space, sealed);
-  saveSpaceAccessEntry(token.spaceId, { kind: 'link', cap: token.cap, key: token.key, write: token.write });
+  saveSpaceAccessEntry(token.spaceId, {
+    kind: 'link', cap: token.cap, key: token.key, kemPriv: token.kemPriv, kemPub: token.kemPub, write: token.write,
+  });
   return space;
 }
 
@@ -262,11 +279,11 @@ export async function recoverSpaceAccess(
   server: { caps: Record<string, string>; pubAccess: Record<string, import('../sync/account-seal.js').SealedBlob> },
 ): Promise<void> {
   // Unseal link access blobs
-  const linkAccess: Record<string, { cap: unknown; key: string; write: boolean }> = {};
+  const linkAccess: Record<string, { cap: unknown; key: string; kemPriv?: string; kemPub?: string; write: boolean }> = {};
   for (const [spaceId, sealed] of Object.entries(server.pubAccess)) {
     try {
       const raw = await unsealFromSelf(session, sealed);
-      const parsed = JSON.parse(raw) as { cap: unknown; key: string; write: boolean };
+      const parsed = JSON.parse(raw) as { cap: unknown; key: string; kemPriv?: string; kemPub?: string; write: boolean };
       if (parsed.cap && parsed.key) linkAccess[spaceId] = parsed;
     } catch (e) {
       console.error('[octospaces] recoverSpaceAccess: failed to unseal', spaceId, e);
@@ -291,7 +308,7 @@ export async function recoverSpaceAccess(
     const newPubAccess: Record<string, import('../sync/account-seal.js').SealedBlob> = {};
     for (const [id, e] of missingLinks) {
       if (e.kind === 'link') {
-        newPubAccess[id] = await sealToSelf(session, JSON.stringify({ cap: e.cap, key: e.key, write: e.write }));
+        newPubAccess[id] = await sealToSelf(session, JSON.stringify({ cap: e.cap, key: e.key, kemPriv: e.kemPriv, kemPub: e.kemPub, write: e.write }));
       }
     }
 

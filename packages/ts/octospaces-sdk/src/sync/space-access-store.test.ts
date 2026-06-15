@@ -38,13 +38,27 @@ describe('space-access-store', () => {
     expect(getSpaceAccessEntry('sp-test')).toEqual({ kind: 'member', cap: '{"kind":"member"}' });
   });
 
-  it('save + get link round-trip', () => {
+  it('save + get link round-trip (no KEM — back-compat)', () => {
     saveSpaceAccessEntry('sp-pub', { kind: 'link', cap: { kind: 'member' }, key: 'hexkey', write: true });
     const entry = getSpaceAccessEntry('sp-pub');
     expect(entry?.kind).toBe('link');
     if (entry?.kind === 'link') {
       expect(entry.key).toBe('hexkey');
       expect(entry.write).toBe(true);
+      expect(entry.kemPriv).toBeUndefined();
+    }
+  });
+
+  it('save + get link round-trip with kemPriv/kemPub (FIX C)', () => {
+    saveSpaceAccessEntry('sp-enc', {
+      kind: 'link', cap: { kind: 'member' }, key: 'hexkey',
+      kemPriv: 'eph-kempriv', kemPub: 'eph-kempub', write: false,
+    });
+    const entry = getSpaceAccessEntry('sp-enc');
+    expect(entry?.kind).toBe('link');
+    if (entry?.kind === 'link') {
+      expect(entry.kemPriv).toBe('eph-kempriv');
+      expect(entry.kemPub).toBe('eph-kempub');
     }
   });
 
@@ -83,14 +97,30 @@ describe('space-access-store', () => {
     expect(getSpaceAccessEntry('sp-a')).toEqual({ kind: 'member', cap: 'new-cap' });
   });
 
-  it('server link access populates link entries', async () => {
+  it('server link access populates link entries (back-compat, no KEM)', async () => {
     clearSpaceAccessStore();
     await hydrateSpaceAccessStore('user2', {}, {
       'sp-link': { cap: { kind: 'member' }, key: 'privhex', write: false },
     });
     const entry = getSpaceAccessEntry('sp-link');
     expect(entry?.kind).toBe('link');
-    if (entry?.kind === 'link') expect(entry.write).toBe(false);
+    if (entry?.kind === 'link') {
+      expect(entry.write).toBe(false);
+      expect(entry.kemPriv).toBeUndefined();
+    }
+  });
+
+  it('FIX C: server link access populates kemPriv/kemPub when provided', async () => {
+    clearSpaceAccessStore();
+    await hydrateSpaceAccessStore('user3', {}, {
+      'sp-enc-link': { cap: { kind: 'member' }, key: 'privhex', kemPriv: 'eph-kempriv', kemPub: 'eph-kempub', write: true },
+    });
+    const entry = getSpaceAccessEntry('sp-enc-link');
+    expect(entry?.kind).toBe('link');
+    if (entry?.kind === 'link') {
+      expect(entry.kemPriv).toBe('eph-kempriv');
+      expect(entry.kemPub).toBe('eph-kempub');
+    }
   });
 
   it('uses octospaces. prefix for kv key (not octochat.)', async () => {
@@ -119,6 +149,16 @@ describe('space-access-store', () => {
     expect(links).toHaveProperty('sp-l');
     expect(links['sp-l']?.write).toBe(true);
     expect(links).not.toHaveProperty('sp-m');
+  });
+
+  it('FIX C: linkAccessFromStore preserves kemPriv/kemPub for link entries', () => {
+    saveSpaceAccessEntry('sp-kem', {
+      kind: 'link', cap: { iss: 'abc' }, key: 'k',
+      kemPriv: 'eph-kempriv', kemPub: 'eph-kempub', write: false,
+    });
+    const links = linkAccessFromStore();
+    expect(links['sp-kem']?.kemPriv).toBe('eph-kempriv');
+    expect(links['sp-kem']?.kemPub).toBe('eph-kempub');
   });
 
   it('localSpaceAccessEntries returns a snapshot', () => {

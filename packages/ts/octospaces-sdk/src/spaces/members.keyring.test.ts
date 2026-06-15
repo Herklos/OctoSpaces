@@ -76,10 +76,12 @@ vi.mock('../sync/account-seal.js', () => ({
 
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
-import { inviteToSpace, createSpaceInviteLink, addDeviceToSpaceKeyring } from './members.js';
+import { inviteToSpace, createSpaceInviteLink, joinSpaceByLink, addDeviceToSpaceKeyring, recoverSpaceAccess } from './members.js';
 import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
 import { addSpaceMember } from './registry.js';
 import { ownerEnsureKeyring } from '../sync/client.js';
+import { saveSpaceAccessEntry } from '../sync/space-access-store.js';
+import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
 import type { Session } from '../sync/identity.js';
 
 // ── Shared mock session ───────────────────────────────────────────────────────
@@ -273,6 +275,25 @@ describe('createSpaceInviteLink — keyring ordering and error handling', () => 
     expect(token.key).toBe('eph-edpriv');
   });
 
+  it('FIX C: token carries kemPriv and kemPub — recipient id matches token KEM (core invariant)', async () => {
+    // This pins the critical invariant: the kemPub used as the keyring recipient
+    // entry MUST be the same as what is carried in the token for the joiner to decrypt.
+    const { token } = await createSpaceInviteLink(
+      mockSession, 'sp-1', 'Test Space', true, 'https://app.example.com',
+    );
+
+    // The mock addCollectionRecipient should have been called with ek.kemPub
+    const recipientArg = vi.mocked(addCollectionRecipient).mock.calls[0]![2];
+    expect(recipientArg).toMatchObject({ subKem: 'eph-kempub' });
+
+    // The token should carry the matching kemPriv/kemPub
+    expect(token.kemPriv).toBe('eph-kempriv');
+    expect(token.kemPub).toBe('eph-kempub');
+
+    // Recipient id in the keyring === kemPub in the token — that is the invariant
+    expect(token.kemPub).toBe(recipientArg.subKem);
+  });
+
   it('addSpaceMember is called with the ephemeral userId', async () => {
     await createSpaceInviteLink(
       mockSession,
@@ -358,5 +379,92 @@ describe('addDeviceToSpaceKeyring — skip-if-missing, rethrow-unexpected', () =
   it('succeeds when keyring exists and device is not yet a recipient', async () => {
     await expect(addDeviceToSpaceKeyring(mockSession, 'sp-1', device)).resolves.toBeUndefined();
     expect(vi.mocked(addCollectionRecipient)).toHaveBeenCalledOnce();
+  });
+});
+
+// ── joinSpaceByLink (FIX C persistence) ──────────────────────────────────────
+
+describe('joinSpaceByLink — persists kemPriv and kemPub (Fix C)', () => {
+  beforeEach(() => {
+    vi.mocked(saveSpaceAccessEntry).mockClear();
+    vi.mocked(sealToSelf).mockClear().mockResolvedValue({ encrypted: true } as never);
+  });
+
+  const fullToken = {
+    v: 1 as const,
+    spaceId: 'sp-link1',
+    spaceName: 'Link Space',
+    cap: { kind: 'member', iss: 'owner-pub', sub: 'eph-edpub' },
+    key: 'eph-edpriv',
+    kemPriv: 'eph-kempriv',
+    kemPub: 'eph-kempub',
+    write: true,
+  };
+
+  it('FIX C: saveSpaceAccessEntry receives kemPriv and kemPub', async () => {
+    await joinSpaceByLink(mockSession, fullToken);
+    expect(vi.mocked(saveSpaceAccessEntry)).toHaveBeenCalledWith(
+      'sp-link1',
+      expect.objectContaining({ kind: 'link', kemPriv: 'eph-kempriv', kemPub: 'eph-kempub' }),
+    );
+  });
+
+  it('FIX C: sealToSelf payload includes kemPriv and kemPub', async () => {
+    await joinSpaceByLink(mockSession, fullToken);
+    const sealArg = vi.mocked(sealToSelf).mock.calls[0]![1];
+    const payload = JSON.parse(sealArg) as { kemPriv?: string; kemPub?: string };
+    expect(payload.kemPriv).toBe('eph-kempriv');
+    expect(payload.kemPub).toBe('eph-kempub');
+  });
+
+  it('legacy token (no KEM) stores entry without kemPriv/kemPub — no error', async () => {
+    const legacyToken = { ...fullToken, kemPriv: undefined, kemPub: undefined };
+    await expect(joinSpaceByLink(mockSession, legacyToken)).resolves.toMatchObject({ id: 'sp-link1' });
+    const [, entry] = vi.mocked(saveSpaceAccessEntry).mock.calls[0]!;
+    expect((entry as { kemPriv?: string }).kemPriv).toBeUndefined();
+  });
+});
+
+// ── recoverSpaceAccess (Fix C round-trip) ────────────────────────────────────
+
+describe('recoverSpaceAccess — threads kemPriv/kemPub through unseal → hydrate (Fix C)', () => {
+  beforeEach(() => {
+    vi.mocked(unsealFromSelf).mockClear();
+    vi.mocked(sealToSelf).mockClear().mockResolvedValue({ encrypted: true } as never);
+  });
+
+  it('FIX C: hydrates link access with kemPriv/kemPub when present in sealed blob', async () => {
+    const { hydrateSpaceAccessStore } = await import('../sync/space-access-store.js');
+    vi.mocked(unsealFromSelf).mockResolvedValue(
+      JSON.stringify({ cap: { kind: 'member' }, key: 'eph-edpriv', kemPriv: 'eph-kempriv', kemPub: 'eph-kempub', write: true }),
+    );
+
+    await recoverSpaceAccess(mockSession, {
+      caps: {},
+      pubAccess: { 'sp-recover': { encrypted: true } as never },
+    });
+
+    expect(vi.mocked(hydrateSpaceAccessStore)).toHaveBeenCalledWith(
+      mockSession.userId,
+      {},
+      expect.objectContaining({
+        'sp-recover': expect.objectContaining({ kemPriv: 'eph-kempriv', kemPub: 'eph-kempub' }),
+      }),
+    );
+  });
+
+  it('backfill sealToSelf includes kemPriv/kemPub from local link entry', async () => {
+    const { localSpaceAccessEntries } = await import('../sync/space-access-store.js');
+    vi.mocked(localSpaceAccessEntries).mockReturnValue({
+      'sp-backfill': { kind: 'link', cap: { kind: 'member' }, key: 'k', kemPriv: 'eph-kempriv', kemPub: 'eph-kempub', write: false },
+    });
+    vi.mocked(unsealFromSelf).mockResolvedValue('{}'); // empty pubAccess
+
+    await recoverSpaceAccess(mockSession, { caps: {}, pubAccess: {} });
+
+    const sealArg = vi.mocked(sealToSelf).mock.calls[0]![1];
+    const payload = JSON.parse(sealArg) as { kemPriv?: string; kemPub?: string };
+    expect(payload.kemPriv).toBe('eph-kempriv');
+    expect(payload.kemPub).toBe('eph-kempub');
   });
 });

@@ -106,6 +106,8 @@ const MOCK_ENCRYPTOR_2 = { seal: vi.fn(), open: vi.fn() } as unknown as Awaited<
 const MEMBER_CAP_JSON = JSON.stringify({ kind: 'member', iss: 'issuer-ed-pub', sub: MEMBER_ID });
 const LINK_CAP = { kind: 'member', iss: 'link-issuer' };
 const LINK_KEY = 'link-ed-priv-hex';
+const LINK_KEM_PRIV = 'link-kem-priv-hex';
+const LINK_KEM_PUB = 'link-kem-pub-hex';
 
 // ── getSpaceClient ─────────────────────────────────────────────────────────────
 
@@ -226,24 +228,49 @@ describe('getNodeAccess', () => {
     expect(handle.isOwnerOpen).toBe(false);
   });
 
-  it('opens keyring with ephemeral client for link access entry', async () => {
+  it('FIX C: opens keyring with EPHEMERAL KEM keypair for link entry (not session.keys)', async () => {
     vi.mocked(getSpaceAccessEntry).mockReturnValue({
       kind: 'link',
       cap: LINK_CAP,
       key: LINK_KEY,
+      kemPriv: LINK_KEM_PRIV,
+      kemPub: LINK_KEM_PUB,
       write: false,
     });
     vi.mocked(makeClient).mockReturnValue(mockLinkClient);
     const session = makeSession(OTHER_ID);
     const handle = await getNodeAccess(SPACE_ID, NODE_ID, { enc: true }, session, { owner: OWNER_ID, members: [] });
     expect(vi.mocked(makeClient)).toHaveBeenCalledWith(LINK_CAP, LINK_KEY);
+    // Must use the ephemeral KEM from the entry, NOT session.keys
     expect(vi.mocked(openEncryptor)).toHaveBeenCalledWith(
       mockLinkClient,
-      DEVICE_KEYS,
+      expect.objectContaining({ kemPriv: LINK_KEM_PRIV, kemPub: LINK_KEM_PUB }),
       keyringPull(SPACE_ID),
       expect.any(Array),
     );
+    // Must NOT use session.keys (device-kem-priv belongs to the joiner, not the link recipient)
+    const keysArg = vi.mocked(openEncryptor).mock.calls[0]![1];
+    expect(keysArg.kemPriv).not.toBe(DEVICE_KEYS.kemPriv);
     expect(handle.isOwnerOpen).toBe(false);
+  });
+
+  it('BACK-COMPAT: legacy link entry (no KEM) falls back to session.keys for openEncryptor', async () => {
+    vi.mocked(getSpaceAccessEntry).mockReturnValue({
+      kind: 'link',
+      cap: LINK_CAP,
+      key: LINK_KEY,
+      write: false,
+      // No kemPriv / kemPub — pre-0.8.6 token
+    });
+    vi.mocked(makeClient).mockReturnValue(mockLinkClient);
+    const session = makeSession(OTHER_ID);
+    await getNodeAccess(SPACE_ID, NODE_ID, { enc: true }, session, { owner: OWNER_ID, members: [] });
+    expect(vi.mocked(openEncryptor)).toHaveBeenCalledWith(
+      mockLinkClient,
+      DEVICE_KEYS, // falls back to session.keys
+      keyringPull(SPACE_ID),
+      expect.any(Array),
+    );
   });
 
   it('caches the result — second call returns the same promise', async () => {
@@ -296,11 +323,13 @@ describe('buildNodeAccess', () => {
     expect(result!.encryptor).toBe(MOCK_ENCRYPTOR);
   });
 
-  it('uses ephemeral client for link entry', async () => {
+  it('FIX C: uses ephemeral client AND ephemeral KEM for link entry with kemPriv/kemPub', async () => {
     vi.mocked(getSpaceAccessEntry).mockReturnValue({
       kind: 'link',
       cap: LINK_CAP,
       key: LINK_KEY,
+      kemPriv: LINK_KEM_PRIV,
+      kemPub: LINK_KEM_PUB,
       write: false,
     });
     vi.mocked(makeClient).mockReturnValue(mockLinkClient);
@@ -308,7 +337,36 @@ describe('buildNodeAccess', () => {
     const session = makeSession(OTHER_ID);
     const result = await buildNodeAccess(session, SPACE_ID, NODE_ID, { enc: true });
     expect(vi.mocked(makeClient)).toHaveBeenCalledWith(LINK_CAP, LINK_KEY);
+    // Must use ephemeral KEM, not session.keys
+    expect(vi.mocked(buildEncryptor)).toHaveBeenCalledWith(
+      mockLinkClient,
+      expect.objectContaining({ kemPriv: LINK_KEM_PRIV, kemPub: LINK_KEM_PUB }),
+      expect.any(String),
+      expect.any(Array),
+    );
+    const keysArg = vi.mocked(buildEncryptor).mock.calls[0]![1];
+    expect(keysArg.kemPriv).not.toBe(DEVICE_KEYS.kemPriv);
     expect(result).not.toBeNull();
+  });
+
+  it('BACK-COMPAT: legacy link entry (no KEM) falls back to session.keys for buildEncryptor', async () => {
+    vi.mocked(getSpaceAccessEntry).mockReturnValue({
+      kind: 'link',
+      cap: LINK_CAP,
+      key: LINK_KEY,
+      write: false,
+      // No kemPriv / kemPub
+    });
+    vi.mocked(makeClient).mockReturnValue(mockLinkClient);
+    vi.mocked(buildEncryptor).mockResolvedValue(MOCK_ENCRYPTOR);
+    const session = makeSession(OTHER_ID);
+    await buildNodeAccess(session, SPACE_ID, NODE_ID, { enc: true });
+    expect(vi.mocked(buildEncryptor)).toHaveBeenCalledWith(
+      mockLinkClient,
+      DEVICE_KEYS, // falls back to session.keys
+      expect.any(String),
+      expect.any(Array),
+    );
   });
 
   it('returns null when no keyring and no reg provided', async () => {

@@ -13,6 +13,8 @@ const baseToken: SpaceInviteLinkToken = {
   spaceName: 'My Space',
   cap: { kind: 'member', iss: 'deadbeef', sub: 'cafecafe', scope: {} },
   key: 'a1b2c3d4',
+  kemPriv: 'eph-kempriv-hex',
+  kemPub: 'eph-kempub-hex',
   write: true,
 };
 
@@ -26,6 +28,22 @@ describe('encodeSpaceInviteLink / decodeSpaceInviteLink', () => {
     expect(decoded.key).toBe(baseToken.key);
     expect(decoded.write).toBe(true);
     expect(decoded.v).toBe(1);
+  });
+
+  it('round-trip preserves kemPriv and kemPub (Fix C)', () => {
+    const link = encodeSpaceInviteLink('https://app.example.com', baseToken);
+    const decoded = decodeSpaceInviteLink(link.split('#')[1]!);
+    expect(decoded.kemPriv).toBe('eph-kempriv-hex');
+    expect(decoded.kemPub).toBe('eph-kempub-hex');
+  });
+
+  it('legacy token without kemPriv/kemPub decodes without throwing (back-compat)', () => {
+    const legacyToken = { v: 1, spaceId: 'sp-old', spaceName: 'Old Space', cap: { kind: 'member' }, key: 'old-key', write: false };
+    const encoded = toBase64Url(JSON.stringify(legacyToken));
+    const decoded = decodeSpaceInviteLink(encoded);
+    expect(decoded.spaceId).toBe('sp-old');
+    expect(decoded.kemPriv).toBeUndefined();
+    expect(decoded.kemPub).toBeUndefined();
   });
 
   it('decodeSpaceInviteLink accepts a # prefixed fragment', () => {

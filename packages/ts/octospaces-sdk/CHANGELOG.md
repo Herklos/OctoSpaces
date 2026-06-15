@@ -1,5 +1,28 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.8.6 (2026-06-15)
+
+### Fixed
+
+- **Space invite links now grant E2EE (private room) access (Fix C).** When an owner
+  created an invite link via `createSpaceInviteLink`, the ephemeral X25519 KEM keypair
+  was added to the space keyring as a recipient but the private key (`kemPriv`) was
+  discarded — so the link joiner's decrypt path used their own device KEM (not a
+  keyring recipient) and `createKeyringEncryptor` threw a `SpaceAccessError`, surfaced
+  as "No access to room. Try again." Public (plaintext) rooms were unaffected.
+  The fix threads `kemPriv`/`kemPub` through the full chain:
+  - `SpaceInviteLinkToken` now carries `kemPriv?` and `kemPub?` (optional, back-compat).
+  - `createSpaceInviteLink` populates them; `decodeSpaceInviteLink` preserves them.
+  - `joinSpaceByLink` persists them in both the sealed `_spaces.pubAccess` blob and the
+    local `saveSpaceAccessEntry`.
+  - `recoverSpaceAccess` unseals and threads them through `hydrateSpaceAccessStore`.
+  - `decryptKeysFor` (new internal helper in `space-access.ts`) selects the ephemeral
+    KEM when the access entry has it; falls back to `session.keys` for legacy entries
+    (pre-0.8.6 links, which still fail on E2EE rooms — re-issue the link to fix).
+
+**Migration:** existing invite links issued before 0.8.6 carry no `kemPriv` and continue
+to fail on private rooms (same behaviour as before). Re-issue the link after upgrading.
+
 ## 0.8.0 (2026-06-15)
 
 ### Added
