@@ -26,7 +26,8 @@ import {
   localSpaceAccessEntries,
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
-import { keyringName, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
+import { keyringName, keyringPull, keyringPush, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
+import { ownerEnsureKeyring } from '../sync/client.js';
 import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, readSpaces, updateSpacesDoc } from './registry.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
 import { toBase64Url, fromBase64Url } from '../sync/base64url.js';
@@ -47,7 +48,7 @@ function isAlreadyPresentRecipient(err: unknown): boolean {
 }
 
 function isKeyringMissing(err: unknown): boolean {
-  return err instanceof Error && /not found|404|does not exist/i.test(err.message);
+  return err instanceof Error && /not found|404|does not exist|no keyring exists/i.test(err.message);
 }
 
 interface SpaceInvite {
@@ -73,8 +74,10 @@ export async function inviteToSpace(
   if (!req.edPub || !req.kemPub || !req.userId) throw new Error('That is not a valid join request.');
   await addSpaceMember(session.accountClient, spaceId, session.userId, req.userId);
 
-  // Add invitee to the space-wide keyring so they can decrypt enc nodes.
-  // Silently skip if the keyring doesn't exist yet (no enc nodes in the space).
+  // Ensure the space-wide keyring exists (creates it with only the owner if absent),
+  // then add the invitee as a recipient so they can decrypt enc nodes from the start.
+  // ownerEnsureKeyring is a no-op if the keyring already exists.
+  await ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId));
   try {
     await addCollectionRecipient(
       session.chatClient,
@@ -84,10 +87,7 @@ export async function inviteToSpace(
       { trustedAdders: [session.keys.edPub] },
     );
   } catch (err) {
-    if (!isAlreadyPresentRecipient(err) && !isKeyringMissing(err)) {
-      // Only rethrow unexpected errors — missing keyring (no enc nodes yet) is normal.
-      console.warn('[octospaces] inviteToSpace: keyring add skipped', err);
-    }
+    if (!isAlreadyPresentRecipient(err)) throw err;
   }
 
   // NOTE: 'chat' is the cap collection the deployed server's space-member enricher recognises.
@@ -188,8 +188,8 @@ export async function createSpaceInviteLink(
   // Add the ephemeral userId to the roster so the server grants `space:member`
   await addSpaceMember(session.accountClient, spaceId, session.userId, ephemeralUserId);
 
-  // Add ephemeral KEM to the space keyring so link-bearers can decrypt enc content.
-  // Silently skip if the keyring doesn't exist yet (no enc nodes).
+  // Ensure the keyring exists, then add the ephemeral KEM so link-bearers can decrypt enc content.
+  await ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId));
   try {
     await addCollectionRecipient(
       session.chatClient,
@@ -199,9 +199,7 @@ export async function createSpaceInviteLink(
       { trustedAdders: [session.keys.edPub] },
     );
   } catch (err) {
-    if (!isAlreadyPresentRecipient(err) && !isKeyringMissing(err)) {
-      console.warn('[octospaces] createSpaceInviteLink: keyring add skipped', err);
-    }
+    if (!isAlreadyPresentRecipient(err)) throw err;
   }
 
   const token: SpaceInviteLinkToken = { v: 1, spaceId, spaceName, cap, key: ek.edPriv, write };

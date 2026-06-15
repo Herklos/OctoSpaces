@@ -32,7 +32,9 @@
         "objdoc",
         "objblob",
         "typeindex",
-        "objpub"
+        "objpub",
+        "objpublog",
+        "objowner"
       ],
       "paths": [
         "spaces/**"
@@ -52,7 +54,8 @@
         "objdoc",
         "objblob",
         "typeindex",
-        "objpub"
+        "objpub",
+        "objpublog"
       ],
       "paths": [
         "spaces/space-abc123/**"
@@ -71,7 +74,8 @@
         "objdoc",
         "objblob",
         "typeindex",
-        "objpub"
+        "objpub",
+        "objpublog"
       ],
       "paths": [
         "spaces/space-abc123/**"
@@ -112,13 +116,15 @@
         "profile",
         "devices",
         "spaces",
-        "spaceregistry"
+        "spaceregistry",
+        "inbox"
       ],
       "paths": [
         "user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/profile",
         "users/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_devices",
         "user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_spaces",
-        "spaces/**"
+        "spaces/**",
+        "inbox/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/**"
       ]
     },
     "linkedDevice": {
@@ -136,16 +142,20 @@
         "objblob",
         "typeindex",
         "objpub",
+        "objpublog",
+        "objowner",
         "profile",
         "devices",
         "spaces",
-        "spaceregistry"
+        "spaceregistry",
+        "inbox"
       ],
       "paths": [
         "spaces/**",
         "user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/profile",
         "users/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_devices",
-        "user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_spaces"
+        "user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_spaces",
+        "inbox/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/**"
       ]
     }
   },
@@ -157,6 +167,7 @@
     "objdoc",
     "objblob",
     "typeindex",
-    "objpub"
+    "objpub",
+    "objpublog"
   ]
 }
