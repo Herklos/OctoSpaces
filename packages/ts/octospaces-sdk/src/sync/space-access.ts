@@ -146,14 +146,20 @@ export function getNodeAccess(
 }
 
 /**
- * SOFT resolve — never mints a keyring, never throws on missing access.
+ * SOFT resolve — normally never mints a keyring, never throws on missing access.
  * Returns null when the identity has no usable access for the node yet.
+ *
+ * When `reg` is provided and the caller is the SPACE OWNER (`reg.owner ===
+ * session.userId`) but no keyring exists yet, the owner self-heals by minting
+ * the keyring on the spot (idempotent). This recovers spaces that were created
+ * before the eager-mint (Fix A) landed without requiring a separate repair step.
  */
 export async function buildNodeAccess(
   session: Session,
   spaceId: string,
   nodeId: string,
   node: { enc?: boolean },
+  reg?: { owner: string | null; members?: string[] } | null,
 ): Promise<{ client: StarfishClient; encryptor: Encryptor | null } | null> {
   const nodeEntry = getNodeAccessEntry(spaceId, nodeId);
   const spaceEntry = getSpaceAccessEntry(spaceId);
@@ -177,5 +183,20 @@ export async function buildNodeAccess(
   // Soft-open the SPACE-WIDE keyring.
   const spacePullPath = keyringPull(spaceId);
   const encryptor = await buildEncryptor(client, session.keys, spacePullPath, trustedAdders);
-  return encryptor ? { client, encryptor } : null;
+  if (encryptor) return { client, encryptor };
+
+  // No keyring found. If the caller is the owner, self-heal by minting the keyring.
+  // This recovers spaces created before the eager-mint fix landed (Fix A).
+  if (reg != null && reg.owner === session.userId) {
+    const mintedEncryptor = await ownerEnsureKeyring(
+      session.chatClient,
+      session.keys,
+      spacePullPath,
+      keyringPush(spaceId),
+      ownerTrustedAdders(session),
+    );
+    return { client: session.chatClient, encryptor: mintedEncryptor };
+  }
+
+  return null;
 }
