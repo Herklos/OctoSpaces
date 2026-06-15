@@ -127,6 +127,20 @@ export const objInvLogName = (spaceId: string, nodeId: string) => `spaces/${spac
 export const objInvLogPull = (spaceId: string, nodeId: string) => pull(objInvLogName(spaceId, nodeId));
 export const objInvLogPush = (spaceId: string, nodeId: string) => push(objInvLogName(spaceId, nodeId));
 
+// ── Room-scoped stream path shortcuts (roomId encodes spaceId) ────────────────
+// Convenience wrappers for callers that have a roomId and want to route to the
+// correct log tier without extracting the spaceId separately.
+// Room ids use `sp-<spaceId>-<local>` so spaceIdFromRoomId extracts the space portion.
+export const streamRoomName = (roomId: string) => objLogName(spaceIdFromRoomId(roomId), roomId);
+export const streamRoomPull = (roomId: string) => objLogPull(spaceIdFromRoomId(roomId), roomId);
+export const streamRoomPush = (roomId: string) => objLogPush(spaceIdFromRoomId(roomId), roomId);
+export const streamPubRoomName = (roomId: string) => objPubLogName(spaceIdFromRoomId(roomId), roomId);
+export const streamPubRoomPull = (roomId: string) => objPubLogPull(spaceIdFromRoomId(roomId), roomId);
+export const streamPubRoomPush = (roomId: string) => objPubLogPush(spaceIdFromRoomId(roomId), roomId);
+export const streamInvRoomName = (roomId: string) => objInvLogName(spaceIdFromRoomId(roomId), roomId);
+export const streamInvRoomPull = (roomId: string) => objInvLogPull(spaceIdFromRoomId(roomId), roomId);
+export const streamInvRoomPush = (roomId: string) => objInvLogPush(spaceIdFromRoomId(roomId), roomId);
+
 // ── Owner-only node content (access:'owner') ──────────────────────────────────
 // For access:'owner' nodes — readable and writable only by the space owner.
 // The owner tier of the generic object model (webhooks, private config, etc.).

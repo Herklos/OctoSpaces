@@ -49,9 +49,9 @@ describe('OBJECT_COLLECTIONS', () => {
 });
 
 describe('ownerScope', () => {
-  it('includes all OBJECT_COLLECTIONS plus objowner', () => {
+  it('contains all OBJECT_COLLECTIONS plus objowner', () => {
     const scope = ownerScope();
-    expect(scope.collections).toEqual(expect.arrayContaining(OBJECT_COLLECTIONS));
+    for (const c of OBJECT_COLLECTIONS) expect(scope.collections).toContain(c);
     expect(scope.collections).toContain('objowner');
   });
 
