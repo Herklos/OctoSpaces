@@ -12,8 +12,10 @@ import { FilesystemObjectStore } from "@drakkar.software/starfish-server/node";
 import { identitiesServerPlugin } from "@drakkar.software/starfish-identities";
 import { sharingServerPlugin } from "@drakkar.software/starfish-sharing";
 import { createQueuingServerPlugin } from "@drakkar.software/starfish-queuing";
+import { createProjectionServerPlugin } from "@drakkar.software/starfish-projection";
 
 import { config } from "./config.js";
+import { projections } from "./projections.js";
 import { createNatsQueue } from "./queue.js";
 import { createFileRevocationStore } from "./revocation-store.js";
 import { makeSpaceRoleEnricher } from "./space-role.js";
@@ -54,16 +56,24 @@ const roleResolver = createCapCertRoleResolver({
   maxBodyBytes: 11_534_336,
 });
 
-// Publish a change-event to NATS on writes to the space registry collections
-// (params {spaceId} only — no content). Whistlers re-serves these as SSE.
+// Publish change-events to NATS. Whistlers re-serves these as SSE.
+// Structural changes → octospaces.object.changed (no identity).
+// Append-log writes  → octospaces.log.changed    (includeIdentity for FCM push).
 const { queue, nc } = await createNatsQueue();
 const queuing = createQueuingServerPlugin({
   queue,
   collections: {
-    // Space access record changes (member added/removed, name/image updated).
-    spaceregistry: { topic: "octospaces.space.changed", includeParams: true, includeIdentity: false },
-    // Space-wide keyring changes (owner invite/revoke for E2EE nodes).
-    spacekeyring: { topic: "octospaces.space.changed", includeParams: true, includeIdentity: false },
+    // Structural changes → object topic (no identity)
+    spaceregistry: { topic: "octospaces.object.changed", includeParams: true, includeIdentity: false },
+    spacekeyring:  { topic: "octospaces.object.changed", includeParams: true, includeIdentity: false },
+    objindex:      { topic: "octospaces.object.changed", includeParams: true, includeIdentity: false },
+    objdoc:        { topic: "octospaces.object.changed", includeParams: true, includeIdentity: false },
+    objpub:        { topic: "octospaces.object.changed", includeParams: true, includeIdentity: false },
+    typeindex:     { topic: "octospaces.object.changed", includeParams: true, includeIdentity: false },
+    // Append-log writes → log topic (includeIdentity for FCM push notifications)
+    objlog:    { topic: "octospaces.log.changed", includeParams: true, includeIdentity: true },
+    objpublog: { topic: "octospaces.log.changed", includeParams: true, includeIdentity: true },
+    objinvlog: { topic: "octospaces.log.changed", includeParams: true, includeIdentity: true },
   },
 });
 
@@ -76,7 +86,7 @@ const syncRouter = createSyncRouter({
   config,
   roleResolver,
   roleEnricher: spaceEnricher,
-  plugins: [queuing],
+  plugins: [createProjectionServerPlugin({ store, projections }), queuing],
 });
 
 await saveConfig(store, config);

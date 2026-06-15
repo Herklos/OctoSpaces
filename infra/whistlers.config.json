@@ -4,7 +4,8 @@
   "namespaces": {
     "octospaces": {
       "subscriptions": [
-        { "name": "octospaces-space", "topics": ["octospaces.space.changed.*"] }
+        { "name": "octospaces-objects", "topics": ["octospaces.object.changed.*"] },
+        { "name": "octospaces-logs",    "topics": ["octospaces.log.changed.*"] }
       ]
     }
   }

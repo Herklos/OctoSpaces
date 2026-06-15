@@ -8,9 +8,9 @@
  *
  * Filter: client declares candidate spaceIds via ?spaces=sp-a,sp-b. Each is
  * validated against `spaces/{id}/_access` membership (makeSpaceRoleEnricher).
- * The authorized ids map to sanitized Whistlers destinationTopics derived from
- * `octospaces.space.changed.<spaceId>` — the same transform queue.ts applies
- * when publishing to NATS.
+ * The authorized ids map to two sanitized Whistlers destinationTopics per space:
+ * `octospaces.object.changed.<spaceId>` and `octospaces.log.changed.<spaceId>` —
+ * the same transform queue.ts applies when publishing to NATS.
  *
  * ★ Firehose-prevention invariant: the upstream Whistlers URL ALWAYS carries at
  * least one ?topic= param. An empty authorized set substitutes the sentinel
@@ -121,9 +121,10 @@ export function createEventsRoute(opts: EventsRouteOptions): Hono {
       if (roles.includes(SPACE_MEMBER_ROLE)) authorized.push(spaceId);
     }
 
-    const topics = authorized.map(
-      (s) => `${WHISTLERS_NAMESPACE}-${sanitizeTopic(`octospaces.space.changed.${s}`)}`,
-    );
+    const topics = authorized.flatMap((s) => [
+      `${WHISTLERS_NAMESPACE}-${sanitizeTopic(`octospaces.object.changed.${s}`)}`,
+      `${WHISTLERS_NAMESPACE}-${sanitizeTopic(`octospaces.log.changed.${s}`)}`,
+    ]);
     const safeTopics = topics.length > 0 ? topics : ["__none__"];
 
     const qs = safeTopics.map((t) => `topic=${encodeURIComponent(t)}`).join("&");
