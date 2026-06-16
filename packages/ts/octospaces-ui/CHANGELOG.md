@@ -1,5 +1,24 @@
 # Changelog — @drakkar.software/octospaces-ui
 
+## 0.4.4
+
+### `SpaceSwitcher` — `emptyLabel` prop
+
+Added an optional `emptyLabel?: string` prop to `SpaceSwitcher` (default `'Spaces'`).
+
+When the user has no active space (i.e. `spaces` is empty and `activeId` matches
+nothing), the trigger button now shows `emptyLabel` instead of the hardcoded
+`'Spaces'` fallback. The `accessibilityLabel` is also derived from `emptyLabel` in
+this state.
+
+Fully backward-compatible — existing consumers that do not pass `emptyLabel` retain
+identical behaviour (the `'Spaces'` fallback is unchanged).
+
+Typical use: `emptyLabel="Create a space"` to turn the switcher into an entry point
+for the join/create flow when the user hasn't joined a space yet.
+
+---
+
 ## 0.4.2
 
 ### `SpaceSwitcher` — `onTriggerPress` override

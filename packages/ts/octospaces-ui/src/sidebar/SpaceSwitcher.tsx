@@ -181,6 +181,13 @@ export interface SpaceSwitcherProps {
    * an action (e.g. `<AccountSwitcher onRequestClose={close} />`). Fully app-owned.
    */
   footerSlot?: (close: () => void) => React.ReactNode;
+
+  /**
+   * Trigger label shown when there is no active space (i.e. `spaces` is empty and
+   * `activeId` matches nothing). Also used as the `accessibilityLabel` suffix in the
+   * no-space state. @default 'Spaces'
+   */
+  emptyLabel?: string;
 }
 
 // ── Hover-aware Pressable (RN-Web) ────────────────────────────────────────────
@@ -213,6 +220,7 @@ export function SpaceSwitcher({
   renderIcon,
   renderBadge,
   footerSlot,
+  emptyLabel = 'Spaces',
 }: SpaceSwitcherProps) {
   const theme = useOctoSpacesTheme();
   const { colors, type: typeScale, fonts, spacing: sp, radii } = theme;
@@ -395,7 +403,7 @@ export function SpaceSwitcher({
       <Pressable
         ref={anchorRef}
         accessibilityRole="button"
-        accessibilityLabel={active ? `${active.name} — switch space` : 'Switch space'}
+        accessibilityLabel={active ? `${active.name} — switch space` : `${emptyLabel} — switch space`}
         accessibilityState={{ expanded: open }}
         hitSlop={6}
         onPress={() => setOpen(true)}
@@ -435,7 +443,7 @@ export function SpaceSwitcher({
             } as TextStyle
           }
         >
-          {active?.name ?? 'Spaces'}
+          {active?.name ?? emptyLabel}
         </Text>
         {renderIcon ? renderIcon('chevron-down', 14, colors.textTertiary) : null}
       </Pressable>
