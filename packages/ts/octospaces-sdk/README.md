@@ -97,6 +97,26 @@ All `enc: true` nodes in a space share one content-encryption key — inviting s
 
 > `access: 'public'` and `enc: true` cannot be combined.
 
+##### Per-node keyring (E2EE invite nodes)
+
+`access: 'invite'` + `enc: true` nodes (e.g. OctoDesk tickets) can instead use a **per-node keyring** at `spaces/{spaceId}/objects/n/{nodeId}/_keyring` (collection `nodekeyring`). The node's content key is wrapped to **only that node's participants** — never the space-wide keyring — so an isolated external requester reads/writes one ticket E2EE without ever holding the space key.
+
+```ts
+import {
+  ensureNodeKeyringRecipient, // ensure-then-add (correct ordering)
+  openNodeEncryptor,          // recipient opens to decrypt/seal
+  addNodeKeyringRecipient,    // grant another participant (e.g. on ticket assignment)
+} from '@drakkar.software/octospaces-sdk'
+
+// Creator: mint the keyring and add the requester as a recipient, in order.
+await ensureNodeKeyringRecipient(session, spaceId, nodeId, { subKem: requesterKemPub, userId: requesterId })
+
+// Requester: open the keyring (via their cap client) and seal/unseal content.
+const enc = await openNodeEncryptor(reqClient, reqKeys, spaceId, nodeId, [creatorEdPub])
+```
+
+> **Invariant:** call `ownerEnsureNodeKeyring` before `addNodeKeyringRecipient` (or just use `ensureNodeKeyringRecipient`). `nodeKeyringScope` is a single-collection, **read-only** cap — the requester reads the keyring to decrypt; only `space:member`s write it.
+
 ### Invite-only nodes
 
 ```ts
