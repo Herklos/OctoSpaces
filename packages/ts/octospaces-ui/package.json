@@ -1,6 +1,6 @@
 {
   "name": "@drakkar.software/octospaces-ui",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "Shared headless-themed UI primitives for OctoSpaces apps. Theme values are injected by the host app; this package ships only types + plumbing + primitives.",
   "type": "module",
   "sideEffects": false,

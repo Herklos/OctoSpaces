@@ -69,6 +69,18 @@ export interface Palette {
   verificationPartial: string;
   verificationNone: string;
 
+  // ── Interaction states (optional — host supplies if using the interaction primitives) ──
+  /** Translucent fill on an actively pressed control. */
+  pressed?: string;
+  /** Solid fill for a selected row/item. */
+  selected?: string;
+  /** Hover state within an already-selected row. */
+  selectedHover?: string;
+  /** Neutral fill for a disabled control's background. */
+  disabledFill?: string;
+  /** Keyboard-focus ring color (WCAG-compliant accent). */
+  focusRing?: string;
+
   // ── Misc ──────────────────────────────────────────────────────────────────
   overlay: string;
   shadow: string;
