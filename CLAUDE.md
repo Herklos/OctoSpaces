@@ -26,9 +26,12 @@ Worktrees do NOT have node_modules — point to `<main-repo>/node_modules/.bin/<
 
 ## Version bumping workflow
 1. Bump `packages/ts/octospaces-sdk/package.json` version
-2. Commit + push octospaces
-3. Update `packages/sdk/package.json` in OctoVault (pinned, not semver range) and OctoChat
-4. Commit + push both consumer repos
+2. **Update `CHANGELOG.md`** in the package with the new version, date, and a summary of changes — this is REQUIRED before every release
+3. Commit + push octospaces
+4. Update `packages/sdk/package.json` in OctoVault (pinned, not semver range) and OctoChat
+5. Commit + push both consumer repos
+
+> **Rule:** Any version bump in `packages/*` MUST include a CHANGELOG entry in the same commit. No exceptions.
 
 ## Key architecture invariants
 - `ownerEnsureKeyring` must be called BEFORE `addCollectionRecipient` in invite/link flows
