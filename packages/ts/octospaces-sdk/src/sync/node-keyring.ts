@@ -15,7 +15,7 @@
  * before `addNodeKeyringRecipient`. Use `ensureNodeKeyringRecipient` to get both in
  * the correct order.
  */
-import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
+import { addCollectionRecipient, removeRecipient, listRecipients } from '@drakkar.software/starfish-keyring';
 import type { Encryptor, StarfishClient } from '@drakkar.software/starfish-client';
 
 import { openEncryptor, buildEncryptor, ownerEnsureKeyring } from './client.js';
@@ -121,4 +121,53 @@ export async function ensureNodeKeyringRecipient(
   const enc = await ownerEnsureNodeKeyring(session, spaceId, nodeId, opts.trustedAdders);
   await addNodeKeyringRecipient(session, spaceId, nodeId, recipient, opts);
   return enc;
+}
+
+/** One recipient of a node keyring, projected for listing (provenance-filtered). */
+export interface ListedNodeRecipient {
+  subKem: string;
+  addedBy: string;
+  addedAt: number;
+}
+
+/**
+ * REVOKE one or more recipients from a node keyring: rotates to a NEW epoch, mints a fresh
+ * CEK, and re-wraps it ONLY to the retained recipients — so a removed party (e.g. an
+ * unassigned agent) loses access to FUTURE messages (already-seen messages remain readable;
+ * forward secrecy only). Returns the new epoch number.
+ *
+ * Only entries whose `addedBy` is a trusted adder are retained on rotation, so pass the
+ * key(s) that granted the recipients you want to keep (defaults to the caller — correct when
+ * the desk owner/bot manages the keyring). The caller must hold the current CEK.
+ */
+export async function removeNodeKeyringRecipient(
+  session: Session,
+  spaceId: string,
+  nodeId: string,
+  removeSubKems: string[],
+  opts: { trustedAdders?: string[] } = {},
+): Promise<{ newEpoch: number }> {
+  return removeRecipient(
+    session.chatClient,
+    nodeKeyringName(spaceId, nodeId),
+    removeSubKems,
+    { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
+    { trustedAdders: opts.trustedAdders ?? [session.keys.edPub] },
+  );
+}
+
+/**
+ * List the current recipients of a node keyring (provenance-filtered: only entries from a
+ * trusted adder with a valid signature surface). Returns `{epoch:0, recipients:[]}` when no
+ * keyring exists yet.
+ */
+export async function listNodeKeyringRecipients(
+  session: Session,
+  spaceId: string,
+  nodeId: string,
+  opts: { trustedAdders?: string[] } = {},
+): Promise<{ epoch: number; recipients: ListedNodeRecipient[] }> {
+  return listRecipients(session.chatClient, nodeKeyringName(spaceId, nodeId), {
+    trustedAdders: opts.trustedAdders ?? [session.keys.edPub],
+  });
 }

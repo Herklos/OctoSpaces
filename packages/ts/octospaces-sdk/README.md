@@ -117,6 +117,8 @@ const enc = await openNodeEncryptor(reqClient, reqKeys, spaceId, nodeId, [creato
 
 > **Invariant:** call `ownerEnsureNodeKeyring` before `addNodeKeyringRecipient` (or just use `ensureNodeKeyringRecipient`). `nodeKeyringScope` is a single-collection, **read-only** cap — the requester reads the keyring to decrypt; only `space:member`s write it.
 
+Revoke access by rotating the node keyring — `removeNodeKeyringRecipient(session, spaceId, nodeId, [subKem])` mints a fresh CEK re-wrapped only to the retained recipients, so the removed party can't read FUTURE messages (forward secrecy only; already-seen messages remain readable). `listNodeKeyringRecipients` returns the current provenance-filtered recipients.
+
 ### Invite-only nodes
 
 ```ts

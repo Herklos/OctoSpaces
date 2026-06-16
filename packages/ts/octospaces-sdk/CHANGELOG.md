@@ -1,5 +1,19 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.12.7 (2026-06-16)
+
+### Added
+
+- **Per-node keyring revocation + rotation (E2EE tickets, Phase 5).**
+  - `removeNodeKeyringRecipient(session, spaceId, nodeId, removeSubKems, opts?)` — rotates the
+    node keyring to a NEW epoch, mints a fresh CEK, and re-wraps it ONLY to the retained
+    recipients (wraps `removeRecipient`). A revoked party (e.g. an unassigned agent) loses
+    access to FUTURE messages; already-seen messages stay readable (forward secrecy only).
+  - `listNodeKeyringRecipients(session, spaceId, nodeId, opts?)` — provenance-filtered list of
+    the node keyring's current recipients (wraps `listRecipients`).
+  - Both default `trustedAdders` to the caller (correct when the desk owner/bot manages the
+    keyring); pass explicit adders to retain recipients granted by other keys.
+
 ## 0.12.6 (2026-06-16)
 
 ### Changed

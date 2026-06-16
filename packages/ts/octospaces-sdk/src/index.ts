@@ -135,8 +135,10 @@ export {
   buildNodeEncryptor,
   addNodeKeyringRecipient,
   ensureNodeKeyringRecipient,
+  removeNodeKeyringRecipient,
+  listNodeKeyringRecipients,
 } from './sync/node-keyring.js';
-export type { NodeKeyringRecipient } from './sync/node-keyring.js';
+export type { NodeKeyringRecipient, ListedNodeRecipient } from './sync/node-keyring.js';
 
 // Identity / session
 export {

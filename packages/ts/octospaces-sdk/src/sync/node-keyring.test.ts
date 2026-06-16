@@ -28,6 +28,8 @@ vi.mock('./client.js', () => ({
 
 vi.mock('@drakkar.software/starfish-keyring', () => ({
   addCollectionRecipient: vi.fn().mockResolvedValue(undefined),
+  removeRecipient: vi.fn().mockResolvedValue({ newEpoch: 2 }),
+  listRecipients: vi.fn().mockResolvedValue({ epoch: 1, recipients: [] }),
 }));
 
 // ── Imports (after mocks) ──────────────────────────────────────────────────────
@@ -37,6 +39,8 @@ import {
   buildNodeEncryptor,
   addNodeKeyringRecipient,
   ensureNodeKeyringRecipient,
+  removeNodeKeyringRecipient,
+  listNodeKeyringRecipients,
 } from './node-keyring.js';
 import {
   nodeKeyringName,
@@ -48,7 +52,7 @@ import {
   objInvLogPull,
 } from './paths.js';
 import { openEncryptor, buildEncryptor, ownerEnsureKeyring } from './client.js';
-import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
+import { addCollectionRecipient, removeRecipient, listRecipients } from '@drakkar.software/starfish-keyring';
 import { SpaceAccessError } from '../core/space-access-error.js';
 import type { Session } from './identity.js';
 
@@ -157,6 +161,39 @@ describe('addNodeKeyringRecipient', () => {
   it('rethrows any other error', async () => {
     vi.mocked(addCollectionRecipient).mockRejectedValueOnce(new Error('boom'));
     await expect(addNodeKeyringRecipient(mockSession, SP, NID, { subKem: 'bob-kem' })).rejects.toThrow('boom');
+  });
+});
+
+describe('removeNodeKeyringRecipient (revocation + rotation)', () => {
+  beforeEach(() => vi.mocked(removeRecipient).mockClear().mockResolvedValue({ newEpoch: 2 }));
+
+  it('rotates the node keyring, dropping the named recipient(s), default trustedAdders [edPub]', async () => {
+    const res = await removeNodeKeyringRecipient(mockSession, SP, NID, ['bob-kem']);
+    expect(removeRecipient).toHaveBeenCalledWith(
+      mockSession.chatClient,
+      nodeKeyringName(SP, NID),
+      ['bob-kem'],
+      { edPriv: 'alice-ed-priv', edPub: 'alice-ed-pub', kemPriv: 'alice-kem-priv' },
+      { trustedAdders: ['alice-ed-pub'] },
+    );
+    expect(res.newEpoch).toBe(2);
+  });
+
+  it('honors explicit trustedAdders (retain recipients granted by those keys)', async () => {
+    await removeNodeKeyringRecipient(mockSession, SP, NID, ['bob-kem'], { trustedAdders: ['owner-key', 'bot-key'] });
+    expect(removeRecipient).toHaveBeenCalledWith(
+      mockSession.chatClient, nodeKeyringName(SP, NID), ['bob-kem'], expect.anything(), { trustedAdders: ['owner-key', 'bot-key'] },
+    );
+  });
+});
+
+describe('listNodeKeyringRecipients', () => {
+  beforeEach(() => vi.mocked(listRecipients).mockClear().mockResolvedValue({ epoch: 3, recipients: [{ subKem: 'k', addedBy: 'a', addedAt: 1 }] }));
+
+  it('lists provenance-filtered recipients of the node keyring', async () => {
+    const res = await listNodeKeyringRecipients(mockSession, SP, NID);
+    expect(listRecipients).toHaveBeenCalledWith(mockSession.chatClient, nodeKeyringName(SP, NID), { trustedAdders: ['alice-ed-pub'] });
+    expect(res).toEqual({ epoch: 3, recipients: [{ subKem: 'k', addedBy: 'a', addedAt: 1 }] });
   });
 });
 
