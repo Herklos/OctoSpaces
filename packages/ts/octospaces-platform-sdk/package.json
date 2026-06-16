@@ -1,6 +1,6 @@
 {
   "name": "@drakkar.software/octospaces-platform-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Platform adapters for octospaces-sdk — KV, vault storage, passkey, and crypto setup.",
   "type": "module",
   "sideEffects": false,
@@ -8,7 +8,7 @@
   "exports": {
     ".": {
       "react-native": {
-        "types": "./dist/index.d.ts",
+        "types": "./dist/index.native.d.ts",
         "import": "./dist/index.native.js"
       },
       "types": "./dist/index.d.ts",

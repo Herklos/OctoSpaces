@@ -1,5 +1,48 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.12.1 (2026-06-16)
+
+### Changed
+
+- **`createObjectBlobStore`** gains the full in-memory + KV-persisted cache layer from
+  the legacy `createAttachmentStore` (64 MB in-memory LRU, 4 MB KV ciphertext budget).
+  The factory now takes `{ persistPrefix, persistIndex }` instead of `{ sealer }`, and
+  each store method accepts `enc: ByteSealer | null` per-call (null = plaintext path).
+  The returned store now also exposes `clearObjectBlobCache()`.
+  Standalone `uploadObjectBlob` / `loadObjectBlob` updated to accept nullable `enc`.
+- **`sync/attachments.ts`** marked `@deprecated` — `createAttachmentStore`,
+  `AttachmentRef`, `AttachmentStore`, `MAX_ATTACHMENT_BYTES` all carry `@deprecated`
+  JSDoc. The `attachments` server collection has been removed from all octospaces
+  deployments (replaced by `objblob`). `ByteSealer` and `attachmentKind` remain
+  non-deprecated. Existing exports are kept for this minor; removal is a later major.
+
+## 0.12.0 (2026-06-16)
+
+### Added
+
+- **Sealed resource-request inbox** — generic "request-to-create" primitive that lets
+  a requester holding only an owner's public identity (no credential) deliver a sealed
+  node-creation request to the owner's inbox; the owner accepts or rejects and seals a
+  narrow per-node cap back. Four new modules + barrel exports:
+  - **`sync/inbox.ts`** — `inboxShard()`, `inboxShards()`, `pullInbox()`,
+    `InboxElement`. Adds the shard-rotation helpers and authenticated read wrapper
+    that were missing from the path-string builders in `paths.ts`.
+  - **`sync/signed-append.ts`** — `appendToInbox()`, `postAnonymousAppend()`,
+    `AppendHttpError`. Cap-less POST to the public-write `inbox` collection, signed
+    with the sender's own Ed25519 key.
+  - **`spaces/identity-link.ts`** — `IdentityLink` token type (no credential, safe to
+    share), `encodeIdentityLink()` / `decodeIdentityLink()`, `verifyIdentityLinkBinding()`
+    (offline `ownerId = sha256(edPub)[0:32]` check), `verifyIdentityLinkKeys()` (live
+    profile cross-check), `myIdentityLink()`.
+  - **`spaces/resource-requests.ts`** — requester side: `submitResourceRequest()`,
+    `scanResourceGrants()`, `acceptResourceGrant()`; owner side: `scanResourceRequests()`,
+    `acceptResourceRequest()` (with optional app-specific `create` hook for room/ticket/page),
+    `rejectResourceRequest()`. Types: `ResourceRequest`, `ResourceGrant`, `ResourceReject`,
+    `PendingRequest`, `AcceptResult`, `SubmitResourceRequestOptions`.
+  - No server-side changes — the existing `inbox/{identity}/{shard}` collection
+    (`writeRoles:["public"]`, `readRoles:["cap:read:inbox"]`, 500-item ring buffer)
+    is reused as-is.
+
 ## 0.11.0 (2026-06-16)
 
 ### Added

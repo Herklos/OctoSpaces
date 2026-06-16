@@ -1,13 +1,11 @@
 /**
  * Generic attachment upload/download over a Starfish raw-blob collection.
  *
- * For encrypted (E2EE) nodes, bytes are sealed client-side with the node's keyring
- * CEK (`sealBytes`), so the server only ever stores opaque ciphertext. The blob's
- * storage path is bound into the seal's AAD, preventing hostile relocation.
- *
- * For unencrypted (public/plaintext) nodes, pass `enc: null` — bytes are stored raw.
- *
- * Use {@link createAttachmentStore} to get a scoped instance with your app's KV prefixes.
+ * @deprecated The `attachments` collection (`spaces/{spaceId}/attachments/{roomId}/{blobId}`)
+ * has been removed from the octospaces server. Migrate to {@link createObjectBlobStore} from
+ * `./object-blobs.ts` which targets the current `objblob` collection
+ * (`spaces/{spaceId}/objects/blobs/{blobId}`). `ByteSealer`, `attachmentKind`, and
+ * `MAX_ATTACHMENT_BYTES` remain exported as they are still used by consumers.
  */
 import { getBase64 } from '@drakkar.software/starfish-protocol';
 import type { StarfishClient } from '@drakkar.software/starfish-client';
@@ -21,6 +19,7 @@ export interface ByteSealer {
   openBytes(blob: Uint8Array, aad?: string): Promise<Uint8Array>;
 }
 
+/** @deprecated Use `ObjectBlobRef` from `./object-blobs.ts`. */
 export interface AttachmentRef {
   blobId: string;
   name: string;
@@ -29,6 +28,7 @@ export interface AttachmentRef {
   kind: 'image' | 'file';
 }
 
+/** @deprecated Use `MAX_OBJECT_BLOB_BYTES` from `./object-blobs.ts`. */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 export function attachmentKind(mime: string): 'image' | 'file' {
@@ -40,6 +40,7 @@ type PersistIndex = { k: string; n: number }[];
 const CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 const PERSIST_BUDGET_BYTES = 4 * 1024 * 1024;
 
+/** @deprecated Use `ObjectBlobStore` from `./object-blobs.ts`. */
 export interface AttachmentStore {
   uploadAttachment(
     client: StarfishClient,
@@ -61,6 +62,9 @@ export interface AttachmentStore {
 /**
  * Create a scoped attachment store. Each app passes its own KV prefixes so
  * cached blobs from different apps don't collide in the shared KV store.
+ *
+ * @deprecated The `attachments` server collection has been removed. Use
+ * `createObjectBlobStore` from `./object-blobs.ts` instead (targets `objblob`).
  */
 export function createAttachmentStore(opts: {
   persistPrefix: string;

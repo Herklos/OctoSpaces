@@ -108,7 +108,7 @@ export {
 export type { ByteSealer, AttachmentRef, AttachmentStore } from './sync/attachments.js';
 export { MAX_ATTACHMENT_BYTES, attachmentKind, createAttachmentStore } from './sync/attachments.js';
 
-// Object blobs (sealed files keyed by space, e.g. for vault objects)
+// Object blobs (sealed files keyed by space — replaces the deprecated attachments collection)
 export type { ObjectBlobRef, ObjectBlobStore } from './sync/object-blobs.js';
 export { MAX_OBJECT_BLOB_BYTES, FileTooLargeError, uploadObjectBlob, loadObjectBlob, createObjectBlobStore } from './sync/object-blobs.js';
 
@@ -281,6 +281,13 @@ export { cacheProfile, loadCachedProfile } from './sync/profile-cache.js';
 // Fetch
 export { fetchWithTimeout, CONNECT_TIMEOUT_MS } from './sync/fetch-timeout.js';
 
+// Inbox helpers (shard rotation + authenticated read)
+export { inboxShard, inboxShards, pullInbox } from './sync/inbox.js';
+export type { InboxElement } from './sync/inbox.js';
+
+// Anonymous signed append (cap-less inbox write)
+export { appendToInbox, postAnonymousAppend, AppendHttpError } from './sync/signed-append.js';
+
 // Base64
 export { starfishBase64 } from './sync/base64.js';
 export { toBase64Url, fromBase64Url } from './sync/base64url.js';
@@ -297,6 +304,34 @@ export type { SubscribeChangesOptions } from './sync/events.js';
 
 export { previewInvite } from './utils/invite-preview.js';
 export type { InvitePreview } from './utils/invite-preview.js';
+
+// Identity links (pure-identity tokens, no credential/cap)
+export {
+  encodeIdentityLink,
+  decodeIdentityLink,
+  verifyIdentityLinkBinding,
+  verifyIdentityLinkKeys,
+  myIdentityLink,
+} from './spaces/identity-link.js';
+export type { IdentityLink } from './spaces/identity-link.js';
+
+// Resource-request inbox (sealed request → owner creates node → sealed grant-back)
+export {
+  submitResourceRequest,
+  scanResourceRequests,
+  acceptResourceRequest,
+  rejectResourceRequest,
+  scanResourceGrants,
+  acceptResourceGrant,
+} from './spaces/resource-requests.js';
+export type {
+  ResourceRequest,
+  ResourceGrant,
+  ResourceReject,
+  PendingRequest,
+  AcceptResult,
+  SubmitResourceRequestOptions,
+} from './spaces/resource-requests.js';
 
 // Prefs
 export { createMutesStore, isMuteActive } from './prefs/mutes.js';
