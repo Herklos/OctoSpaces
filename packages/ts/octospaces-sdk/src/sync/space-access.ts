@@ -26,7 +26,7 @@ import { buildEncryptor, makeClient, openEncryptor, ownerEnsureKeyring } from '.
 import type { DeviceKeys } from './client.js';
 import type { Session } from './identity.js';
 import { ownerTrustedAdders } from './identity.js';
-import { getNodeAccessEntry, getSpaceAccessEntry } from './space-access-store.js';
+import { getNodeAccessEntry, getNodeStreamAccessEntry, getSpaceAccessEntry } from './space-access-store.js';
 import type { SpaceAccessEntry } from './space-access-store.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
 import { keyringPull, keyringPush } from './paths.js';
@@ -55,6 +55,28 @@ export function clearNodeAccessCache(): void {
  */
 export function getSpaceClient(spaceId: string, session: Session): StarfishClient {
   const entry = getSpaceAccessEntry(spaceId);
+  if (entry?.kind === 'link') return makeClient(entry.cap, entry.key);
+  if (entry?.kind === 'member') {
+    const cap = JSON.parse(entry.cap) as { iss?: string };
+    return makeClient(cap, session.keys.edPriv);
+  }
+  return session.chatClient;
+}
+
+/**
+ * Return the StarfishClient for a node's append-log STREAM (`objinvlog`).
+ *
+ * A `member` cap covers exactly one collection, so the stream is cap-gated by its OWN
+ * per-node cap — it cannot be reached with the content cap (`objinv`) or a space cap.
+ * Resolution: the distinct stream entry first, then fall back to the node content entry
+ * and finally the space client, so non-invite rooms (reached via space membership) and
+ * legacy invites without a stream cap keep working.
+ */
+export function getNodeStreamClient(spaceId: string, nodeId: string, session: Session): StarfishClient {
+  const entry =
+    getNodeStreamAccessEntry(spaceId, nodeId) ??
+    getNodeAccessEntry(spaceId, nodeId) ??
+    getSpaceAccessEntry(spaceId);
   if (entry?.kind === 'link') return makeClient(entry.cap, entry.key);
   if (entry?.kind === 'member') {
     const cap = JSON.parse(entry.cap) as { iss?: string };

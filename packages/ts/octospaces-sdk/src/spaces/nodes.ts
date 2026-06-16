@@ -39,6 +39,7 @@ import {
   keyringPull,
   keyringPush,
   nodeMemberScope,
+  nodeStreamScope,
   spaceMemberScope,
   userIdFromEdPub,
 } from '../sync/paths.js';
@@ -48,6 +49,7 @@ import {
 import {
   getNodeAccessEntry,
   saveNodeAccessEntry,
+  saveNodeStreamAccessEntry,
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
 import { sealToSelf } from '../sync/account-seal.js';
@@ -204,10 +206,17 @@ export interface NodeInviteBundle {
   spaceId: string;
   nodeId: string;
   nodeName: string;
-  /** Space-level member cap (always present — grants index read access). */
-  cap: unknown;
-  /** Per-node narrow cap (only for `invite+plaintext` nodes). */
+  /**
+   * Space-level member cap — grants index read access (and thus visibility of every
+   * node's metadata). Omitted for `isolated` invites that must NOT grant space-wide
+   * access (e.g. OctoDesk tickets, where an external requester should reach only their
+   * own ticket).
+   */
+  cap?: unknown;
+  /** Per-node content cap (`objinv`) — for `invite+plaintext` nodes. */
   nodeCap?: unknown;
+  /** Per-node STREAM cap (`objinvlog`) — for `invite+plaintext` nodes with a message log. */
+  streamCap?: unknown;
 }
 
 /**
@@ -227,6 +236,7 @@ export async function inviteToNode(
   requestJson: string,
   node: { enc?: boolean },
   nodeName?: string,
+  opts: { isolated?: boolean } = {},
 ): Promise<string> {
   const req = JSON.parse(requestJson) as JoinRequest;
   if (!req.edPub || !req.kemPub || !req.userId) throw new Error('Invalid join request.');
@@ -246,34 +256,48 @@ export async function inviteToNode(
     }
   }
 
-  // Always ensure space membership (for index access)
-  await addSpaceMember(session.accountClient, spaceId, session.userId, req.userId);
-
-  const spaceCap = await mintMemberCap(
-    session.keys.edPriv,
-    session.keys.edPub,
-    { edPubHex: req.edPub, kemPubHex: req.kemPub, userIdHex: req.userId },
-    'chat',
-    spaceMemberScope(spaceId, true),
-  );
+  // `isolated` (plaintext only) withholds space membership + the space cap, so the
+  // invitee reaches ONLY this node's per-node content/stream caps — never the index
+  // or other nodes. `enc` nodes can't be isolated: they need the space-wide keyring.
+  const isolated = !!opts.isolated && !node.enc;
+  const subject = { edPubHex: req.edPub, kemPubHex: req.kemPub, userIdHex: req.userId };
 
   const bundle: NodeInviteBundle = {
     spaceId,
     nodeId,
     nodeName: nodeName ?? nodeId,
-    cap: spaceCap,
   };
 
-  if (!node.enc) {
-    // invite+plaintext: also mint narrow per-node cap for objinv content
-    const perNodeCap = await mintMemberCap(
+  if (!isolated) {
+    // Ensure space membership (for index access) + mint the space-level cap.
+    await addSpaceMember(session.accountClient, spaceId, session.userId, req.userId);
+    bundle.cap = await mintMemberCap(
       session.keys.edPriv,
       session.keys.edPub,
-      { edPubHex: req.edPub, kemPubHex: req.kemPub, userIdHex: req.userId },
+      subject,
+      'chat',
+      spaceMemberScope(spaceId, true),
+    );
+  }
+
+  if (!node.enc) {
+    // invite+plaintext: mint narrow per-node caps — content (objinv) AND the message
+    // stream (objinvlog). A member cap covers exactly one collection, so the stream
+    // needs its own cap separate from the content cap.
+    bundle.nodeCap = await mintMemberCap(
+      session.keys.edPriv,
+      session.keys.edPub,
+      subject,
       'chat',
       nodeMemberScope(spaceId, nodeId, true),
     );
-    bundle.nodeCap = perNodeCap;
+    bundle.streamCap = await mintMemberCap(
+      session.keys.edPriv,
+      session.keys.edPub,
+      subject,
+      'chat',
+      nodeStreamScope(spaceId, nodeId, true),
+    );
   }
 
   return JSON.stringify(bundle);
@@ -285,21 +309,37 @@ export async function inviteToNode(
  */
 export async function acceptNodeInvite(session: Session, bundleJson: string): Promise<string> {
   const bundle = JSON.parse(bundleJson) as Partial<NodeInviteBundle>;
-  const cap = bundle.cap as { kind?: string; sub?: string } | undefined;
-  if (!cap || !bundle.spaceId || !bundle.nodeId) throw new Error('Invalid node invite.');
-  if (cap.kind !== 'member') throw new Error('Invalid node invite.');
-  if (!cap.sub || cap.sub !== session.keys.edPub) {
-    throw new Error('This invite was issued for a different identity.');
+  if (!bundle.spaceId || !bundle.nodeId) throw new Error('Invalid node invite.');
+
+  // Validate every cap that IS present was issued for this identity. `isolated`
+  // invites omit the space cap, so it's optional; but the bundle must carry at
+  // least one usable cap (space OR per-node content).
+  const assertForUs = (c: { kind?: string; sub?: string } | undefined, label: string): boolean => {
+    if (!c) return false;
+    if (c.kind !== 'member') throw new Error('Invalid node invite.');
+    if (!c.sub || c.sub !== session.keys.edPub) {
+      throw new Error('This invite was issued for a different identity.');
+    }
+    void label;
+    return true;
+  };
+
+  const hasSpaceCap = assertForUs(bundle.cap as { kind?: string; sub?: string } | undefined, 'cap');
+  const hasNodeCap = assertForUs(bundle.nodeCap as { kind?: string; sub?: string } | undefined, 'nodeCap');
+  assertForUs(bundle.streamCap as { kind?: string; sub?: string } | undefined, 'streamCap');
+  if (!hasSpaceCap && !hasNodeCap) throw new Error('Invalid node invite.');
+
+  if (hasSpaceCap) {
+    // Store space-level cap so the invitee can read the index.
+    saveSpaceAccessEntry(bundle.spaceId, { kind: 'member', cap: JSON.stringify(bundle.cap) });
   }
-
-  const capJson = JSON.stringify(cap);
-  // Store space-level cap so the invitee can read the index
-  saveSpaceAccessEntry(bundle.spaceId, { kind: 'member', cap: capJson });
-
-  if (bundle.nodeCap) {
-    // invite+plaintext: also store narrow per-node cap
-    const nodeCapJson = JSON.stringify(bundle.nodeCap);
-    saveNodeAccessEntry(bundle.spaceId, bundle.nodeId, { kind: 'member', cap: nodeCapJson });
+  if (hasNodeCap) {
+    // invite+plaintext: store the narrow per-node content cap.
+    saveNodeAccessEntry(bundle.spaceId, bundle.nodeId, { kind: 'member', cap: JSON.stringify(bundle.nodeCap) });
+  }
+  if (bundle.streamCap) {
+    // ...and the per-node STREAM cap (objinvlog), under its own entry.
+    saveNodeStreamAccessEntry(bundle.spaceId, bundle.nodeId, { kind: 'member', cap: JSON.stringify(bundle.streamCap) });
   }
 
   return bundle.nodeId;
@@ -315,6 +355,9 @@ export interface NodeInviteLinkToken {
   nodeName: string;
   /** Cap scope depends on `enc`: spaceMemberScope for enc nodes, nodeMemberScope for plaintext. */
   cap: unknown;
+  /** Per-node STREAM cap (`objinvlog`) — present for `invite+plaintext` nodes with a
+   *  message log. The same ephemeral `key` authenticates both caps. */
+  streamCap?: unknown;
   /** The ephemeral subject's Ed25519 private key (hex). */
   key: string;
   write: boolean;
@@ -337,6 +380,7 @@ export function decodeNodeInviteLink(fragment: string): NodeInviteLinkToken {
     nodeId: tok.nodeId,
     nodeName: tok.nodeName ?? tok.nodeId,
     cap: tok.cap,
+    ...(tok.streamCap !== undefined ? { streamCap: tok.streamCap } : {}),
     key: tok.key,
     write: !!tok.write,
   };
@@ -360,11 +404,20 @@ export async function createNodeInviteLink(
   node: { enc?: boolean },
   write: boolean,
   origin: string,
+  opts: { isolated?: boolean } = {},
 ): Promise<{ token: NodeInviteLinkToken; link: string }> {
   const ek = generateDeviceKeys();
   const ephemeralUserId = await userIdFromEdPub(ek.edPub);
+  const subject = { edPubHex: ek.edPub, kemPubHex: ek.kemPub, userIdHex: ephemeralUserId };
 
-  await addSpaceMember(session.accountClient, spaceId, session.userId, ephemeralUserId);
+  // `isolated` (plaintext only) withholds space membership so the link bearer reaches
+  // ONLY this node — never the index or other nodes (e.g. an external OctoDesk ticket
+  // requester). Revoke an isolated link via cap revocation (it is not a space member).
+  const isolated = !!opts.isolated && !node.enc;
+
+  if (!isolated) {
+    await addSpaceMember(session.accountClient, spaceId, session.userId, ephemeralUserId);
+  }
 
   if (node.enc) {
     // Add ephemeral KEM to the SPACE-WIDE keyring
@@ -382,18 +435,40 @@ export async function createNodeInviteLink(
   }
 
   // enc nodes need space-scoped cap (must reach the space keyring);
-  // plaintext invite nodes use the narrow per-node cap.
+  // plaintext invite nodes use the narrow per-node content cap.
   const cap = await mintMemberCap(
     session.keys.edPriv,
     session.keys.edPub,
-    { edPubHex: ek.edPub, kemPubHex: ek.kemPub, userIdHex: ephemeralUserId },
+    subject,
     'chat',
     node.enc
       ? spaceMemberScope(spaceId, write)
       : nodeMemberScope(spaceId, nodeId, write),
   );
 
-  const token: NodeInviteLinkToken = { v: 1, spaceId, nodeId, nodeName, cap, key: ek.edPriv, write };
+  // plaintext nodes also get a per-node STREAM cap (objinvlog) — a separate
+  // single-collection member cap, authenticated by the same ephemeral key.
+  let streamCap: unknown;
+  if (!node.enc) {
+    streamCap = await mintMemberCap(
+      session.keys.edPriv,
+      session.keys.edPub,
+      subject,
+      'chat',
+      nodeStreamScope(spaceId, nodeId, write),
+    );
+  }
+
+  const token: NodeInviteLinkToken = {
+    v: 1,
+    spaceId,
+    nodeId,
+    nodeName,
+    cap,
+    ...(streamCap !== undefined ? { streamCap } : {}),
+    key: ek.edPriv,
+    write,
+  };
   return { token, link: encodeNodeInviteLink(origin, token) };
 }
 
@@ -404,6 +479,12 @@ export async function createNodeInviteLink(
 export async function joinNodeByLink(session: Session, token: NodeInviteLinkToken): Promise<string> {
   const accessPayload = { cap: token.cap, key: token.key, write: token.write };
   const sealed = await sealToSelf(session, JSON.stringify(accessPayload));
+  // The per-node STREAM cap (objinvlog), when present, is sealed + persisted under its
+  // own `${spaceId}:${nodeId}:stream` key — same machinery, distinct entry.
+  const sealedStream =
+    token.streamCap !== undefined
+      ? await sealToSelf(session, JSON.stringify({ cap: token.streamCap, key: token.key, write: token.write }))
+      : null;
 
   // Persist sealed entry into _spaces.pubAccess keyed by spaceId:nodeId.
   // Also register the node as a listable Space (dup-guarded) so it appears in
@@ -421,6 +502,7 @@ export async function joinNodeByLink(session: Session, token: NodeInviteLinkToke
     pubAccess: {
       ...cur.pubAccess,
       [`${token.spaceId}:${token.nodeId}`]: sealed,
+      ...(sealedStream ? { [`${token.spaceId}:${token.nodeId}:stream`]: sealedStream } : {}),
     },
   }));
 
@@ -430,6 +512,14 @@ export async function joinNodeByLink(session: Session, token: NodeInviteLinkToke
     key: token.key,
     write: token.write,
   });
+  if (token.streamCap !== undefined) {
+    saveNodeStreamAccessEntry(token.spaceId, token.nodeId, {
+      kind: 'link',
+      cap: token.streamCap,
+      key: token.key,
+      write: token.write,
+    });
+  }
 
   return token.nodeId;
 }

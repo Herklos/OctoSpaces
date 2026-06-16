@@ -4,6 +4,7 @@ import {
   ownerScope,
   spaceMemberScope,
   nodeMemberScope,
+  nodeStreamScope,
   accountScope,
   linkedDeviceScope,
   keyringPull,
@@ -129,6 +130,26 @@ describe('nodeMemberScope', () => {
   it('write=false omits write ops', () => {
     const scope = nodeMemberScope('sp-1', 'n-42', false);
     expect(scope.ops).not.toContain('write');
+  });
+});
+
+describe('nodeStreamScope', () => {
+  it('covers ONLY objinvlog (single-collection member cap)', () => {
+    const scope = nodeStreamScope('sp-1', 'n-42', true);
+    expect(scope.collections).toEqual(['objinvlog']);
+  });
+
+  it('scopes to the specific node path', () => {
+    const scope = nodeStreamScope('sp-1', 'n-42', true);
+    expect(scope.paths).toEqual(['spaces/sp-1/objects/n/n-42/**']);
+  });
+
+  it('does NOT include objinv (that is the content cap, nodeMemberScope)', () => {
+    expect(nodeStreamScope('sp-1', 'n-42', true).collections).not.toContain('objinv');
+  });
+
+  it('write=false omits write ops', () => {
+    expect(nodeStreamScope('sp-1', 'n-42', false).ops).not.toContain('write');
   });
 });
 

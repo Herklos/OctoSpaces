@@ -1,5 +1,31 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.12.3 (2026-06-16)
+
+### Added
+
+- **Per-node stream cap (`nodeStreamScope`) + dual-cap invite flow.** A `member` cap
+  covers exactly one collection, so an `invite+plaintext` node's append-log STREAM
+  (`objinvlog`) needs its OWN cap separate from the content cap (`objinv`,
+  `nodeMemberScope`). Previously only the content cap was minted, leaving the stream
+  collection unreachable by every party (the desk-ticket messaging path was inert).
+  - New `nodeStreamScope(spaceId, nodeId, canWrite)` — single-collection (`objinvlog`)
+    per-node scope.
+  - `inviteToNode` and `createNodeInviteLink` now also mint a `streamCap` for plaintext
+    nodes and carry it in the bundle / link token. `acceptNodeInvite` and
+    `joinNodeByLink` persist it under a distinct `${spaceId}:${nodeId}:stream` access
+    entry (and seal it into `_spaces.pubAccess` for link invites).
+  - New `getNodeStreamClient(spaceId, nodeId, session)` resolves the right client for a
+    node's stream (stream entry → content entry → space client fallback).
+  - New store helpers `getNodeStreamAccessEntry` / `saveNodeStreamAccessEntry` /
+    `removeNodeStreamAccessEntry` (separate entry key — no entry-shape/sync change).
+- **`isolated` invite option** on `inviteToNode` / `createNodeInviteLink`. When set for a
+  plaintext node, the invitee is NOT added as a space member and receives NO space-level
+  cap — only the per-node content + stream caps. This withholds index/metadata access to
+  the rest of the space (e.g. an external OctoDesk ticket requester reaches only their own
+  ticket). Ignored for `enc` nodes (they require the space-wide keyring). `NodeInviteBundle.cap`
+  is now optional to reflect isolated bundles.
+
 ## 0.12.2 (2026-06-16)
 
 ### Removed
