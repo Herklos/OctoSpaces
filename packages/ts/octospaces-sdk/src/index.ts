@@ -293,3 +293,13 @@ export type { SubscribeChangesOptions } from './sync/events.js';
 
 export { previewInvite } from './utils/invite-preview.js';
 export type { InvitePreview } from './utils/invite-preview.js';
+
+// Prefs
+export { createMutesStore, isMuteActive } from './prefs/mutes.js';
+export type { MutesStore } from './prefs/mutes.js';
+export { createReadsStore } from './prefs/reads.js';
+export type { ReadsStore } from './prefs/reads.js';
+
+// Format
+export { plural, clockTime, initialsFor, formatBytes } from './format/format.js';
+export { relativeTime, relativeTimeShort } from './format/relative-time.js';

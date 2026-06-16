@@ -1,6 +1,6 @@
 {
   "name": "@drakkar.software/octospaces-sdk",
-  "version": "0.8.6",
+  "version": "0.9.0",
   "description": "Shared headless spaces core — identity, registry, objects, and sync plumbing.",
   "type": "module",
   "sideEffects": false,
