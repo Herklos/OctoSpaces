@@ -69,7 +69,7 @@ vi.mock('../sync/account-seal.js', () => ({
 
 // ── now import the module under test ──────────────────────────────────────────
 
-import { createNode, setNodeAccess, decodeNodeInviteLink, encodeNodeInviteLink } from './nodes.js';
+import { createNode, setNodeAccess, decodeNodeInviteLink, encodeNodeInviteLink, joinNodeByLink } from './nodes.js';
 import { ownerEnsureKeyring } from '../sync/client.js';
 
 // ── Fake session ──────────────────────────────────────────────────────────────
@@ -221,5 +221,61 @@ describe('encodeNodeInviteLink / decodeNodeInviteLink', () => {
 
   it('throws on a malformed fragment', () => {
     expect(() => decodeNodeInviteLink('not-valid-base64-json')).toThrow();
+  });
+});
+
+// ── joinNodeByLink ────────────────────────────────────────────────────────────
+
+describe('joinNodeByLink', () => {
+  const token = {
+    v: 1 as const,
+    spaceId: 'sp-1',
+    nodeId: 'n-42',
+    nodeName: 'My Page',
+    cap: { kind: 'member', sub: 'pub-key' },
+    key: 'secretkey',
+    write: true,
+  };
+
+  it('returns the nodeId', async () => {
+    const session = makeSession();
+    const result = await joinNodeByLink(session, token);
+    expect(result).toBe('n-42');
+  });
+
+  it('appends a Space entry for the node into the spaces array', async () => {
+    const { updateSpacesDoc } = await import('./registry.js');
+    vi.mocked(updateSpacesDoc).mockClear();
+    const session = makeSession();
+    await joinNodeByLink(session, token);
+    expect(updateSpacesDoc).toHaveBeenCalledOnce();
+    const mutator = vi.mocked(updateSpacesDoc).mock.calls[0]![2];
+    const result = mutator({ spaces: [], caps: {}, pubAccess: {} });
+    expect((result as { spaces: unknown[] }).spaces).toHaveLength(1);
+    const entry = (result as { spaces: Array<{ id: string; name: string; short: string }> }).spaces[0]!;
+    expect(entry.id).toBe('n-42');
+    expect(entry.name).toBe('My Page');
+    expect(entry.short).toBe('MY');
+  });
+
+  it('does not duplicate the space entry if already present', async () => {
+    const { updateSpacesDoc } = await import('./registry.js');
+    vi.mocked(updateSpacesDoc).mockClear();
+    const session = makeSession();
+    await joinNodeByLink(session, token);
+    const mutator = vi.mocked(updateSpacesDoc).mock.calls[0]![2];
+    const existing = [{ id: 'n-42', name: 'My Page', short: 'MY', members: 1 }];
+    const result = mutator({ spaces: existing, caps: {}, pubAccess: {} });
+    expect((result as { spaces: unknown[] }).spaces).toHaveLength(1);
+  });
+
+  it('persists pubAccess sealed entry keyed spaceId:nodeId', async () => {
+    const { updateSpacesDoc } = await import('./registry.js');
+    vi.mocked(updateSpacesDoc).mockClear();
+    const session = makeSession();
+    await joinNodeByLink(session, token);
+    const mutator = vi.mocked(updateSpacesDoc).mock.calls[0]![2];
+    const result = mutator({ spaces: [], caps: {}, pubAccess: {} }) as { pubAccess: Record<string, unknown> };
+    expect(result.pubAccess['sp-1:n-42']).toBeDefined();
   });
 });

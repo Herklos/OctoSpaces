@@ -1,0 +1,54 @@
+{
+  "name": "@drakkar.software/octospaces-platform-sdk",
+  "version": "0.1.0",
+  "description": "Platform adapters for octospaces-sdk — KV, vault storage, passkey, and crypto setup.",
+  "type": "module",
+  "sideEffects": false,
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "react-native": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.native.js"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./hash-wasm-shim": {
+      "types": "./dist/hash-wasm-shim.d.ts",
+      "import": "./dist/hash-wasm-shim.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@drakkar.software/octospaces-sdk": "workspace:*"
+  },
+  "peerDependencies": {
+    "@drakkar.software/starfish-identities": ">=3.0.0-alpha.27",
+    "@drakkar.software/starfish-protocol": ">=3.0.0-alpha.27",
+    "@react-native-async-storage/async-storage": "*",
+    "expo-secure-store": "*",
+    "react-native-quick-crypto": "*"
+  },
+  "peerDependenciesMeta": {
+    "@react-native-async-storage/async-storage": { "optional": true },
+    "expo-secure-store": { "optional": true },
+    "react-native-quick-crypto": { "optional": true }
+  },
+  "devDependencies": {
+    "@drakkar.software/starfish-identities": "3.0.0-alpha.27",
+    "@drakkar.software/starfish-protocol": "3.0.0-alpha.27",
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@types/node": "^22.0.0",
+    "expo-secure-store": "*",
+    "react-native-quick-crypto": "^1.1.4",
+    "tsup": "^8.3.0",
+    "typescript": "~6.0.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

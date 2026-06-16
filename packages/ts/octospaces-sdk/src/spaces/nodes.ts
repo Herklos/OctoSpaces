@@ -30,7 +30,7 @@ import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
 import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
 import { mintMemberCap } from '@drakkar.software/starfish-sharing';
 
-import type { NodeAccess, ObjectNode, ObjectType } from '../core/types.js';
+import type { NodeAccess, ObjectNode, ObjectType, Space } from '../core/types.js';
 import { ownerEnsureKeyring } from '../sync/client.js';
 import type { Session } from '../sync/identity.js';
 import { ownerTrustedAdders } from '../sync/identity.js';
@@ -405,10 +405,18 @@ export async function joinNodeByLink(session: Session, token: NodeInviteLinkToke
   const accessPayload = { cap: token.cap, key: token.key, write: token.write };
   const sealed = await sealToSelf(session, JSON.stringify(accessPayload));
 
-  // Persist sealed entry into _spaces.pubAccess keyed by spaceId:nodeId
+  // Persist sealed entry into _spaces.pubAccess keyed by spaceId:nodeId.
+  // Also register the node as a listable Space (dup-guarded) so it appears in
+  // the host app's space rail after joining.
+  const spaceEntry: Space = {
+    id: token.nodeId,
+    name: token.nodeName,
+    short: token.nodeName.slice(0, 2).toUpperCase(),
+    members: 1,
+  };
   const { updateSpacesDoc } = await import('./registry.js');
   await updateSpacesDoc(session.accountClient, session.userId, (cur) => ({
-    spaces: cur.spaces,
+    spaces: cur.spaces.some((s) => s.id === token.nodeId) ? cur.spaces : [...cur.spaces, spaceEntry],
     caps: cur.caps,
     pubAccess: {
       ...cur.pubAccess,
