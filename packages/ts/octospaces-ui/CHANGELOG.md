@@ -1,5 +1,84 @@
 # Changelog — @drakkar.software/octospaces-ui
 
+## 0.5.0
+
+### New `primitives/` family — `Divider`, `Badge`, `Toggle`, `ToggleRow`
+
+Adds a new family of headless UI building blocks that depend only on React Native
+core (no Expo packages, no icon library). All four components read their visual
+properties from the host app's injected `Theme` via `useOctoSpacesTheme()`, so they
+adapt to any host app's palette without configuration.
+
+#### `Divider`
+
+A one-pixel horizontal rule.
+
+```tsx
+<Divider />                       // borderSubtle (default)
+<Divider tone="default" />        // border
+<Divider tone="strong" />         // borderStrong
+<Divider color="#hex" />          // explicit override
+```
+
+`tone` selects from the three Theme border tiers (`borderSubtle` / `border` /
+`borderStrong`). An explicit `color` prop wins over `tone`.
+
+#### `Badge`
+
+A count disc or dot indicator.
+
+```tsx
+<Badge count={3} />               // accent pill: "3"
+<Badge count={0} dot />           // dot-only (shows even when count = 0)
+<Badge count={99} clamp />        // "99+" when count > 99 (default)
+<Badge count={2} tone="danger" /> // danger-colored pill
+<Badge count={5} tone="neutral" />// muted neutral pill
+```
+
+Props: `count`, `dot`, `clamp` (default `true`), `tone` (`'accent' | 'danger' | 'neutral'`,
+default `'accent'`), `size` (`'sm' | 'md'`, default `'sm'`).
+
+#### `Toggle`
+
+Wraps the platform `Switch` with the Theme's `primary` accent track color.
+
+```tsx
+<Toggle value={on} onValueChange={setOn} accessibilityLabel="Enable X" />
+```
+
+Props: `value`, `onValueChange`, `disabled`, `accessibilityLabel`.
+
+#### `ToggleRow`
+
+A settings row (label + optional detail) with a trailing `Toggle`. Headless:
+the leading icon is injected as a `ReactNode` so the host supplies its own icon.
+
+```tsx
+<ToggleRow
+  icon={<MyIcon name="bell" size={18} />}
+  label="Notifications"
+  detail="Push and in-app"
+  value={enabled}
+  onValueChange={setEnabled}
+/>
+```
+
+Props: `icon?`, `label`, `detail?`, `value`, `onValueChange`, `disabled`.
+
+---
+
+### `Palette` optional interaction fields (0.4.5)
+
+> Released as `0.4.5` — listed here for completeness.
+
+Added optional `pressed?`, `selected?`, `selectedHover?`, `disabledFill?`, and
+`focusRing?` fields to the `Palette` type (all `string | undefined`). Existing
+consumers that do not supply these fields are unaffected (the fields are optional
+and no built-in component reads them — they are provided for host apps that use the
+`focusRingStyle` helper or build their own interaction-state components).
+
+---
+
 ## 0.4.4
 
 ### `SpaceSwitcher` — `emptyLabel` prop

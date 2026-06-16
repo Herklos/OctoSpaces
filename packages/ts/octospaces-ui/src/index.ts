@@ -73,3 +73,15 @@ export { SpaceSwitcher } from './sidebar/SpaceSwitcher.js';
 // this package stays free of expo-image / @expo/vector-icons / reanimated.
 export type { LightboxProps } from './lightbox/Lightbox.js';
 export { Lightbox } from './lightbox/Lightbox.js';
+
+// Primitives — headless UI building blocks that read from the injected Theme.
+// These are dependency-free (only React Native core) so they work in any RN
+// project regardless of Expo version or icon library.
+export type { DividerProps } from './primitives/Divider.js';
+export { Divider } from './primitives/Divider.js';
+export type { BadgeProps, BadgeTone, BadgeSize } from './primitives/Badge.js';
+export { Badge } from './primitives/Badge.js';
+export type { ToggleProps } from './primitives/Toggle.js';
+export { Toggle } from './primitives/Toggle.js';
+export type { ToggleRowProps } from './primitives/ToggleRow.js';
+export { ToggleRow } from './primitives/ToggleRow.js';
