@@ -31,6 +31,7 @@ import type { SyncConfig } from "@drakkar.software/starfish-server";
  * New generic primitives:
  *   objpublog  — public-read + member-write append-log (public streams)
  *   objinvlog  — cap-gated plaintext append-log (invite streams)
+ *   nodekeyring — per-node E2EE keyring (invite+enc nodes; participants only)
  *   objowner   — owner-only node content (access:'owner')
  *   inbox      — identity-scoped public drop-box (DM link)
  *
@@ -227,6 +228,23 @@ export const config: SyncConfig = {
       encryption: "none",
       appendOnly: { type: "by_timestamp" },
       maxBodyBytes: 262_144,
+      allowedMimeTypes: JSON_ONLY,
+    },
+    // PER-NODE E2EE KEYRING (access:'invite'+enc:true, e.g. OctoDesk tickets).
+    // One keyring per invite node, wrapping the node CEK to ONLY that node's
+    // participants (requester + owner/bot + assigned agents) — NOT the space-wide
+    // keyring, so an isolated external requester never holds the space key. Dual-gated
+    // like objinvlog: `space:member` lets owner/bot/agents read+write (add recipients,
+    // rotate); `cap:read:nodekeyring` admits an isolated requester to READ the blob and
+    // decrypt. WRITE is `space:member` only — the requester never writes; integrity is
+    // enforced cryptographically (signed entries + trustedAdders), not by the role.
+    {
+      name: "nodekeyring",
+      storagePath: "spaces/{spaceId}/objects/n/{nodeId}/_keyring",
+      readRoles: ["space:member", "cap:read:nodekeyring"],
+      writeRoles: ["space:member"],
+      encryption: "none",
+      maxBodyBytes: 65_536,
       allowedMimeTypes: JSON_ONLY,
     },
     // OWNER-ONLY NODE CONTENT (access:'owner'): space:owner read/write.
