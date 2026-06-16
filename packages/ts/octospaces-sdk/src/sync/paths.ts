@@ -221,6 +221,23 @@ export function nodeMemberScope(spaceId: string, nodeId: string, canWrite: boole
 }
 
 /**
+ * Narrow per-node cap for an `invite+plaintext` node's append-log STREAM
+ * (`objinvlog`). A `member` cap-cert covers exactly one collection (the sharing
+ * plugin enforces this), so the stream needs its OWN cap separate from
+ * `nodeMemberScope` (which covers `objinv` content). Mint both for a node that has
+ * both content and a message stream; the bearer presents whichever matches the
+ * collection it is reaching.
+ */
+export function nodeStreamScope(spaceId: string, nodeId: string, canWrite: boolean): ScopePreset {
+  const ops: ('read' | 'write' | 'list')[] = canWrite ? ['read', 'list', 'write'] : ['read', 'list'];
+  return {
+    ops,
+    collections: ['objinvlog'],
+    paths: [`spaces/${spaceId}/objects/n/${nodeId}/**`],
+  };
+}
+
+/**
  * Personal cap: profile + space registry + device directory + all spaces + inbox.
  * Covers reading the identity's own DM inbox (`cap:read:inbox` via `inbox/{userId}/**`).
  */

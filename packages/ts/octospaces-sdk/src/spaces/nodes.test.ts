@@ -25,12 +25,18 @@ vi.mock('../sync/client.js', () => ({
 
 vi.mock('../sync/space-access-store.js', () => ({
   saveNodeAccessEntry: vi.fn(),
+  saveNodeStreamAccessEntry: vi.fn(),
   saveSpaceAccessEntry: vi.fn(),
   getNodeAccessEntry: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock('@drakkar.software/starfish-sharing', () => ({
-  mintMemberCap: vi.fn().mockResolvedValue({ kind: 'member', sub: 'pub-key' }),
+  // Echo the requested scope back through `sub` so tests can assert which scope
+  // each cap was minted with (the real cap carries the scope; the mock surfaces it).
+  mintMemberCap: vi.fn().mockImplementation(
+    (_edPriv: string, _edPub: string, _subject: unknown, _aud: string, scope: { collections: string[] }) =>
+      Promise.resolve({ kind: 'member', sub: 'pub', scopeCollections: scope.collections }),
+  ),
 }));
 
 vi.mock('@drakkar.software/starfish-keyring', () => ({
@@ -69,8 +75,19 @@ vi.mock('../sync/account-seal.js', () => ({
 
 // ── now import the module under test ──────────────────────────────────────────
 
-import { createNode, setNodeAccess, decodeNodeInviteLink, encodeNodeInviteLink, joinNodeByLink } from './nodes.js';
+import {
+  createNode,
+  setNodeAccess,
+  decodeNodeInviteLink,
+  encodeNodeInviteLink,
+  joinNodeByLink,
+  inviteToNode,
+  acceptNodeInvite,
+  createNodeInviteLink,
+} from './nodes.js';
 import { ownerEnsureKeyring } from '../sync/client.js';
+import { addSpaceMember } from './registry.js';
+import { saveNodeStreamAccessEntry, saveSpaceAccessEntry, saveNodeAccessEntry } from '../sync/space-access-store.js';
 
 // ── Fake session ──────────────────────────────────────────────────────────────
 
@@ -277,5 +294,118 @@ describe('joinNodeByLink', () => {
     const mutator = vi.mocked(updateSpacesDoc).mock.calls[0]![2];
     const result = mutator({ spaces: [], caps: {}, pubAccess: {} }) as { pubAccess: Record<string, unknown> };
     expect(result.pubAccess['sp-1:n-42']).toBeDefined();
+  });
+});
+
+// ── per-node STREAM cap (objinvlog) minting + isolation ─────────────────────────
+
+describe('createNodeInviteLink — stream cap + isolation', () => {
+  beforeEach(() => {
+    vi.mocked(addSpaceMember).mockClear();
+  });
+
+  it('plaintext: mints a per-node stream cap (objinvlog) in the token', async () => {
+    const { token } = await createNodeInviteLink(makeSession(), 'sp-1', 'n-42', 'Ticket', { enc: false }, true, 'https://x');
+    expect((token.streamCap as { scopeCollections: string[] }).scopeCollections).toEqual(['objinvlog']);
+    // content cap is the per-node objinv cap, NOT space-wide
+    expect((token.cap as { scopeCollections: string[] }).scopeCollections).toEqual(['objinv']);
+  });
+
+  it('plaintext non-isolated: still adds the ephemeral as a space member (current behavior)', async () => {
+    await createNodeInviteLink(makeSession(), 'sp-1', 'n-42', 'Ticket', { enc: false }, true, 'https://x');
+    expect(addSpaceMember).toHaveBeenCalledOnce();
+  });
+
+  it('isolated plaintext: does NOT add a space member (no index access leak)', async () => {
+    const { token } = await createNodeInviteLink(
+      makeSession(), 'sp-1', 'n-42', 'Ticket', { enc: false }, true, 'https://x', { isolated: true },
+    );
+    expect(addSpaceMember).not.toHaveBeenCalled();
+    // still carries both per-node caps so the bearer can reach content + stream
+    expect((token.cap as { scopeCollections: string[] }).scopeCollections).toEqual(['objinv']);
+    expect((token.streamCap as { scopeCollections: string[] }).scopeCollections).toEqual(['objinvlog']);
+  });
+
+  it('enc node: no stream cap (enc rides the space keyring, cannot be isolated)', async () => {
+    const { token } = await createNodeInviteLink(
+      makeSession(), 'sp-1', 'n-42', 'Doc', { enc: true }, true, 'https://x', { isolated: true },
+    );
+    expect(token.streamCap).toBeUndefined();
+    expect(addSpaceMember).toHaveBeenCalledOnce(); // isolation ignored for enc
+  });
+});
+
+describe('inviteToNode — stream cap + isolation', () => {
+  const joinReq = JSON.stringify({ edPub: 'r-ed', kemPub: 'r-kem', userId: 'requester' });
+
+  beforeEach(() => {
+    vi.mocked(addSpaceMember).mockClear();
+  });
+
+  it('plaintext: bundle carries space cap + content cap + stream cap', async () => {
+    const bundle = JSON.parse(await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: false }));
+    expect(bundle.cap.scopeCollections).toContain('objindex'); // space cap
+    expect(bundle.nodeCap.scopeCollections).toEqual(['objinv']);
+    expect(bundle.streamCap.scopeCollections).toEqual(['objinvlog']);
+  });
+
+  it('isolated plaintext: NO space cap, only per-node content + stream caps', async () => {
+    const bundle = JSON.parse(
+      await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: false }, undefined, { isolated: true }),
+    );
+    expect(bundle.cap).toBeUndefined();
+    expect(bundle.nodeCap.scopeCollections).toEqual(['objinv']);
+    expect(bundle.streamCap.scopeCollections).toEqual(['objinvlog']);
+    expect(addSpaceMember).not.toHaveBeenCalled();
+  });
+});
+
+describe('acceptNodeInvite — isolated bundle (no space cap)', () => {
+  beforeEach(() => {
+    vi.mocked(saveSpaceAccessEntry).mockClear();
+    vi.mocked(saveNodeAccessEntry).mockClear();
+    vi.mocked(saveNodeStreamAccessEntry).mockClear();
+  });
+
+  it('stores per-node content + stream caps, but no space-level cap', async () => {
+    const bundle = JSON.stringify({
+      spaceId: 'sp-1',
+      nodeId: 'n-42',
+      nodeName: 'Ticket',
+      nodeCap: { kind: 'member', sub: 'pub' },
+      streamCap: { kind: 'member', sub: 'pub' },
+    });
+    const id = await acceptNodeInvite(makeSession(), bundle);
+    expect(id).toBe('n-42');
+    expect(saveNodeAccessEntry).toHaveBeenCalledOnce();
+    expect(saveNodeStreamAccessEntry).toHaveBeenCalledOnce();
+    expect(saveSpaceAccessEntry).not.toHaveBeenCalled();
+  });
+
+  it('rejects a bundle issued for a different identity', async () => {
+    const bundle = JSON.stringify({
+      spaceId: 'sp-1', nodeId: 'n-42', nodeName: 'T',
+      nodeCap: { kind: 'member', sub: 'someone-else' },
+    });
+    await expect(acceptNodeInvite(makeSession(), bundle)).rejects.toThrow(/different identity/);
+  });
+});
+
+describe('joinNodeByLink — stream cap persistence', () => {
+  it('persists the stream cap as its own entry and seals it under :stream', async () => {
+    vi.mocked(saveNodeStreamAccessEntry).mockClear();
+    const { updateSpacesDoc } = await import('./registry.js');
+    vi.mocked(updateSpacesDoc).mockClear();
+    const token = {
+      v: 1 as const, spaceId: 'sp-1', nodeId: 'n-42', nodeName: 'Ticket',
+      cap: { kind: 'member', sub: 'pub' },
+      streamCap: { kind: 'member', sub: 'pub' },
+      key: 'eph', write: true,
+    };
+    await joinNodeByLink(makeSession(), token);
+    expect(saveNodeStreamAccessEntry).toHaveBeenCalledOnce();
+    const mutator = vi.mocked(updateSpacesDoc).mock.calls[0]![2];
+    const result = mutator({ spaces: [], caps: {}, pubAccess: {} }) as { pubAccess: Record<string, unknown> };
+    expect(result.pubAccess['sp-1:n-42:stream']).toBeDefined();
   });
 });

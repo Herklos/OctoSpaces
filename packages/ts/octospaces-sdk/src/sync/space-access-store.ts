@@ -118,6 +118,26 @@ export function removeNodeAccessEntry(spaceId: string, nodeId: string): void {
   removeSpaceAccessEntry(`${spaceId}:${nodeId}`);
 }
 
+// A `member` cap covers exactly one collection, so a node's append-log STREAM
+// (`objinvlog`) needs its OWN cap separate from the content cap (`objinv`). It is
+// stored under a distinct `${spaceId}:${nodeId}:stream` key so it rides the SAME
+// sync/serialization machinery as every other entry — no entry-shape change.
+
+/** Look up a per-node STREAM (objinvlog) access entry. Null if absent. */
+export function getNodeStreamAccessEntry(spaceId: string, nodeId: string): SpaceAccessEntry | null {
+  return cache[`${spaceId}:${nodeId}:stream`] ?? null;
+}
+
+/** Persist a per-node STREAM (objinvlog) access entry. */
+export function saveNodeStreamAccessEntry(spaceId: string, nodeId: string, entry: SpaceAccessEntry): void {
+  saveSpaceAccessEntry(`${spaceId}:${nodeId}:stream`, entry);
+}
+
+/** Forget a node's STREAM access entry. */
+export function removeNodeStreamAccessEntry(spaceId: string, nodeId: string): void {
+  removeSpaceAccessEntry(`${spaceId}:${nodeId}:stream`);
+}
+
 /** A snapshot of the in-memory cache — used by `recoverSpaceAccess` to find entries
  *  not yet on the server. */
 export function localSpaceAccessEntries(): SpaceAccessMap {
