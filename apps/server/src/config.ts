@@ -213,12 +213,17 @@ export const config: SyncConfig = {
       maxBodyBytes: 262_144,
       allowedMimeTypes: JSON_ONLY,
     },
-    // INVITE-ONLY APPEND-LOG (access:'invite' streams): cap-gated, empty roles.
+    // INVITE-ONLY APPEND-LOG (access:'invite' streams, e.g. OctoDesk tickets).
+    // Dual-gated: `space:member` lets the space's members/owner/bot read+write every
+    // ticket stream (shared support-queue model), while `cap:read|write:objinvlog`
+    // admits an isolated external invitee (a ticket requester) holding only a per-node
+    // stream cap. Empty roles denied EVERYONE — the cap-gating intent was never wired
+    // (the sharing plugin only validates cap SHAPE; it grants nothing).
     {
       name: "objinvlog",
       storagePath: "spaces/{spaceId}/objects/n/{nodeId}/log",
-      readRoles: [],
-      writeRoles: [],
+      readRoles: ["space:member", "cap:read:objinvlog"],
+      writeRoles: ["space:member", "cap:write:objinvlog"],
       encryption: "none",
       appendOnly: { type: "by_timestamp" },
       maxBodyBytes: 262_144,
