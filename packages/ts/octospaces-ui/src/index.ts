@@ -34,6 +34,7 @@ export {
   swatch,
   paperBorder,
   glowShadow,
+  dropShadow,
   focusRingStyle,
   statusColor,
 } from './theme/helpers.js';
@@ -85,3 +86,12 @@ export type { ToggleProps } from './primitives/Toggle.js';
 export { Toggle } from './primitives/Toggle.js';
 export type { ToggleRowProps } from './primitives/ToggleRow.js';
 export { ToggleRow } from './primitives/ToggleRow.js';
+
+// Calendar surface — pure month-grid math + a headless themed MonthGrid component.
+// The math helpers (buildMonthMatrix, bucketEventsByDay, matrixDayKey) are pure
+// functions with no RN dependency; MonthGrid is headless, reading only the injected
+// Theme via useOctoSpacesTheme().
+export type { MatrixDay, WeekRow, MonthMatrix, BuildMonthMatrixOptions } from './calendar/index.js';
+export { buildMonthMatrix, matrixDayKey, bucketEventsByDay } from './calendar/index.js';
+export type { MonthGridProps } from './calendar/index.js';
+export { MonthGrid } from './calendar/index.js';

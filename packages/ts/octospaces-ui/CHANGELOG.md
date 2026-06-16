@@ -1,5 +1,79 @@
 # Changelog — @drakkar.software/octospaces-ui
 
+## 0.6.0
+
+### New `calendar/` module — `MonthGrid`, `buildMonthMatrix`, `bucketEventsByDay`, `matrixDayKey`
+
+Adds pure date-math helpers and a headless themed month calendar grid for building
+editorial-style calendar surfaces in host apps.
+
+#### Pure helpers (`month-matrix.ts`)
+
+- **`buildMonthMatrix(year, month, opts?)`** — builds a `MonthMatrix` (4–6 rows × 7
+  columns of `MatrixDay`) for the given month. Each `MatrixDay` carries its year/month/
+  day values, a local-midnight `timestamp`, an `inMonth` flag (false for leading/trailing
+  padding days), and an `isToday` flag (compared against `opts.todayMs`). `opts.weekStart`
+  selects Monday (default, `1`) or Sunday (`0`) column ordering.
+- **`bucketEventsByDay(events)`** — given any array of `{ start: number, end?: number }`
+  objects, returns a `Map<string, T[]>` keyed by `YYYY-MM-DD`. Multi-day events appear in
+  every day's bucket they span.
+- **`matrixDayKey(day)`** — converts a `MatrixDay` to its `YYYY-MM-DD` bucket key, for use
+  with `bucketEventsByDay` results.
+
+All three functions are pure (no RN imports, no `Date.now()` calls) and fully covered by
+vitest unit tests.
+
+#### `MonthGrid` component
+
+A headless themed month grid that reads only the injected `Theme` via
+`useOctoSpacesTheme()`:
+
+```tsx
+import { MonthGrid, bucketEventsByDay, matrixDayKey } from '@drakkar.software/octospaces-ui';
+
+// In the host app:
+const bucket = useMemo(() => bucketEventsByDay(events), [events]);
+
+<MonthGrid
+  year={2026}
+  month={5}         // June
+  weekStart={1}     // Monday (default)
+  todayTimestamp={Date.now()}
+  onDayPress={(day) => openDay(day)}
+  renderDayEvents={(day) => {
+    const dayEvents = bucket.get(matrixDayKey(day)) ?? [];
+    return dayEvents.map(e => <EventDot key={e.id} color={e.color} />);
+  }}
+/>
+```
+
+Visual conventions (all sourced from the injected Theme):
+- Weekday labels: `fonts.mono` — uppercase, `labelTracking.mono` letter-spacing.
+- Day numerals: `fonts.heading` — the host's serif face for an editorial feel.
+- Today: `colors.primary` filled disc, `colors.textOnPrimary` numeral.
+- Out-of-month padding: `colors.textDisabled`.
+- Row hairlines: `StyleSheet.hairlineWidth` in `colors.borderSubtle`.
+
+### New `dropShadow` helper
+
+**`dropShadow(shadowColor, size?)`** — builds a scheme-aware drop-shadow `ShadowToken`.
+Pass the active palette's `shadow` color so the tint stays correct in both light and dark
+modes. Size is `'sm' | 'md' | 'lg'` (default `'md'`), mirroring standard elevation presets.
+
+```ts
+import { dropShadow } from '@drakkar.software/octospaces-ui';
+
+// In a component:
+const { colors } = useOctoSpacesTheme();
+// …
+style={[styles.card, dropShadow(colors.shadow, 'md')]}
+```
+
+Replaces the pattern of using static shadow constants (which bake in the light-scheme
+tint) by accepting the active-palette `shadow` color at the call site.
+
+---
+
 ## 0.5.0
 
 ### New `primitives/` family — `Divider`, `Badge`, `Toggle`, `ToggleRow`

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Palette, Theme } from './types.js';
 import {
   avatarTint,
+  dropShadow,
   focusRingStyle,
   glowShadow,
   paperBorder,
@@ -153,6 +154,28 @@ describe('focusRingStyle', () => {
   });
   it('respects custom width', () => {
     expect(focusRingStyle(mockPalette, 3).borderWidth).toBe(3);
+  });
+});
+
+describe('dropShadow', () => {
+  it('returns a shadow token with the given color', () => {
+    const shadow = dropShadow('#241f14');
+    expect(shadow.shadowColor).toBe('#241f14');
+    expect(shadow.shadowOffset).toEqual({ width: 0, height: 6 });
+  });
+  it('sm preset has lower opacity and radius than lg', () => {
+    const sm = dropShadow('#000', 'sm');
+    const lg = dropShadow('#000', 'lg');
+    expect((sm.shadowOpacity ?? 0) < (lg.shadowOpacity ?? 1)).toBe(true);
+    expect((sm.shadowRadius ?? 0) < (lg.shadowRadius ?? 1)).toBe(true);
+  });
+  it('defaults to md size', () => {
+    const shadow = dropShadow('#000');
+    expect(shadow.shadowRadius).toBe(16);
+    expect(shadow.shadowOpacity).toBe(0.14);
+  });
+  it('passes through the color unchanged', () => {
+    expect(dropShadow('rgba(0,0,0,0.5)', 'sm').shadowColor).toBe('rgba(0,0,0,0.5)');
   });
 });
 

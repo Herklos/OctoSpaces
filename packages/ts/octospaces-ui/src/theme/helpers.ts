@@ -76,6 +76,40 @@ export function glowShadow(color: string, radius = 8, opacity = 0.4): ShadowToke
   };
 }
 
+// Preset sizes mirror the standard sm/md/lg shadow scale so callers can choose
+// a size by name rather than specifying raw opacity/radius values. These values
+// were chosen to match typical elevation steps in the OctoVault + OctoChat apps.
+const DROP_SHADOW_SIZES = {
+  sm: { opacity: 0.10, radius: 6,  height: 2,  elevation: 2  },
+  md: { opacity: 0.14, radius: 16, height: 6,  elevation: 6  },
+  lg: { opacity: 0.20, radius: 28, height: 12, elevation: 14 },
+} as const;
+
+/**
+ * Build a scheme-aware drop shadow token.
+ *
+ * Pass the active palette's `shadow` color (e.g. `colors.shadow`) so the
+ * tint stays correct in both light and dark modes — warm near-black in light,
+ * pure black in dark. Choose `size` to match the surface's elevation.
+ *
+ * ```ts
+ * // In a component that reads the active palette:
+ * const { colors } = useOctoSpacesTheme();
+ * // …
+ * style={[styles.card, dropShadow(colors.shadow, 'md')]}
+ * ```
+ */
+export function dropShadow(shadowColor: string, size: 'sm' | 'md' | 'lg' = 'md'): ShadowToken {
+  const s = DROP_SHADOW_SIZES[size];
+  return {
+    shadowColor,
+    shadowOpacity: s.opacity,
+    shadowRadius: s.radius,
+    shadowOffset: { width: 0, height: s.height },
+    elevation: s.elevation,
+  };
+}
+
 // ── Focus ring ────────────────────────────────────────────────────────────────
 
 /** Style object for a keyboard-focus indicator (web + React Native). */
