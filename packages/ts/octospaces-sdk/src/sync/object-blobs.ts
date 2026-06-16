@@ -19,8 +19,6 @@ import type { ByteSealer } from './attachments.js';
 import { objectBlobName, objectBlobPull, objectBlobPush } from './paths.js';
 import { randomId } from '../core/ids.js';
 
-export type { ByteSealer };
-
 /**
  * Maximum allowed byte size for a single object blob upload.
  * Keep in sync with `maxBodyBytes` for the `objblob` collection in

@@ -1,5 +1,27 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.11.0 (2026-06-16)
+
+### Added
+
+- **`StartPairingOptions`** — optional third argument to `startDevicePairing(session, pin, opts?)`:
+  - `opts.prefix?: string` — QR URI prefix (default `'octospaces-pair:'`). Apps use their own
+    prefix (e.g. `'octochat-pair:'`) so cross-app scans are rejected rather than silently attempted.
+  - `opts.onProvisioned?: (device: { kemPub, edPub, userId }) => void | Promise<void>` — hook
+    called after the new device's keypair is provisioned but BEFORE the sealed blob is pushed to
+    the rendezvous. Use for post-provision side-effects (e.g. granting keyring access to owned
+    spaces). If the hook throws the error propagates; wrap in try/catch for best-effort use.
+- **`createObjectBlobStore({ sealer })`** — factory that pre-binds a `ByteSealer` for repeated
+  space-scoped blob operations. Mirrors `createAttachmentStore` but keyed by `spaceId` rather
+  than room. Also exports `uploadObjectBlob`, `loadObjectBlob`, `MAX_OBJECT_BLOB_BYTES`,
+  `FileTooLargeError`, and `ObjectBlobRef` / `ObjectBlobStore` types from the main barrel.
+- **`./wal` subpath** — WAL wiring behind a separate entry point (never pulled into the main
+  barrel so OctoChat's web bundle stays free of `starfish-wal`). Exports:
+  `createWalDocument` (+ `CreateWalDocumentOptions`), `createWalTransport`,
+  `createWalSnapshotStore`, `walEncryptorFromKeyring`, `walSignerFromKeys`,
+  `noopEncryptor`, `WalDocument`.
+  `@drakkar.software/starfish-wal` is listed as an optional peer dep.
+
 ## 0.8.6 (2026-06-15)
 
 ### Fixed
