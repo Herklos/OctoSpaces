@@ -236,12 +236,22 @@ export async function inviteToNode(
   requestJson: string,
   node: { enc?: boolean },
   nodeName?: string,
-  opts: { isolated?: boolean } = {},
+  opts: { isolated?: boolean; write?: boolean } = {},
 ): Promise<string> {
   const req = JSON.parse(requestJson) as JoinRequest;
   if (!req.edPub || !req.kemPub || !req.userId) throw new Error('Invalid join request.');
 
   if (node.enc) {
+    // Ensure the space keyring exists before adding the invitee as a recipient
+    // (invariant: ownerEnsureKeyring must precede addCollectionRecipient).
+    const encClient = getSpaceClient(spaceId, session);
+    await ownerEnsureKeyring(
+      encClient,
+      session.keys,
+      keyringPull(spaceId),
+      keyringPush(spaceId),
+      ownerTrustedAdders(session),
+    );
     // Add invitee's KEM key to the SPACE-WIDE keyring (grants access to all enc nodes).
     try {
       await addCollectionRecipient(
@@ -260,6 +270,8 @@ export async function inviteToNode(
   // invitee reaches ONLY this node's per-node content/stream caps — never the index
   // or other nodes. `enc` nodes can't be isolated: they need the space-wide keyring.
   const isolated = !!opts.isolated && !node.enc;
+  // Default write=true (backward compat) so existing callers keep write access.
+  const canWrite = opts.write !== false;
   const subject = { edPubHex: req.edPub, kemPubHex: req.kemPub, userIdHex: req.userId };
 
   const bundle: NodeInviteBundle = {
@@ -276,7 +288,7 @@ export async function inviteToNode(
       session.keys.edPub,
       subject,
       'chat',
-      spaceMemberScope(spaceId, true),
+      spaceMemberScope(spaceId, canWrite),
     );
   }
 
@@ -289,14 +301,14 @@ export async function inviteToNode(
       session.keys.edPub,
       subject,
       'chat',
-      nodeMemberScope(spaceId, nodeId, true),
+      nodeMemberScope(spaceId, nodeId, canWrite),
     );
     bundle.streamCap = await mintMemberCap(
       session.keys.edPriv,
       session.keys.edPub,
       subject,
       'chat',
-      nodeStreamScope(spaceId, nodeId, true),
+      nodeStreamScope(spaceId, nodeId, canWrite),
     );
   }
 
@@ -420,6 +432,16 @@ export async function createNodeInviteLink(
   }
 
   if (node.enc) {
+    // Ensure the space keyring exists before adding the ephemeral recipient
+    // (invariant: ownerEnsureKeyring must precede addCollectionRecipient).
+    const encClient = getSpaceClient(spaceId, session);
+    await ownerEnsureKeyring(
+      encClient,
+      session.keys,
+      keyringPull(spaceId),
+      keyringPush(spaceId),
+      ownerTrustedAdders(session),
+    );
     // Add ephemeral KEM to the SPACE-WIDE keyring
     try {
       await addCollectionRecipient(

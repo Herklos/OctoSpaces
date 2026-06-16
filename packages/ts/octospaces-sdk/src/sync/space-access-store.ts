@@ -113,9 +113,11 @@ export function saveNodeAccessEntry(spaceId: string, nodeId: string, entry: Spac
   saveSpaceAccessEntry(`${spaceId}:${nodeId}`, entry);
 }
 
-/** Forget a node's invite access entry (e.g. on leaving the node). */
+/** Forget a node's invite access entry (e.g. on leaving the node). Also removes the
+ *  sibling stream entry so they don't orphan and grant lingering stream access. */
 export function removeNodeAccessEntry(spaceId: string, nodeId: string): void {
   removeSpaceAccessEntry(`${spaceId}:${nodeId}`);
+  removeSpaceAccessEntry(`${spaceId}:${nodeId}:stream`);
 }
 
 // A `member` cap covers exactly one collection, so a node's append-log STREAM

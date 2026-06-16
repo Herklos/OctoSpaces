@@ -66,17 +66,16 @@ export function getSpaceClient(spaceId: string, session: Session): StarfishClien
 /**
  * Return the StarfishClient for a node's append-log STREAM (`objinvlog`).
  *
- * A `member` cap covers exactly one collection, so the stream is cap-gated by its OWN
- * per-node cap — it cannot be reached with the content cap (`objinv`) or a space cap.
- * Resolution: the distinct stream entry first, then fall back to the node content entry
- * and finally the space client, so non-invite rooms (reached via space membership) and
- * legacy invites without a stream cap keep working.
+ * A `member` cap covers exactly one collection. `objinvlog` is explicitly excluded from
+ * `spaceMemberScope` AND `nodeMemberScope` (which covers only `objinv`), so neither the
+ * node content entry nor the space entry can reach the stream — presenting either cap
+ * would get a server 403. Only the dedicated stream entry (`nodeStreamScope`) carries
+ * the right collection scope. For non-invite members (space members, owner) who have no
+ * per-node stream entry, `session.chatClient` signs at the identity level and the server
+ * authorizes via space-member role (same as for `objlog`).
  */
 export function getNodeStreamClient(spaceId: string, nodeId: string, session: Session): StarfishClient {
-  const entry =
-    getNodeStreamAccessEntry(spaceId, nodeId) ??
-    getNodeAccessEntry(spaceId, nodeId) ??
-    getSpaceAccessEntry(spaceId);
+  const entry = getNodeStreamAccessEntry(spaceId, nodeId);
   if (entry?.kind === 'link') return makeClient(entry.cap, entry.key);
   if (entry?.kind === 'member') {
     const cap = JSON.parse(entry.cap) as { iss?: string };

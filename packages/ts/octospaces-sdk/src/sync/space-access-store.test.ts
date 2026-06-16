@@ -3,12 +3,17 @@ import { configureKv } from '../core/adapters.js';
 import {
   clearSpaceAccessStore,
   getSpaceAccessEntry,
+  getNodeAccessEntry,
+  getNodeStreamAccessEntry,
   hydrateSpaceAccessStore,
   localSpaceAccessEntries,
   memberCapsFromStore,
   linkAccessFromStore,
   removeSpaceAccessEntry,
+  removeNodeAccessEntry,
   saveSpaceAccessEntry,
+  saveNodeAccessEntry,
+  saveNodeStreamAccessEntry,
 } from './space-access-store.js';
 
 let store: Map<string, string>;
@@ -165,5 +170,37 @@ describe('space-access-store', () => {
     saveSpaceAccessEntry('sp-snap', { kind: 'member', cap: 'c' });
     const snap = localSpaceAccessEntries();
     expect(snap).toHaveProperty('sp-snap');
+  });
+
+  // ── removeNodeAccessEntry also clears :stream sibling ──────────────────────
+
+  it('removeNodeAccessEntry also removes the sibling :stream entry (prevents orphaned stream caps)', () => {
+    clearSpaceAccessStore();
+    saveNodeAccessEntry('sp-1', 'n-42', { kind: 'member', cap: '{"cap":1}' });
+    saveNodeStreamAccessEntry('sp-1', 'n-42', { kind: 'member', cap: '{"stream":1}' });
+    expect(getNodeAccessEntry('sp-1', 'n-42')).not.toBeNull();
+    expect(getNodeStreamAccessEntry('sp-1', 'n-42')).not.toBeNull();
+
+    removeNodeAccessEntry('sp-1', 'n-42');
+    expect(getNodeAccessEntry('sp-1', 'n-42')).toBeNull();
+    expect(getNodeStreamAccessEntry('sp-1', 'n-42')).toBeNull();
+  });
+
+  it('removeNodeAccessEntry with no stream sibling is a safe no-op for the stream key', () => {
+    clearSpaceAccessStore();
+    saveNodeAccessEntry('sp-1', 'n-99', { kind: 'member', cap: '{"cap":1}' });
+    removeNodeAccessEntry('sp-1', 'n-99');
+    expect(getNodeAccessEntry('sp-1', 'n-99')).toBeNull();
+    expect(getNodeStreamAccessEntry('sp-1', 'n-99')).toBeNull();
+  });
+
+  it('removeNodeAccessEntry does not remove stream entries for other nodes in the same space', () => {
+    clearSpaceAccessStore();
+    saveNodeStreamAccessEntry('sp-1', 'n-other', { kind: 'member', cap: '{"stream":2}' });
+    saveNodeAccessEntry('sp-1', 'n-42', { kind: 'member', cap: '{"cap":1}' });
+    saveNodeStreamAccessEntry('sp-1', 'n-42', { kind: 'member', cap: '{"stream":1}' });
+
+    removeNodeAccessEntry('sp-1', 'n-42');
+    expect(getNodeStreamAccessEntry('sp-1', 'n-other')).not.toBeNull();
   });
 });

@@ -1,5 +1,31 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.12.4 (2026-06-16)
+
+### Fixed
+
+- **`ownerEnsureKeyring` now called before `addCollectionRecipient` in both `inviteToNode`
+  and `createNodeInviteLink` enc branches.** Previously, `addCollectionRecipient` was called
+  directly against the keyring, violating the `ownerEnsureKeyring`-first invariant. On spaces
+  created before the eager-mint fix (or where enc was enabled post-creation), the keyring
+  might not exist and the call would fail rather than mint it first.
+- **`getNodeStreamClient` fallback chain corrected.** The second and third fallbacks
+  (`getNodeAccessEntry`/`getSpaceAccessEntry`) both cover collections that exclude `objinvlog`
+  — presenting either cap to the stream collection produces a server 403. The fallback is now
+  `session.chatClient` only, which authenticates at the identity level (same as space members
+  accessing `objlog`). Isolated invite members without a stream entry correctly receive a
+  server auth error rather than a misleading wrong-collection 403.
+- **`inviteToNode` now accepts `opts.write?: boolean` (default `true`).** Previously all
+  three `mintMemberCap` calls (space, content, stream) hardcoded `canWrite=true`, granting
+  unconditional write access regardless of caller intent. Pass `{ write: false }` for
+  read-only invitations.
+- **`removeNodeAccessEntry` now also removes the sibling `:stream` entry.** The stream cap
+  is stored under a distinct `${spaceId}:${nodeId}:stream` key; callers that revoke a node's
+  access entry now atomically revoke stream access too, preventing orphaned stream caps.
+- **`createTicket` (OctoChat) passes `{ isolated: !enc }` to `createNodeInviteLink`.** The
+  non-member ticket link was granting the bearer full space-index membership, exposing all
+  ticket metadata. Isolated links scope the bearer to the single ticket node only.
+
 ## 0.12.3 (2026-06-16)
 
 ### Added

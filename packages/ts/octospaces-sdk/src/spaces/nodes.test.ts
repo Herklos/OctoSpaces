@@ -88,6 +88,8 @@ import {
 import { ownerEnsureKeyring } from '../sync/client.js';
 import { addSpaceMember } from './registry.js';
 import { saveNodeStreamAccessEntry, saveSpaceAccessEntry, saveNodeAccessEntry } from '../sync/space-access-store.js';
+import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
+import { mintMemberCap } from '@drakkar.software/starfish-sharing';
 
 // ── Fake session ──────────────────────────────────────────────────────────────
 
@@ -407,5 +409,80 @@ describe('joinNodeByLink — stream cap persistence', () => {
     const mutator = vi.mocked(updateSpacesDoc).mock.calls[0]![2];
     const result = mutator({ spaces: [], caps: {}, pubAccess: {} }) as { pubAccess: Record<string, unknown> };
     expect(result.pubAccess['sp-1:n-42:stream']).toBeDefined();
+  });
+});
+
+// ── ownerEnsureKeyring-before-addCollectionRecipient invariant ───────────────
+
+describe('inviteToNode — ownerEnsureKeyring precedes addCollectionRecipient for enc nodes', () => {
+  beforeEach(() => {
+    vi.mocked(ownerEnsureKeyring).mockClear();
+    vi.mocked(addCollectionRecipient).mockClear();
+  });
+
+  it('enc node: ownerEnsureKeyring is called before addCollectionRecipient', async () => {
+    const callOrder: string[] = [];
+    vi.mocked(ownerEnsureKeyring).mockImplementation(async () => { callOrder.push('ensure'); return {} as ReturnType<typeof ownerEnsureKeyring extends (...args: unknown[]) => Promise<infer R> ? () => Promise<R> : never>; });
+    vi.mocked(addCollectionRecipient).mockImplementation(async () => { callOrder.push('addRecipient'); });
+    const joinReq = JSON.stringify({ edPub: 'r-ed', kemPub: 'r-kem', userId: 'requester' });
+    await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: true });
+    expect(callOrder).toEqual(['ensure', 'addRecipient']);
+  });
+
+  it('plaintext node: does NOT call ownerEnsureKeyring', async () => {
+    const joinReq = JSON.stringify({ edPub: 'r-ed', kemPub: 'r-kem', userId: 'requester' });
+    await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: false });
+    expect(ownerEnsureKeyring).not.toHaveBeenCalled();
+  });
+});
+
+describe('createNodeInviteLink — ownerEnsureKeyring precedes addCollectionRecipient for enc nodes', () => {
+  beforeEach(() => {
+    vi.mocked(ownerEnsureKeyring).mockClear();
+    vi.mocked(addCollectionRecipient).mockClear();
+  });
+
+  it('enc node: ownerEnsureKeyring is called before addCollectionRecipient', async () => {
+    const callOrder: string[] = [];
+    vi.mocked(ownerEnsureKeyring).mockImplementation(async () => { callOrder.push('ensure'); return {} as ReturnType<typeof ownerEnsureKeyring extends (...args: unknown[]) => Promise<infer R> ? () => Promise<R> : never>; });
+    vi.mocked(addCollectionRecipient).mockImplementation(async () => { callOrder.push('addRecipient'); });
+    await createNodeInviteLink(makeSession(), 'sp-1', 'n-42', 'Doc', { enc: true }, true, 'https://x');
+    expect(callOrder).toEqual(['ensure', 'addRecipient']);
+  });
+
+  it('plaintext node: does NOT call ownerEnsureKeyring', async () => {
+    await createNodeInviteLink(makeSession(), 'sp-1', 'n-42', 'Ticket', { enc: false }, true, 'https://x');
+    expect(ownerEnsureKeyring).not.toHaveBeenCalled();
+  });
+});
+
+// ── inviteToNode write parameter ──────────────────────────────────────────────
+
+describe('inviteToNode — write parameter in opts', () => {
+  const joinReq = JSON.stringify({ edPub: 'r-ed', kemPub: 'r-kem', userId: 'requester' });
+
+  beforeEach(() => {
+    vi.mocked(mintMemberCap).mockClear();
+  });
+
+  it('defaults to write=true: all minted caps include write ops', async () => {
+    await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: false });
+    for (const call of vi.mocked(mintMemberCap).mock.calls) {
+      expect((call[4] as { ops: string[] }).ops).toContain('write');
+    }
+  });
+
+  it('opts.write:false: all minted caps omit write ops', async () => {
+    await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: false }, undefined, { write: false });
+    for (const call of vi.mocked(mintMemberCap).mock.calls) {
+      expect((call[4] as { ops: string[] }).ops).not.toContain('write');
+    }
+  });
+
+  it('opts.write:false isolated: per-node caps still omit write ops', async () => {
+    await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: false }, undefined, { write: false, isolated: true });
+    for (const call of vi.mocked(mintMemberCap).mock.calls) {
+      expect((call[4] as { ops: string[] }).ops).not.toContain('write');
+    }
   });
 });
