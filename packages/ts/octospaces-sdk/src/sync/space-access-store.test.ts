@@ -5,6 +5,8 @@ import {
   getSpaceAccessEntry,
   getNodeAccessEntry,
   getNodeStreamAccessEntry,
+  getNodeKeyringAccessEntry,
+  saveNodeKeyringAccessEntry,
   hydrateSpaceAccessStore,
   localSpaceAccessEntries,
   memberCapsFromStore,
@@ -202,5 +204,26 @@ describe('space-access-store', () => {
 
     removeNodeAccessEntry('sp-1', 'n-42');
     expect(getNodeStreamAccessEntry('sp-1', 'n-other')).not.toBeNull();
+  });
+
+  // ── Per-node KEYRING entry (E2EE tickets) ─────────────────────────────────
+
+  it('save + get node-keyring entry round-trip (distinct from content/stream)', () => {
+    clearSpaceAccessStore();
+    saveNodeAccessEntry('sp-1', 'n-7', { kind: 'member', cap: '{"content":1}' });
+    saveNodeStreamAccessEntry('sp-1', 'n-7', { kind: 'member', cap: '{"stream":1}' });
+    saveNodeKeyringAccessEntry('sp-1', 'n-7', { kind: 'member', cap: '{"keyring":1}' });
+    expect(getNodeKeyringAccessEntry('sp-1', 'n-7')).toEqual({ kind: 'member', cap: '{"keyring":1}' });
+    // The three entries are independent.
+    expect(getNodeAccessEntry('sp-1', 'n-7')).toEqual({ kind: 'member', cap: '{"content":1}' });
+    expect(getNodeStreamAccessEntry('sp-1', 'n-7')).toEqual({ kind: 'member', cap: '{"stream":1}' });
+  });
+
+  it('removeNodeAccessEntry also removes the sibling :keyring entry', () => {
+    clearSpaceAccessStore();
+    saveNodeAccessEntry('sp-1', 'n-7', { kind: 'member', cap: '{"content":1}' });
+    saveNodeKeyringAccessEntry('sp-1', 'n-7', { kind: 'member', cap: '{"keyring":1}' });
+    removeNodeAccessEntry('sp-1', 'n-7');
+    expect(getNodeKeyringAccessEntry('sp-1', 'n-7')).toBeNull();
   });
 });

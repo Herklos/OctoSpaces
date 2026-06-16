@@ -26,8 +26,13 @@ vi.mock('../sync/client.js', () => ({
 vi.mock('../sync/space-access-store.js', () => ({
   saveNodeAccessEntry: vi.fn(),
   saveNodeStreamAccessEntry: vi.fn(),
+  saveNodeKeyringAccessEntry: vi.fn(),
   saveSpaceAccessEntry: vi.fn(),
   getNodeAccessEntry: vi.fn().mockReturnValue(null),
+}));
+
+vi.mock('../sync/node-keyring.js', () => ({
+  ensureNodeKeyringRecipient: vi.fn().mockResolvedValue({}),
 }));
 
 vi.mock('@drakkar.software/starfish-sharing', () => ({
@@ -86,8 +91,9 @@ import {
   createNodeInviteLink,
 } from './nodes.js';
 import { ownerEnsureKeyring } from '../sync/client.js';
+import { ensureNodeKeyringRecipient } from '../sync/node-keyring.js';
 import { addSpaceMember } from './registry.js';
-import { saveNodeStreamAccessEntry, saveSpaceAccessEntry, saveNodeAccessEntry } from '../sync/space-access-store.js';
+import { saveNodeStreamAccessEntry, saveSpaceAccessEntry, saveNodeAccessEntry, saveNodeKeyringAccessEntry } from '../sync/space-access-store.js';
 import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
 import { mintMemberCap } from '@drakkar.software/starfish-sharing';
 
@@ -304,6 +310,7 @@ describe('joinNodeByLink', () => {
 describe('createNodeInviteLink — stream cap + isolation', () => {
   beforeEach(() => {
     vi.mocked(addSpaceMember).mockClear();
+    vi.mocked(ensureNodeKeyringRecipient).mockClear().mockResolvedValue({} as never);
   });
 
   it('plaintext: mints a per-node stream cap (objinvlog) in the token', async () => {
@@ -328,12 +335,30 @@ describe('createNodeInviteLink — stream cap + isolation', () => {
     expect((token.streamCap as { scopeCollections: string[] }).scopeCollections).toEqual(['objinvlog']);
   });
 
-  it('enc node: no stream cap (enc rides the space keyring, cannot be isolated)', async () => {
+  it('enc + isolated: per-node keyring — mints content + stream + READ-only keyring caps, NO space member', async () => {
     const { token } = await createNodeInviteLink(
-      makeSession(), 'sp-1', 'n-42', 'Doc', { enc: true }, true, 'https://x', { isolated: true },
+      makeSession(), 'sp-1', 'n-42', 'Ticket', { enc: true }, true, 'https://x', { isolated: true },
     );
+    // Isolated E2EE ticket: no space membership, no space cap.
+    expect(addSpaceMember).not.toHaveBeenCalled();
+    // The node keyring CEK was seeded + the ephemeral added as a recipient.
+    expect(ensureNodeKeyringRecipient).toHaveBeenCalledOnce();
+    // Bearer reaches content (objinv), stream (objinvlog), and reads the keyring (nodekeyring).
+    expect((token.cap as { scopeCollections: string[] }).scopeCollections).toEqual(['objinv']);
+    expect((token.streamCap as { scopeCollections: string[] }).scopeCollections).toEqual(['objinvlog']);
+    expect((token.keyringCap as { scopeCollections: string[] }).scopeCollections).toEqual(['nodekeyring']);
+  });
+
+  it('enc non-isolated: LEGACY space keyring — space cap only, no per-node/keyring caps, adds space member', async () => {
+    const { token } = await createNodeInviteLink(
+      makeSession(), 'sp-1', 'n-42', 'Doc', { enc: true }, true, 'https://x',
+    );
+    // Legacy enc invite still rides the space-wide keyring (back-compat).
     expect(token.streamCap).toBeUndefined();
-    expect(addSpaceMember).toHaveBeenCalledOnce(); // isolation ignored for enc
+    expect(token.keyringCap).toBeUndefined();
+    expect(ensureNodeKeyringRecipient).not.toHaveBeenCalled();
+    expect((token.cap as { scopeCollections: string[] }).scopeCollections).toContain('objindex'); // spaceMemberScope
+    expect(addSpaceMember).toHaveBeenCalledOnce();
   });
 });
 
@@ -342,6 +367,8 @@ describe('inviteToNode — stream cap + isolation', () => {
 
   beforeEach(() => {
     vi.mocked(addSpaceMember).mockClear();
+    vi.mocked(ensureNodeKeyringRecipient).mockClear().mockResolvedValue({} as never);
+    vi.mocked(addCollectionRecipient).mockClear().mockResolvedValue(undefined);
   });
 
   it('plaintext: bundle carries space cap + content cap + stream cap', async () => {
@@ -360,6 +387,32 @@ describe('inviteToNode — stream cap + isolation', () => {
     expect(bundle.streamCap.scopeCollections).toEqual(['objinvlog']);
     expect(addSpaceMember).not.toHaveBeenCalled();
   });
+
+  it('enc + isolated (E2EE ticket): per-node keyring — keyringCap + content + stream, NO space cap/member, NO space-keyring add', async () => {
+    const bundle = JSON.parse(
+      await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: true }, undefined, { isolated: true }),
+    );
+    // Per-node keyring seeded + requester KEM added (ensure-before-add inside the wrapper).
+    expect(ensureNodeKeyringRecipient).toHaveBeenCalledOnce();
+    // It must NOT touch the space-wide keyring.
+    expect(addCollectionRecipient).not.toHaveBeenCalled();
+    // Isolated: no space membership, no space cap.
+    expect(addSpaceMember).not.toHaveBeenCalled();
+    expect(bundle.cap).toBeUndefined();
+    // Per-node content (objinv), stream (objinvlog), keyring (nodekeyring) caps.
+    expect(bundle.nodeCap.scopeCollections).toEqual(['objinv']);
+    expect(bundle.streamCap.scopeCollections).toEqual(['objinvlog']);
+    expect(bundle.keyringCap.scopeCollections).toEqual(['nodekeyring']);
+  });
+
+  it('enc NON-isolated (legacy): space-wide keyring add, space cap, NO keyringCap', async () => {
+    const bundle = JSON.parse(await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: true }));
+    expect(addCollectionRecipient).toHaveBeenCalledOnce(); // space keyring
+    expect(ensureNodeKeyringRecipient).not.toHaveBeenCalled();
+    expect(bundle.cap.scopeCollections).toContain('objindex'); // spaceMemberScope
+    expect(bundle.keyringCap).toBeUndefined();
+    expect(bundle.streamCap).toBeUndefined();
+  });
 });
 
 describe('acceptNodeInvite — isolated bundle (no space cap)', () => {
@@ -367,6 +420,7 @@ describe('acceptNodeInvite — isolated bundle (no space cap)', () => {
     vi.mocked(saveSpaceAccessEntry).mockClear();
     vi.mocked(saveNodeAccessEntry).mockClear();
     vi.mocked(saveNodeStreamAccessEntry).mockClear();
+    vi.mocked(saveNodeKeyringAccessEntry).mockClear();
   });
 
   it('stores per-node content + stream caps, but no space-level cap', async () => {
@@ -382,6 +436,30 @@ describe('acceptNodeInvite — isolated bundle (no space cap)', () => {
     expect(saveNodeAccessEntry).toHaveBeenCalledOnce();
     expect(saveNodeStreamAccessEntry).toHaveBeenCalledOnce();
     expect(saveSpaceAccessEntry).not.toHaveBeenCalled();
+    expect(saveNodeKeyringAccessEntry).not.toHaveBeenCalled();
+  });
+
+  it('E2EE ticket bundle: also persists the per-node keyring cap', async () => {
+    const bundle = JSON.stringify({
+      spaceId: 'sp-1',
+      nodeId: 'n-42',
+      nodeName: 'Ticket',
+      nodeCap: { kind: 'member', sub: 'pub' },
+      streamCap: { kind: 'member', sub: 'pub' },
+      keyringCap: { kind: 'member', sub: 'pub' },
+    });
+    await acceptNodeInvite(makeSession(), bundle);
+    expect(saveNodeKeyringAccessEntry).toHaveBeenCalledOnce();
+    expect(saveSpaceAccessEntry).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the keyring cap was issued for a different identity', async () => {
+    const bundle = JSON.stringify({
+      spaceId: 'sp-1', nodeId: 'n-42', nodeName: 'T',
+      nodeCap: { kind: 'member', sub: 'pub' },
+      keyringCap: { kind: 'member', sub: 'someone-else' },
+    });
+    await expect(acceptNodeInvite(makeSession(), bundle)).rejects.toThrow(/different identity/);
   });
 
   it('rejects a bundle issued for a different identity', async () => {
@@ -409,6 +487,24 @@ describe('joinNodeByLink — stream cap persistence', () => {
     const mutator = vi.mocked(updateSpacesDoc).mock.calls[0]![2];
     const result = mutator({ spaces: [], caps: {}, pubAccess: {} }) as { pubAccess: Record<string, unknown> };
     expect(result.pubAccess['sp-1:n-42:stream']).toBeDefined();
+  });
+
+  it('E2EE ticket link: persists + seals the per-node keyring cap under :keyring', async () => {
+    vi.mocked(saveNodeKeyringAccessEntry).mockClear();
+    const { updateSpacesDoc } = await import('./registry.js');
+    vi.mocked(updateSpacesDoc).mockClear();
+    const token = {
+      v: 1 as const, spaceId: 'sp-1', nodeId: 'n-42', nodeName: 'Ticket',
+      cap: { kind: 'member', sub: 'pub' },
+      streamCap: { kind: 'member', sub: 'pub' },
+      keyringCap: { kind: 'member', sub: 'pub' },
+      key: 'eph', write: true,
+    };
+    await joinNodeByLink(makeSession(), token);
+    expect(saveNodeKeyringAccessEntry).toHaveBeenCalledOnce();
+    const mutator = vi.mocked(updateSpacesDoc).mock.calls[0]![2];
+    const result = mutator({ spaces: [], caps: {}, pubAccess: {} }) as { pubAccess: Record<string, unknown> };
+    expect(result.pubAccess['sp-1:n-42:keyring']).toBeDefined();
   });
 });
 

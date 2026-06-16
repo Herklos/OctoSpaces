@@ -24,9 +24,15 @@ import type { Encryptor, StarfishClient } from '@drakkar.software/starfish-clien
 
 import { buildEncryptor, makeClient, openEncryptor, ownerEnsureKeyring } from './client.js';
 import type { DeviceKeys } from './client.js';
+import { buildNodeEncryptor, openNodeEncryptor } from './node-keyring.js';
 import type { Session } from './identity.js';
 import { ownerTrustedAdders } from './identity.js';
-import { getNodeAccessEntry, getNodeStreamAccessEntry, getSpaceAccessEntry } from './space-access-store.js';
+import {
+  getNodeAccessEntry,
+  getNodeKeyringAccessEntry,
+  getNodeStreamAccessEntry,
+  getSpaceAccessEntry,
+} from './space-access-store.js';
 import type { SpaceAccessEntry } from './space-access-store.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
 import { keyringPull, keyringPush } from './paths.js';
@@ -99,6 +105,59 @@ function decryptKeysFor(entry: SpaceAccessEntry | null | undefined, session: Ses
   return session.keys;
 }
 
+/** Build a StarfishClient from a stored access entry, or null when there is none. */
+function clientFromEntry(entry: SpaceAccessEntry | null, session: Session): StarfishClient | null {
+  if (!entry) return null;
+  if (entry.kind === 'link') return makeClient(entry.cap, entry.key);
+  const cap = JSON.parse(entry.cap) as { iss?: string };
+  return makeClient(cap, session.keys.edPriv);
+}
+
+/**
+ * Resolve the (content client, node-keyring encryptor) for a PER-NODE-keyring E2EE node
+ * (`access:'invite' + enc`, e.g. an OctoDesk ticket). The CEK lives in the node's OWN
+ * keyring (`nodekeyring`), never the space keyring.
+ *
+ *  - Isolated requester: holds a per-node keyring cap (read) + content/stream caps; opens
+ *    the keyring with its cap client and ephemeral/own keys.
+ *  - Space member / owner: holds no per-node entry but IS a keyring recipient (added at
+ *    create / on assignment); opens via `session.chatClient` (space:member read) + own keys.
+ *
+ * `soft` returns null (instead of throwing) when the keyring isn't open-able yet.
+ */
+async function resolveNodeKeyringHandle(
+  session: Session,
+  spaceId: string,
+  nodeId: string,
+  reg: { owner: string | null; members?: string[] } | null,
+  soft: boolean,
+): Promise<NodeAccessHandle | null> {
+  const krEntry = getNodeKeyringAccessEntry(spaceId, nodeId);
+  const nodeEntry = getNodeAccessEntry(spaceId, nodeId);
+
+  // Content client (objinv / ticket-info): requester → node content cap; member/owner → chat.
+  const contentClient = clientFromEntry(nodeEntry, session) ?? session.chatClient;
+  // Keyring client (read `nodekeyring`): requester → keyring cap; member/owner → chat.
+  const krClient = clientFromEntry(krEntry, session) ?? session.chatClient;
+  const krKeys = decryptKeysFor(krEntry, session);
+
+  // trustedAdders = the keyring creator (ticket owner). From our cap issuer when we hold a
+  // member cap, else the registry owner, else our own keys (owner self-open).
+  const capIss =
+    krEntry?.kind === 'member' ? (JSON.parse(krEntry.cap) as { iss?: string }).iss : undefined;
+  const trustedAdders = capIss ? [capIss] : reg?.owner ? [reg.owner] : ownerTrustedAdders(session);
+
+  const isOwnerOpen = reg != null ? reg.owner === session.userId : krEntry == null;
+
+  if (soft) {
+    const encryptor = await buildNodeEncryptor(krClient, krKeys, spaceId, nodeId, trustedAdders);
+    if (!encryptor) return null;
+    return { encryptor, client: contentClient, isOwnerOpen };
+  }
+  const encryptor = await openNodeEncryptor(krClient, krKeys, spaceId, nodeId, trustedAdders);
+  return { encryptor, client: contentClient, isOwnerOpen };
+}
+
 /**
  * Resolve the right (client, encryptor) for a node's CONTENT, opening and
  * caching on first use.
@@ -119,6 +178,13 @@ export function getNodeAccess(
   if (hit) return hit;
 
   const p = (async (): Promise<NodeAccessHandle> => {
+    // Per-node-keyring E2EE (invite+enc, e.g. tickets): open the NODE keyring, NOT the
+    // space-wide keyring. Hard variant: openNodeEncryptor throws on missing access.
+    if (node.access === 'invite' && node.enc) {
+      const handle = await resolveNodeKeyringHandle(session, spaceId, nodeId, reg ?? null, false);
+      return handle as NodeAccessHandle;
+    }
+
     // Prefer a per-node entry, fall back to the space-level entry for the client.
     const nodeEntry = getNodeAccessEntry(spaceId, nodeId);
     const spaceEntry = getSpaceAccessEntry(spaceId);
@@ -196,9 +262,16 @@ export async function buildNodeAccess(
   session: Session,
   spaceId: string,
   nodeId: string,
-  node: { enc?: boolean },
+  node: { access?: NodeAccess; enc?: boolean },
   reg?: { owner: string | null; members?: string[] } | null,
 ): Promise<{ client: StarfishClient; encryptor: Encryptor | null } | null> {
+  // Per-node-keyring E2EE (invite+enc): open the NODE keyring softly. Callers that don't
+  // pass `access` keep the legacy space-keyring resolution below (back-compat).
+  if (node.access === 'invite' && node.enc) {
+    const handle = await resolveNodeKeyringHandle(session, spaceId, nodeId, reg ?? null, true);
+    return handle ? { client: handle.client, encryptor: handle.encryptor } : null;
+  }
+
   const nodeEntry = getNodeAccessEntry(spaceId, nodeId);
   const spaceEntry = getSpaceAccessEntry(spaceId);
   const activeEntry = nodeEntry ?? spaceEntry;

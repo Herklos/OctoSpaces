@@ -43,7 +43,14 @@ vi.mock('./client.js', () => ({
 
 vi.mock('./space-access-store.js', () => ({
   getNodeAccessEntry: vi.fn().mockReturnValue(null),
+  getNodeKeyringAccessEntry: vi.fn().mockReturnValue(null),
+  getNodeStreamAccessEntry: vi.fn().mockReturnValue(null),
   getSpaceAccessEntry: vi.fn().mockReturnValue(null),
+}));
+
+vi.mock('./node-keyring.js', () => ({
+  openNodeEncryptor: vi.fn(),
+  buildNodeEncryptor: vi.fn(),
 }));
 
 vi.mock('./identity.js', () => ({
@@ -70,7 +77,8 @@ import {
   ownerEnsureKeyring,
   makeClient,
 } from './client.js';
-import { getNodeAccessEntry, getSpaceAccessEntry } from './space-access-store.js';
+import { getNodeAccessEntry, getNodeKeyringAccessEntry, getSpaceAccessEntry } from './space-access-store.js';
+import { openNodeEncryptor, buildNodeEncryptor } from './node-keyring.js';
 import { keyringPull, keyringPush } from './paths.js';
 
 // ── Shared fixtures ───────────────────────────────────────────────────────────
@@ -404,5 +412,87 @@ describe('buildNodeAccess', () => {
     // keyring existed -> should NOT call ownerEnsureKeyring
     expect(vi.mocked(ownerEnsureKeyring)).not.toHaveBeenCalled();
     expect(result!.encryptor).toBe(MOCK_ENCRYPTOR);
+  });
+});
+
+// ── Per-node keyring branch (access:'invite' + enc, e.g. E2EE tickets) ──────────
+
+describe('getNodeAccess — per-node keyring (invite + enc)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearNodeAccessCache();
+    vi.mocked(getSpaceAccessEntry).mockReturnValue(null);
+    vi.mocked(getNodeAccessEntry).mockReturnValue(null);
+    vi.mocked(getNodeKeyringAccessEntry).mockReturnValue(null);
+    vi.mocked(makeClient).mockReturnValue(mockMemberClient);
+    vi.mocked(openNodeEncryptor).mockResolvedValue(MOCK_ENCRYPTOR);
+  });
+
+  it('isolated requester: opens the NODE keyring via the keyring cap client (not the space keyring)', async () => {
+    vi.mocked(getNodeKeyringAccessEntry).mockReturnValue({ kind: 'member', cap: MEMBER_CAP_JSON });
+    vi.mocked(getNodeAccessEntry).mockReturnValue({ kind: 'member', cap: MEMBER_CAP_JSON });
+    const session = makeSession(OTHER_ID);
+    const result = await getNodeAccess(SPACE_ID, NODE_ID, { access: 'invite', enc: true }, session, { owner: OWNER_ID, members: [] });
+    expect(openNodeEncryptor).toHaveBeenCalledWith(mockMemberClient, DEVICE_KEYS, SPACE_ID, NODE_ID, ['issuer-ed-pub']);
+    expect(openEncryptor).not.toHaveBeenCalled(); // NOT the space keyring
+    expect(result.encryptor).toBe(MOCK_ENCRYPTOR);
+  });
+
+  it('space member / owner (no keyring entry): opens the NODE keyring via session.chatClient', async () => {
+    const session = makeSession(OWNER_ID);
+    const result = await getNodeAccess(SPACE_ID, NODE_ID, { access: 'invite', enc: true }, session, { owner: OWNER_ID, members: [] });
+    expect(openNodeEncryptor).toHaveBeenCalledWith(mockChatClient, DEVICE_KEYS, SPACE_ID, NODE_ID, [OWNER_ID]);
+    expect(result.encryptor).toBe(MOCK_ENCRYPTOR);
+    expect(result.isOwnerOpen).toBe(true);
+  });
+
+  it('propagates SpaceAccessError when the node keyring cannot be opened (not a recipient)', async () => {
+    vi.mocked(openNodeEncryptor).mockRejectedValue(new SpaceAccessError('not a recipient'));
+    const session = makeSession(OTHER_ID);
+    await expect(
+      getNodeAccess(SPACE_ID, NODE_ID, { access: 'invite', enc: true }, session, { owner: OWNER_ID, members: [] }),
+    ).rejects.toBeInstanceOf(SpaceAccessError);
+  });
+
+  it('does NOT use the node keyring for space-tier enc nodes (back-compat: space keyring)', async () => {
+    vi.mocked(openEncryptor).mockResolvedValue(MOCK_ENCRYPTOR);
+    const session = makeSession(MEMBER_ID);
+    vi.mocked(getSpaceAccessEntry).mockReturnValue({ kind: 'member', cap: MEMBER_CAP_JSON });
+    await getNodeAccess(SPACE_ID, NODE_ID, { access: 'space', enc: true }, session, { owner: OWNER_ID, members: [MEMBER_ID] });
+    expect(openNodeEncryptor).not.toHaveBeenCalled();
+    expect(openEncryptor).toHaveBeenCalled();
+  });
+});
+
+describe('buildNodeAccess — per-node keyring (invite + enc)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getSpaceAccessEntry).mockReturnValue(null);
+    vi.mocked(getNodeAccessEntry).mockReturnValue(null);
+    vi.mocked(getNodeKeyringAccessEntry).mockReturnValue(null);
+    vi.mocked(makeClient).mockReturnValue(mockMemberClient);
+  });
+
+  it('soft-opens the node keyring and returns {client, encryptor}', async () => {
+    vi.mocked(buildNodeEncryptor).mockResolvedValue(MOCK_ENCRYPTOR);
+    const session = makeSession(OWNER_ID);
+    const result = await buildNodeAccess(session, SPACE_ID, NODE_ID, { access: 'invite', enc: true }, { owner: OWNER_ID });
+    expect(buildNodeEncryptor).toHaveBeenCalledWith(mockChatClient, DEVICE_KEYS, SPACE_ID, NODE_ID, [OWNER_ID]);
+    expect(result!.encryptor).toBe(MOCK_ENCRYPTOR);
+  });
+
+  it('returns null when the node keyring is not open-able yet (soft)', async () => {
+    vi.mocked(buildNodeEncryptor).mockResolvedValue(null);
+    const session = makeSession(OTHER_ID);
+    const result = await buildNodeAccess(session, SPACE_ID, NODE_ID, { access: 'invite', enc: true }, { owner: OWNER_ID });
+    expect(result).toBeNull();
+  });
+
+  it('without an access flag, keeps legacy space-keyring resolution (back-compat)', async () => {
+    vi.mocked(buildEncryptor).mockResolvedValue(MOCK_ENCRYPTOR);
+    const session = makeSession(OWNER_ID);
+    await buildNodeAccess(session, SPACE_ID, NODE_ID, { enc: true }, { owner: OWNER_ID });
+    expect(buildNodeEncryptor).not.toHaveBeenCalled();
+    expect(buildEncryptor).toHaveBeenCalled();
   });
 });
