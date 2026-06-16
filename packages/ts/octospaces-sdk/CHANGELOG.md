@@ -1,5 +1,28 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.12.6 (2026-06-16)
+
+### Changed
+
+- **E2EE invite nodes can now use the per-node keyring (E2EE tickets, Phase 2).** For an
+  `access:'invite'` node, passing `isolated: true` to `inviteToNode` / `createNodeInviteLink`
+  on an `enc` node now routes through the **per-node** keyring instead of the space-wide one:
+  - The owner seeds the node keyring and adds the invitee's KEM as a recipient
+    (`ensureNodeKeyringRecipient`, ensure-before-add), and mints a READ-only `nodeKeyringScope`
+    cap alongside the per-node content (`objinv`) and stream (`objinvlog`) caps.
+  - The invitee is **isolated**: no space membership, no space cap — they reach only their
+    own node, and decrypt via the per-node keyring, never the space key. This closes the
+    prior footgun where an `enc` invite added the invitee to the space-wide keyring.
+  - `NodeInviteBundle` / `NodeInviteLinkToken` carry an optional `keyringCap`;
+    `acceptNodeInvite` / `joinNodeByLink` persist it under `${spaceId}:${nodeId}:keyring`.
+  - `getNodeAccess` / `buildNodeAccess` open the **node** keyring for `access:'invite' && enc`
+    nodes (requester via their keyring cap client; space members/owner via `session.chatClient`
+    as keyring recipients). `buildNodeAccess` gained an optional `node.access` to select this.
+  - **Back-compat preserved:** a NON-isolated `enc` invite keeps the legacy space-wide keyring
+    behaviour, and `access:'space'` enc nodes are unchanged. Existing content stays decryptable.
+- New store helpers `getNodeKeyringAccessEntry` / `saveNodeKeyringAccessEntry` /
+  `removeNodeKeyringAccessEntry`; `removeNodeAccessEntry` now also drops the `:keyring` sibling.
+
 ## 0.12.5 (2026-06-16)
 
 ### Added

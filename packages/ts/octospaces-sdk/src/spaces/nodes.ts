@@ -38,6 +38,7 @@ import {
   keyringName,
   keyringPull,
   keyringPush,
+  nodeKeyringScope,
   nodeMemberScope,
   nodeStreamScope,
   spaceMemberScope,
@@ -46,10 +47,12 @@ import {
 import {
   getSpaceClient,
 } from '../sync/space-access.js';
+import { ensureNodeKeyringRecipient } from '../sync/node-keyring.js';
 import {
   getNodeAccessEntry,
   saveNodeAccessEntry,
   saveNodeStreamAccessEntry,
+  saveNodeKeyringAccessEntry,
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
 import { sealToSelf } from '../sync/account-seal.js';
@@ -213,10 +216,16 @@ export interface NodeInviteBundle {
    * own ticket).
    */
   cap?: unknown;
-  /** Per-node content cap (`objinv`) — for `invite+plaintext` nodes. */
+  /** Per-node content cap (`objinv`) — for `invite+plaintext` AND per-node-keyring enc nodes. */
   nodeCap?: unknown;
-  /** Per-node STREAM cap (`objinvlog`) — for `invite+plaintext` nodes with a message log. */
+  /** Per-node STREAM cap (`objinvlog`) — for nodes with a message log. */
   streamCap?: unknown;
+  /**
+   * Per-node KEYRING cap (`nodekeyring`, READ-only) — present ONLY for per-node-keyring
+   * E2EE nodes (`enc + isolated`, e.g. an OctoDesk ticket). Lets the isolated requester
+   * read the node keyring to decrypt content WITHOUT holding the space-wide keyring.
+   */
+  keyringCap?: unknown;
 }
 
 /**
@@ -241,9 +250,20 @@ export async function inviteToNode(
   const req = JSON.parse(requestJson) as JoinRequest;
   if (!req.edPub || !req.kemPub || !req.userId) throw new Error('Invalid join request.');
 
-  if (node.enc) {
-    // Ensure the space keyring exists before adding the invitee as a recipient
-    // (invariant: ownerEnsureKeyring must precede addCollectionRecipient).
+  // `isolated` withholds space membership + the space cap, so the invitee reaches ONLY
+  // this node — never the index or other nodes. For an `enc` node, `isolated` ALSO selects
+  // the PER-NODE keyring (a CEK wrapped only to this node's participants) instead of the
+  // space-wide keyring — the E2EE-ticket model. A non-isolated `enc` invite keeps the
+  // legacy space-keyring behaviour (back-compat for shared-space encrypted nodes).
+  const isolated = !!opts.isolated;
+  const perNodeKeyring = !!node.enc && isolated;
+  // Default write=true (backward compat) so existing callers keep write access.
+  const canWrite = opts.write !== false;
+  const subject = { edPubHex: req.edPub, kemPubHex: req.kemPub, userIdHex: req.userId };
+
+  if (node.enc && !perNodeKeyring) {
+    // LEGACY space-wide keyring path (non-isolated enc): add the invitee as a recipient of
+    // the space keyring (grants decryption of ALL enc nodes in the space). Ensure-first.
     const encClient = getSpaceClient(spaceId, session);
     await ownerEnsureKeyring(
       encClient,
@@ -252,7 +272,6 @@ export async function inviteToNode(
       keyringPush(spaceId),
       ownerTrustedAdders(session),
     );
-    // Add invitee's KEM key to the SPACE-WIDE keyring (grants access to all enc nodes).
     try {
       await addCollectionRecipient(
         session.chatClient,
@@ -266,19 +285,29 @@ export async function inviteToNode(
     }
   }
 
-  // `isolated` (plaintext only) withholds space membership + the space cap, so the
-  // invitee reaches ONLY this node's per-node content/stream caps — never the index
-  // or other nodes. `enc` nodes can't be isolated: they need the space-wide keyring.
-  const isolated = !!opts.isolated && !node.enc;
-  // Default write=true (backward compat) so existing callers keep write access.
-  const canWrite = opts.write !== false;
-  const subject = { edPubHex: req.edPub, kemPubHex: req.kemPub, userIdHex: req.userId };
-
   const bundle: NodeInviteBundle = {
     spaceId,
     nodeId,
     nodeName: nodeName ?? nodeId,
   };
+
+  if (perNodeKeyring) {
+    // PER-NODE keyring: ensure it exists then add the requester's KEM as a recipient
+    // (ensure-before-add invariant), and mint a READ-only keyring cap so the isolated
+    // requester can fetch+decrypt without ever touching the space key.
+    await ensureNodeKeyringRecipient(session, spaceId, nodeId, {
+      subKem: req.kemPub,
+      userId: req.userId,
+      label: req.userId.slice(0, 8),
+    });
+    bundle.keyringCap = await mintMemberCap(
+      session.keys.edPriv,
+      session.keys.edPub,
+      subject,
+      'chat',
+      nodeKeyringScope(spaceId, nodeId),
+    );
+  }
 
   if (!isolated) {
     // Ensure space membership (for index access) + mint the space-level cap.
@@ -292,10 +321,11 @@ export async function inviteToNode(
     );
   }
 
-  if (!node.enc) {
-    // invite+plaintext: mint narrow per-node caps — content (objinv) AND the message
-    // stream (objinvlog). A member cap covers exactly one collection, so the stream
-    // needs its own cap separate from the content cap.
+  if (!node.enc || perNodeKeyring) {
+    // Mint narrow per-node caps — content (objinv) AND the message stream (objinvlog).
+    // A member cap covers exactly one collection, so each needs its own. For
+    // per-node-keyring enc nodes the bytes are sealed client-side (collections stay
+    // `encryption:'none'`), so the same content/stream caps apply.
     bundle.nodeCap = await mintMemberCap(
       session.keys.edPriv,
       session.keys.edPub,
@@ -339,6 +369,7 @@ export async function acceptNodeInvite(session: Session, bundleJson: string): Pr
   const hasSpaceCap = assertForUs(bundle.cap as { kind?: string; sub?: string } | undefined, 'cap');
   const hasNodeCap = assertForUs(bundle.nodeCap as { kind?: string; sub?: string } | undefined, 'nodeCap');
   assertForUs(bundle.streamCap as { kind?: string; sub?: string } | undefined, 'streamCap');
+  assertForUs(bundle.keyringCap as { kind?: string; sub?: string } | undefined, 'keyringCap');
   if (!hasSpaceCap && !hasNodeCap) throw new Error('Invalid node invite.');
 
   if (hasSpaceCap) {
@@ -346,12 +377,17 @@ export async function acceptNodeInvite(session: Session, bundleJson: string): Pr
     saveSpaceAccessEntry(bundle.spaceId, { kind: 'member', cap: JSON.stringify(bundle.cap) });
   }
   if (hasNodeCap) {
-    // invite+plaintext: store the narrow per-node content cap.
+    // invite+plaintext (or per-node-keyring enc): store the narrow per-node content cap.
     saveNodeAccessEntry(bundle.spaceId, bundle.nodeId, { kind: 'member', cap: JSON.stringify(bundle.nodeCap) });
   }
   if (bundle.streamCap) {
     // ...and the per-node STREAM cap (objinvlog), under its own entry.
     saveNodeStreamAccessEntry(bundle.spaceId, bundle.nodeId, { kind: 'member', cap: JSON.stringify(bundle.streamCap) });
+  }
+  if (bundle.keyringCap) {
+    // ...and the per-node KEYRING cap (nodekeyring) for E2EE tickets — lets the requester
+    // open the node keyring and decrypt content without the space-wide key.
+    saveNodeKeyringAccessEntry(bundle.spaceId, bundle.nodeId, { kind: 'member', cap: JSON.stringify(bundle.keyringCap) });
   }
 
   return bundle.nodeId;
@@ -365,11 +401,15 @@ export interface NodeInviteLinkToken {
   spaceId: string;
   nodeId: string;
   nodeName: string;
-  /** Cap scope depends on `enc`: spaceMemberScope for enc nodes, nodeMemberScope for plaintext. */
+  /** Cap scope depends on the mode: spaceMemberScope for legacy space-keyring enc nodes,
+   *  nodeMemberScope (objinv content) for plaintext / per-node-keyring nodes. */
   cap: unknown;
-  /** Per-node STREAM cap (`objinvlog`) — present for `invite+plaintext` nodes with a
-   *  message log. The same ephemeral `key` authenticates both caps. */
+  /** Per-node STREAM cap (`objinvlog`) — present for nodes with a message log. The same
+   *  ephemeral `key` authenticates every cap in the token. */
   streamCap?: unknown;
+  /** Per-node KEYRING cap (`nodekeyring`, READ-only) — present for per-node-keyring E2EE
+   *  nodes (`enc + isolated`, e.g. OctoDesk tickets). */
+  keyringCap?: unknown;
   /** The ephemeral subject's Ed25519 private key (hex). */
   key: string;
   write: boolean;
@@ -393,6 +433,7 @@ export function decodeNodeInviteLink(fragment: string): NodeInviteLinkToken {
     nodeName: tok.nodeName ?? tok.nodeId,
     cap: tok.cap,
     ...(tok.streamCap !== undefined ? { streamCap: tok.streamCap } : {}),
+    ...(tok.keyringCap !== undefined ? { keyringCap: tok.keyringCap } : {}),
     key: tok.key,
     write: !!tok.write,
   };
@@ -422,18 +463,19 @@ export async function createNodeInviteLink(
   const ephemeralUserId = await userIdFromEdPub(ek.edPub);
   const subject = { edPubHex: ek.edPub, kemPubHex: ek.kemPub, userIdHex: ephemeralUserId };
 
-  // `isolated` (plaintext only) withholds space membership so the link bearer reaches
-  // ONLY this node — never the index or other nodes (e.g. an external OctoDesk ticket
-  // requester). Revoke an isolated link via cap revocation (it is not a space member).
-  const isolated = !!opts.isolated && !node.enc;
+  // `isolated` withholds space membership so the link bearer reaches ONLY this node. For an
+  // `enc` node, `isolated` ALSO selects the PER-NODE keyring (E2EE-ticket model) instead of
+  // the space keyring; a non-isolated enc link keeps the legacy space-keyring behaviour.
+  const isolated = !!opts.isolated;
+  const perNodeKeyring = !!node.enc && isolated;
 
   if (!isolated) {
     await addSpaceMember(session.accountClient, spaceId, session.userId, ephemeralUserId);
   }
 
-  if (node.enc) {
-    // Ensure the space keyring exists before adding the ephemeral recipient
-    // (invariant: ownerEnsureKeyring must precede addCollectionRecipient).
+  if (node.enc && !perNodeKeyring) {
+    // LEGACY space-wide keyring path (non-isolated enc): add the ephemeral KEM to the space
+    // keyring. Ensure-first (invariant: ownerEnsureKeyring precedes addCollectionRecipient).
     const encClient = getSpaceClient(spaceId, session);
     await ownerEnsureKeyring(
       encClient,
@@ -442,7 +484,6 @@ export async function createNodeInviteLink(
       keyringPush(spaceId),
       ownerTrustedAdders(session),
     );
-    // Add ephemeral KEM to the SPACE-WIDE keyring
     try {
       await addCollectionRecipient(
         session.chatClient,
@@ -456,22 +497,40 @@ export async function createNodeInviteLink(
     }
   }
 
-  // enc nodes need space-scoped cap (must reach the space keyring);
-  // plaintext invite nodes use the narrow per-node content cap.
+  let keyringCap: unknown;
+  if (perNodeKeyring) {
+    // PER-NODE keyring: ensure + add the ephemeral KEM as a recipient (ensure-before-add),
+    // then mint a READ-only keyring cap for the link bearer.
+    await ensureNodeKeyringRecipient(session, spaceId, nodeId, {
+      subKem: ek.kemPub,
+      userId: ephemeralUserId,
+      label: ephemeralUserId.slice(0, 8),
+    });
+    keyringCap = await mintMemberCap(
+      session.keys.edPriv,
+      session.keys.edPub,
+      subject,
+      'chat',
+      nodeKeyringScope(spaceId, nodeId),
+    );
+  }
+
+  // Legacy space-keyring enc nodes need a space-scoped cap (to reach the space keyring);
+  // plaintext / per-node-keyring nodes use the narrow per-node content cap (objinv).
   const cap = await mintMemberCap(
     session.keys.edPriv,
     session.keys.edPub,
     subject,
     'chat',
-    node.enc
+    node.enc && !perNodeKeyring
       ? spaceMemberScope(spaceId, write)
       : nodeMemberScope(spaceId, nodeId, write),
   );
 
-  // plaintext nodes also get a per-node STREAM cap (objinvlog) — a separate
-  // single-collection member cap, authenticated by the same ephemeral key.
+  // Plaintext / per-node-keyring nodes also get a per-node STREAM cap (objinvlog) — a
+  // separate single-collection member cap, authenticated by the same ephemeral key.
   let streamCap: unknown;
-  if (!node.enc) {
+  if (!node.enc || perNodeKeyring) {
     streamCap = await mintMemberCap(
       session.keys.edPriv,
       session.keys.edPub,
@@ -488,6 +547,7 @@ export async function createNodeInviteLink(
     nodeName,
     cap,
     ...(streamCap !== undefined ? { streamCap } : {}),
+    ...(keyringCap !== undefined ? { keyringCap } : {}),
     key: ek.edPriv,
     write,
   };
@@ -507,6 +567,12 @@ export async function joinNodeByLink(session: Session, token: NodeInviteLinkToke
     token.streamCap !== undefined
       ? await sealToSelf(session, JSON.stringify({ cap: token.streamCap, key: token.key, write: token.write }))
       : null;
+  // The per-node KEYRING cap (nodekeyring) for E2EE tickets — sealed + persisted under
+  // its own `${spaceId}:${nodeId}:keyring` key.
+  const sealedKeyring =
+    token.keyringCap !== undefined
+      ? await sealToSelf(session, JSON.stringify({ cap: token.keyringCap, key: token.key, write: false }))
+      : null;
 
   // Persist sealed entry into _spaces.pubAccess keyed by spaceId:nodeId.
   // Also register the node as a listable Space (dup-guarded) so it appears in
@@ -525,6 +591,7 @@ export async function joinNodeByLink(session: Session, token: NodeInviteLinkToke
       ...cur.pubAccess,
       [`${token.spaceId}:${token.nodeId}`]: sealed,
       ...(sealedStream ? { [`${token.spaceId}:${token.nodeId}:stream`]: sealedStream } : {}),
+      ...(sealedKeyring ? { [`${token.spaceId}:${token.nodeId}:keyring`]: sealedKeyring } : {}),
     },
   }));
 
@@ -540,6 +607,14 @@ export async function joinNodeByLink(session: Session, token: NodeInviteLinkToke
       cap: token.streamCap,
       key: token.key,
       write: token.write,
+    });
+  }
+  if (token.keyringCap !== undefined) {
+    saveNodeKeyringAccessEntry(token.spaceId, token.nodeId, {
+      kind: 'link',
+      cap: token.keyringCap,
+      key: token.key,
+      write: false,
     });
   }
 

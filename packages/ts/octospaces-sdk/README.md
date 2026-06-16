@@ -125,6 +125,18 @@ const link = await createNodeInviteLink(session, spaceId, nodeId)
 await joinNodeByLink(recipientSession, link)
 ```
 
+For an `enc` invite node, pass `{ isolated: true }` to use the **per-node keyring** (E2EE
+ticket model): the invitee is isolated to that single node and decrypts via the node's own
+keyring — never the space-wide key. The bundle/token then also carries a read-only
+`keyringCap`, and `getNodeAccess` / `buildNodeAccess` open the node keyring for
+`access:'invite' + enc` nodes. A non-isolated `enc` invite keeps the legacy space-keyring
+behaviour (back-compat).
+
+```ts
+// E2EE, isolated requester (e.g. an OctoDesk ticket):
+const { link } = await createNodeInviteLink(session, spaceId, nodeId, name, { enc: true }, true, origin, { isolated: true })
+```
+
 ### Sealed blobs & attachments
 
 ```ts

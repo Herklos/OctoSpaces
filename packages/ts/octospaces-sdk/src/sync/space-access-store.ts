@@ -114,10 +114,11 @@ export function saveNodeAccessEntry(spaceId: string, nodeId: string, entry: Spac
 }
 
 /** Forget a node's invite access entry (e.g. on leaving the node). Also removes the
- *  sibling stream entry so they don't orphan and grant lingering stream access. */
+ *  sibling stream + keyring entries so they don't orphan and grant lingering access. */
 export function removeNodeAccessEntry(spaceId: string, nodeId: string): void {
   removeSpaceAccessEntry(`${spaceId}:${nodeId}`);
   removeSpaceAccessEntry(`${spaceId}:${nodeId}:stream`);
+  removeSpaceAccessEntry(`${spaceId}:${nodeId}:keyring`);
 }
 
 // A `member` cap covers exactly one collection, so a node's append-log STREAM
@@ -138,6 +139,25 @@ export function saveNodeStreamAccessEntry(spaceId: string, nodeId: string, entry
 /** Forget a node's STREAM access entry. */
 export function removeNodeStreamAccessEntry(spaceId: string, nodeId: string): void {
   removeSpaceAccessEntry(`${spaceId}:${nodeId}:stream`);
+}
+
+// A per-node E2EE keyring (`nodekeyring`) is a third collection, so an isolated
+// requester needs a SEPARATE read-only cap for it (single-collection member caps).
+// Stored under `${spaceId}:${nodeId}:keyring`, riding the same sync machinery.
+
+/** Look up a per-node KEYRING (nodekeyring) access entry. Null if absent. */
+export function getNodeKeyringAccessEntry(spaceId: string, nodeId: string): SpaceAccessEntry | null {
+  return cache[`${spaceId}:${nodeId}:keyring`] ?? null;
+}
+
+/** Persist a per-node KEYRING (nodekeyring) access entry. */
+export function saveNodeKeyringAccessEntry(spaceId: string, nodeId: string, entry: SpaceAccessEntry): void {
+  saveSpaceAccessEntry(`${spaceId}:${nodeId}:keyring`, entry);
+}
+
+/** Forget a node's KEYRING access entry. */
+export function removeNodeKeyringAccessEntry(spaceId: string, nodeId: string): void {
+  removeSpaceAccessEntry(`${spaceId}:${nodeId}:keyring`);
 }
 
 /** A snapshot of the in-memory cache — used by `recoverSpaceAccess` to find entries
