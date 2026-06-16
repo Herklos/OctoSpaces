@@ -22,8 +22,8 @@
 
 | Package | Version | Description |
 |---|---|---|
-| [`@drakkar.software/octospaces-sdk`](./packages/ts/octospaces-sdk) | `0.4.3` | Headless spaces core — identity, sync, objects, registry |
-| [`@drakkar.software/octospaces-ui`](./packages/ts/octospaces-ui) | `0.1.0` | Shared UI primitives — theme plumbing only, no values |
+| [`@drakkar.software/octospaces-sdk`](./packages/ts/octospaces-sdk) | `0.10.0` | Headless spaces core — identity, sync, objects, registry |
+| [`@drakkar.software/octospaces-ui`](./packages/ts/octospaces-ui) | `0.4.3` | Shared UI primitives — sidebar, discover, lightbox, theme |
 
 **Python**
 
@@ -51,12 +51,17 @@ octospaces/
 │   │   │   └── src/
 │   │   │       ├── core/            # config, types, ids, adapters, errors
 │   │   │       ├── sync/            # identity, client, paths, encryptors, pairing, caps
-│   │   │       ├── spaces/          # registry, members, object-index
+│   │   │       ├── spaces/          # registry, members, nodes, object-index, directory
 │   │   │       ├── objects/         # ObjectNode tree, reducers (generic — no domain types)
-│   │   │       └── platform/        # kv / crypto split (.ts + .native.ts)
+│   │   │       ├── prefs/           # mutes + read-marks stores
+│   │   │       ├── format/          # formatting utilities
+│   │   │       └── utils/           # search ranking, live-sync bus, invite preview
 │   │   └── octospaces-ui/           # UI primitives
 │   │       └── src/
-│   │           └── theme/           # Palette/Theme types, provider, hook, helpers
+│   │           ├── theme/           # Palette/Theme types, provider, hook, helpers
+│   │           ├── sidebar/         # Sidebar, SidebarItem, SpacesRail, SpaceSwitcher
+│   │           ├── discover/        # DiscoverScreen, DiscoverList, DiscoverRow
+│   │           └── lightbox/        # Lightbox
 │   └── python/
 │       └── octospaces-sdk/          # Python port (uv / pytest — see PYTHON_SDK.md)
 │           └── octospaces_sdk/      # mirrors packages/ts/octospaces-sdk/src/
@@ -88,14 +93,14 @@ pnpm -r test        # run all test suites
 
 ## `@drakkar.software/octospaces-sdk`
 
-Headless, platform-agnostic spaces core. No React, no UI, no env reads.
+Headless, platform-agnostic spaces core. No React, no UI, no env reads. See the [full SDK README](./packages/ts/octospaces-sdk/README.md) for detailed API docs.
 
 ### Setup
 
 Call **once** at app boot, before any sync or identity API:
 
 ```ts
-import { configureOctoSpaces } from '@drakkar.software/octospaces-sdk';
+import { configureOctoSpaces, configureKv } from '@drakkar.software/octospaces-sdk';
 
 configureOctoSpaces({
   syncBase: process.env.EXPO_PUBLIC_STARFISH_URL,
@@ -103,6 +108,7 @@ configureOctoSpaces({
   // Optional: route space registry through a shared cross-app namespace
   sharedSpacesNamespace: process.env.EXPO_PUBLIC_STARFISH_SHARED_SPACES_NAMESPACE,
 });
+configureKv({ get: kv.get, set: kv.set, remove: kv.remove });
 ```
 
 ### Key APIs
@@ -110,82 +116,69 @@ configureOctoSpaces({
 #### Identity & session
 
 ```ts
-import { buildSession, buildLinkedSession } from '@drakkar.software/octospaces-sdk';
+import { generateSeedWords, buildSession, buildLinkedSession } from '@drakkar.software/octospaces-sdk';
 
-// Build a session from a 24-word seed phrase
-const session = await buildSession(seedWords, deviceLabel, kv);
+// Generate a recovery seed and build a session
+const words = generateSeedWords();
+const session = await buildSession({ seedWords: words, name: 'Alice' });
 
 // Link a new device to an existing account
-const linked = await buildLinkedSession(pairingToken, deviceLabel, kv);
+const linked = await buildLinkedSession(pairingToken);
 ```
 
 #### Spaces registry
 
 ```ts
-import { createSpace, readSpaces, updateSpacesDoc } from '@drakkar.software/octospaces-sdk';
+import { createSpace, readSpaces, createNode } from '@drakkar.software/octospaces-sdk';
 
-// Create a space (neutral container — no visibility, no keyring)
-const space = await createSpace(session, 'My Space');
+// Create a space (neutral container)
+const spaceId = await createSpace(session, { name: 'My Space', short: 'MS' });
 
-// Nodes carry access/enc independently — create after space exists
-// import { createNode } from '@drakkar.software/octospaces-sdk';
-// const pub = await createNode(session, space.id, { type:'page', title:'Public Docs', access:'public' });
-// const priv = await createNode(session, space.id, { type:'page', title:'Private', access:'invite', enc:true });
+// Nodes carry access/enc independently
+await createNode(session, spaceId, { type: 'page', title: 'Public Docs', access: 'public', enc: false });
+await createNode(session, spaceId, { type: 'page', title: 'Private', access: 'invite', enc: true });
 
-const spaces = await readSpaces(session.accountClient, session.userId);
+const spaces = await readSpaces(session);
 ```
 
-#### Link-based joins (public spaces)
+#### Link-based joins
 
 ```ts
 import { createSpaceInviteLink, joinSpaceByLink, decodeSpaceInviteLink } from '@drakkar.software/octospaces-sdk';
 
 // Owner: create a shareable link
-const { link } = await createSpaceInviteLink(session, spaceId, 'Public Docs', true, 'https://app.example.com');
+const link = await createSpaceInviteLink(session, spaceId);
 
 // Guest: redeem the link
-const token = decodeSpaceInviteLink(fragment);
-const joined = await joinSpaceByLink(session, token);
+await joinSpaceByLink(recipientSession, link);
 ```
 
 #### Object tree
 
 ```ts
-import { buildTree, addObject, patchObject, reparentObject } from '@drakkar.software/octospaces-sdk';
-import type { ObjectNode } from '@drakkar.software/octospaces-sdk';
+import { buildTree, addObject, reparentObject, readObjectTree } from '@drakkar.software/octospaces-sdk';
 
-const tree  = buildTree(nodes);                              // repairs cycles/orphans, sorts siblings
-const next  = addObject(nodes, newNode);                     // pure reducer
-const moved = reparentObject(nodes, id, newParentId, afterSiblingId);
-```
-
-#### Platform split (native)
-
-Import the platform adapter in your native entrypoint to swap in `react-native-quick-crypto`:
-
-```ts
-// index.native.ts
-import '@drakkar.software/octospaces-sdk/platform';
-// or:
-import { configureStarfishPlatform } from '@drakkar.software/octospaces-sdk/platform';
-configureStarfishPlatform();
+const { root } = await readObjectTree(session, spaceId);
+const tree   = buildTree(root);                              // repairs cycles/orphans, sorts siblings
+const next   = addObject(nodes, newNode);                    // pure reducer
+const moved  = reparentObject(nodes, id, newParentId, afterSiblingId);
 ```
 
 ### Peer dependencies
 
 ```
-@drakkar.software/starfish-client        >=3.0.0-alpha.27
-@drakkar.software/starfish-identities    >=3.0.0-alpha.27
-@drakkar.software/starfish-keyring       >=3.0.0-alpha.27
-@drakkar.software/starfish-protocol      >=3.0.0-alpha.27
-@drakkar.software/starfish-sharing       >=3.0.0-alpha.27
+starfish-client        >=3.0.0-alpha.27
+starfish-identities    >=3.0.0-alpha.27
+starfish-keyring       >=3.0.0-alpha.27
+starfish-protocol      >=3.0.0-alpha.27
+starfish-sharing       >=3.0.0-alpha.27
 ```
 
 ---
 
 ## `@drakkar.software/octospaces-ui`
 
-Shared React / React Native UI primitives. **Ships zero theme values.** The host app builds a concrete `Theme` object and injects it via `<OctoSpacesThemeProvider>`.
+Shared React Native UI primitives. **Ships zero theme values.** The host app builds a concrete `Theme` object and injects it via `<OctoSpacesThemeProvider>`. See the [full UI README](./packages/ts/octospaces-ui/README.md) for component docs.
 
 ### Setup
 
@@ -208,8 +201,8 @@ export default function App() {
 import { useOctoSpacesTheme } from '@drakkar.software/octospaces-ui';
 
 function MyComponent() {
-  const { colors, spacing, radii } = useOctoSpacesTheme();
-  return <View style={{ backgroundColor: colors.surface, padding: spacing[4] }} />;
+  const { theme } = useOctoSpacesTheme();
+  return <View style={{ backgroundColor: theme.colors.palette.surface, padding: theme.spacing.md }} />;
 }
 ```
 
