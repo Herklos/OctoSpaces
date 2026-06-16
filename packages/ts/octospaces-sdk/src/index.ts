@@ -45,6 +45,10 @@ export {
   keyringName,
   keyringPull,
   keyringPush,
+  nodeKeyringName,
+  nodeKeyringPull,
+  nodeKeyringPush,
+  nodeKeyringScope,
   objIndexName,
   objIndexPull,
   objIndexPush,
@@ -123,6 +127,16 @@ export {
   ensurePseudo,
 } from './sync/client.js';
 export type { DeviceKeys, PublicProfile } from './sync/client.js';
+
+// Per-node keyring (E2EE invite nodes — OctoDesk tickets)
+export {
+  ownerEnsureNodeKeyring,
+  openNodeEncryptor,
+  buildNodeEncryptor,
+  addNodeKeyringRecipient,
+  ensureNodeKeyringRecipient,
+} from './sync/node-keyring.js';
+export type { NodeKeyringRecipient } from './sync/node-keyring.js';
 
 // Identity / session
 export {

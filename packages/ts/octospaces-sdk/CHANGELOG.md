@@ -1,5 +1,25 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.12.5 (2026-06-16)
+
+### Added
+
+- **Per-node keyring primitive (E2EE tickets, Phase 1).** Each `invite+enc` node (e.g. an
+  OctoDesk ticket) can carry its OWN keyring at `spaces/{spaceId}/objects/n/{nodeId}/_keyring`
+  (collection `nodekeyring`), wrapping the content CEK to ONLY that node's participants —
+  not the space-wide keyring. An isolated external requester can therefore read/write their
+  ticket E2EE without ever holding the space key.
+  - New path helpers `nodeKeyringName/Pull/Push` and the single-collection, READ-only cap
+    scope `nodeKeyringScope(spaceId, nodeId)` (`['nodekeyring']`).
+  - New wrappers in `sync/node-keyring.ts`: `ownerEnsureNodeKeyring`, `openNodeEncryptor`,
+    `buildNodeEncryptor`, `addNodeKeyringRecipient`, and `ensureNodeKeyringRecipient` (which
+    enforces the `ensure`-before-`addRecipient` ordering invariant). These are thin
+    specialisations of the existing path-generic `ownerEnsureKeyring`/`openEncryptor`/
+    `buildEncryptor` + `addCollectionRecipient`, so the proven keyring crypto is unchanged.
+  - Requires the new `nodekeyring` collection in the Starfish server config
+    (`readRoles:["space:member","cap:read:nodekeyring"]`, `writeRoles:["space:member"]`,
+    `encryption:"none"`) — mirrored in OctoSpaces `apps/server` and Infra `collections.py`.
+
 ## 0.12.4 (2026-06-16)
 
 ### Fixed

@@ -31,6 +31,18 @@ export const keyringName = (spaceId: string) => `spaces/${spaceId}`;
 export const keyringPull = (spaceId: string) => pull(`${keyringName(spaceId)}/_keyring`);
 export const keyringPush = (spaceId: string) => push(`${keyringName(spaceId)}/_keyring`);
 
+// ── Per-node keyring (one keyring per E2EE invite node, e.g. an OctoDesk ticket) ─
+// Unlike the space-wide keyring, this CEK is wrapped only to the node's own
+// participants (requester + owner/bot + assigned agents) — an external requester
+// never touches the space key. Lives at `spaces/{spaceId}/objects/n/{nodeId}/_keyring`
+// (collection `nodekeyring`), a sibling of the node's `content` (objinv) and `log`
+// (objinvlog). `nodeKeyringName` is the `collectionName` arg to addCollectionRecipient;
+// appending `/_keyring` gives the storage path. Keep in sync with the `nodekeyring`
+// collection in apps/server AND Infra collections.py.
+export const nodeKeyringName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/n/${nodeId}`;
+export const nodeKeyringPull = (spaceId: string, nodeId: string) => pull(`${nodeKeyringName(spaceId, nodeId)}/_keyring`);
+export const nodeKeyringPush = (spaceId: string, nodeId: string) => push(`${nodeKeyringName(spaceId, nodeId)}/_keyring`);
+
 // ── Profile + registries ──────────────────────────────────────────────────────
 export const profilePull = (userId: string) => pull(`user/${userId}/profile`);
 export const profilePush = (userId: string) => push(`user/${userId}/profile`);
@@ -233,6 +245,22 @@ export function nodeStreamScope(spaceId: string, nodeId: string, canWrite: boole
   return {
     ops,
     collections: ['objinvlog'],
+    paths: [`spaces/${spaceId}/objects/n/${nodeId}/**`],
+  };
+}
+
+/**
+ * Narrow per-node cap for an `invite+enc` node's KEYRING (`nodekeyring`). The
+ * per-node keyring's CEK is wrapped to the node's participants; an isolated
+ * requester presents this cap to READ the keyring blob and decrypt content. It is
+ * deliberately READ-only: only the owner/bot/agents (as `space:member`) write the
+ * keyring, and a write scope reaching `<col>/_keyring` would also trip the cap-mint
+ * barrier. Single-collection, like every other `member` cap.
+ */
+export function nodeKeyringScope(spaceId: string, nodeId: string): ScopePreset {
+  return {
+    ops: ['read', 'list'],
+    collections: ['nodekeyring'],
     paths: [`spaces/${spaceId}/objects/n/${nodeId}/**`],
   };
 }
