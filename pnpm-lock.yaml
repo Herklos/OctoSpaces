@@ -109,6 +109,9 @@ importers:
       '@drakkar.software/starfish-sharing':
         specifier: 3.0.0-alpha.27
         version: 3.0.0-alpha.27(react@19.2.7)
+      '@drakkar.software/starfish-wal':
+        specifier: 3.0.0-alpha.27
+        version: 3.0.0-alpha.27
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.21
@@ -546,6 +549,9 @@ packages:
 
   '@drakkar.software/starfish-sharing@3.0.0-alpha.27':
     resolution: {integrity: sha512-TwVFmbHV+5jB47ZrGEhasVGDNaFkExdjulktmy4sYKwfiTSejns/kA5vQy0F1v/iARk3goneD0enpQaW3aqx4Q==}
+
+  '@drakkar.software/starfish-wal@3.0.0-alpha.27':
+    resolution: {integrity: sha512-5RxwXKuypsfgnwqqyxfYMyME+dlrJyfSJhxc8QxqqKMt2l9ZLDMabAX7ukexfkWy9npUiz2QAC2NKZZt65PLcg==}
 
   '@esbuild/aix-ppc64@0.27.7':
     resolution: {integrity: sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg==}
@@ -3724,6 +3730,10 @@ snapshots:
       - immer
       - react
       - zustand
+
+  '@drakkar.software/starfish-wal@3.0.0-alpha.27':
+    dependencies:
+      '@drakkar.software/starfish-protocol': 3.0.0-alpha.27
 
   '@esbuild/aix-ppc64@0.27.7':
     optional: true

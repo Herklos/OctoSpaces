@@ -108,6 +108,10 @@ export {
 export type { ByteSealer, AttachmentRef, AttachmentStore } from './sync/attachments.js';
 export { MAX_ATTACHMENT_BYTES, attachmentKind, createAttachmentStore } from './sync/attachments.js';
 
+// Object blobs (sealed files keyed by space, e.g. for vault objects)
+export type { ObjectBlobRef, ObjectBlobStore } from './sync/object-blobs.js';
+export { MAX_OBJECT_BLOB_BYTES, FileTooLargeError, uploadObjectBlob, loadObjectBlob, createObjectBlobStore } from './sync/object-blobs.js';
+
 // Client
 export {
   makeClient,
@@ -266,7 +270,7 @@ export type { PublicObjectDirEntry } from './spaces/object-directory.js';
 
 // Pairing
 export { startDevicePairing, completeDevicePairing, PAIR_PREFIX } from './sync/pairing.js';
-export type { PairResult } from './sync/pairing.js';
+export type { PairResult, StartPairingOptions } from './sync/pairing.js';
 
 // Pull cache
 export { pullCache, PULL_CACHE_MAX_AGE_MS } from './sync/pull-cache.js';

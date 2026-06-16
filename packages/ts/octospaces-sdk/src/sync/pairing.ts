@@ -38,6 +38,23 @@ function randomNonce(): string {
   return bytesToHex(b);
 }
 
+export interface StartPairingOptions {
+  /**
+   * QR-payload prefix to embed in the returned string.
+   * Default: `PAIR_PREFIX` (`octospaces-pair:`).
+   * Apps may use their own prefix (e.g. `octochat-pair:`) to namespace QR scans.
+   * `completeDevicePairing` accepts any `*-pair:` payload via its dual-accept logic.
+   */
+  prefix?: string;
+  /**
+   * Called once provisioning is complete, before the sealed blob is published.
+   * Use this hook to grant the new device access to space keyrings (for owned
+   * spaces) so it can decrypt E2EE content immediately after pairing completes.
+   * Best-effort: a thrown error inside the hook is propagated and aborts the push.
+   */
+  onProvisioned?: (device: { kemPub: string; edPub: string; userId: string }) => void | Promise<void>;
+}
+
 /**
  * Existing device: provision + PIN-seal a new device, publish to rendezvous, return
  * the QR payload.
@@ -47,17 +64,23 @@ function randomNonce(): string {
  * encrypts ALL `enc` nodes in a space — one call per space unlocks everything.
  * Plaintext (`space` / `public`) nodes are immediately accessible via the linked-device
  * cap-cert (no extra keyring step).
+ *
+ * Pass `opts.onProvisioned` to run post-provision side-effects (e.g. keyring grants)
+ * before the rendezvous blob is published. Pass `opts.prefix` to override the QR prefix.
  */
-export async function startDevicePairing(session: Session, pin: string): Promise<string> {
+export async function startDevicePairing(session: Session, pin: string, opts?: StartPairingOptions): Promise<string> {
   const { deviceKeys, bundle } = await provisionDevice(
     { edPriv: session.keys.edPriv, edPub: session.keys.edPub },
     { scope: linkedDeviceScope(session.userId), ttlSec: LINKED_DEVICE_TTL_SEC },
   );
+  if (opts?.onProvisioned) {
+    await opts.onProvisioned({ kemPub: deviceKeys.kemPub, edPub: deviceKeys.edPub, userId: session.userId });
+  }
   const blob = JSON.stringify({ v: 1, keys: deviceKeys, bundle });
   const sealed = await sealWithPassphrase(pin, new TextEncoder().encode(blob));
   const nonce = randomNonce();
   await anonClient().push(`/push/_pairing/${nonce}`, sealed as unknown as Record<string, unknown>, null);
-  return `${PAIR_PREFIX}${nonce}.${session.keys.edPub}`;
+  return `${opts?.prefix ?? PAIR_PREFIX}${nonce}.${session.keys.edPub}`;
 }
 
 export interface PairResult {
