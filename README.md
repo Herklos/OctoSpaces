@@ -23,6 +23,7 @@
 | Package | Version | Description |
 |---|---|---|
 | [`@drakkar.software/octospaces-sdk`](./packages/ts/octospaces-sdk) | `0.10.0` | Headless spaces core — identity, sync, objects, registry |
+| [`@drakkar.software/octospaces-platform-sdk`](./packages/ts/octospaces-platform-sdk) | `0.1.0` | Platform adapters — KV, vault storage, passkey, crypto setup |
 | [`@drakkar.software/octospaces-ui`](./packages/ts/octospaces-ui) | `0.4.3` | Shared UI primitives — sidebar, discover, lightbox, theme |
 
 **Python**
@@ -56,6 +57,13 @@ octospaces/
 │   │   │       ├── prefs/           # mutes + read-marks stores
 │   │   │       ├── format/          # formatting utilities
 │   │   │       └── utils/           # search ranking, live-sync bus, invite preview
+│   │   ├── octospaces-platform-sdk/ # platform adapters (KV, vault, passkey, crypto)
+│   │   │   └── src/
+│   │   │       ├── platform(.native).ts   # crypto setup
+│   │   │       ├── kv(.native).ts         # KV store
+│   │   │       ├── storage(.native).ts    # vault storage
+│   │   │       ├── passkey(.native).ts    # WebAuthn PRF / stubs
+│   │   │       └── hash-wasm-shim.ts      # Argon2id shim for Hermes
 │   │   └── octospaces-ui/           # UI primitives
 │   │       └── src/
 │   │           ├── theme/           # Palette/Theme types, provider, hook, helpers
