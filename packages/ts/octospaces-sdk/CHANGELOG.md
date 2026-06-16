@@ -1,5 +1,16 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.12.2 (2026-06-16)
+
+### Removed
+
+- **`sync/attachments.ts` deleted** — the legacy `attachments` collection is gone from
+  all octospaces deploys. `ByteSealer` and `attachmentKind` are now exported directly
+  from `./sync/object-blobs.ts` (same public API surface, new home).
+  `AttachmentRef`, `AttachmentStore`, `MAX_ATTACHMENT_BYTES`, `createAttachmentStore`,
+  `attachmentName`, `attachmentPull`, `attachmentPush` are fully removed.
+  Consumers must migrate to `createObjectBlobStore` (introduced in 0.12.1).
+
 ## 0.12.1 (2026-06-16)
 
 ### Changed

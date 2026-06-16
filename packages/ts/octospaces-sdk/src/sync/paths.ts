@@ -31,13 +31,6 @@ export const keyringName = (spaceId: string) => `spaces/${spaceId}`;
 export const keyringPull = (spaceId: string) => pull(`${keyringName(spaceId)}/_keyring`);
 export const keyringPush = (spaceId: string) => push(`${keyringName(spaceId)}/_keyring`);
 
-// ── Attachments (sealed blobs, in a per-space subtree keyed by room) ──────────
-/** Storage path of one attachment blob — also the AAD bound into its seal. */
-export const attachmentName = (roomId: string, blobId: string) =>
-  `spaces/${spaceIdFromRoomId(roomId)}/attachments/${roomId}/${blobId}`;
-export const attachmentPull = (roomId: string, blobId: string) => pull(attachmentName(roomId, blobId));
-export const attachmentPush = (roomId: string, blobId: string) => push(attachmentName(roomId, blobId));
-
 // ── Profile + registries ──────────────────────────────────────────────────────
 export const profilePull = (userId: string) => pull(`user/${userId}/profile`);
 export const profilePush = (userId: string) => push(`user/${userId}/profile`);

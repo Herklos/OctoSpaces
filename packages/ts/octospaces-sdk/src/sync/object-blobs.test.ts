@@ -7,7 +7,7 @@ import {
   createObjectBlobStore,
   type ObjectBlobRef,
 } from './object-blobs.js';
-import type { ByteSealer } from './attachments.js';
+import type { ByteSealer } from './object-blobs.js';
 import { configureKv } from '../core/adapters.js';
 
 // ── Fakes ────────────────────────────────────────────────────────────────────

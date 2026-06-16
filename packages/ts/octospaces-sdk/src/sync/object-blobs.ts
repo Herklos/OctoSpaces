@@ -16,8 +16,16 @@
 import { getBase64 } from '@drakkar.software/starfish-protocol';
 import type { StarfishClient } from '@drakkar.software/starfish-client';
 
-import type { ByteSealer } from './attachments.js';
 import { kvGet, kvRemove, kvSet } from '../core/adapters.js';
+
+export interface ByteSealer {
+  sealBytes(bytes: Uint8Array, aad?: string): Promise<Uint8Array>;
+  openBytes(blob: Uint8Array, aad?: string): Promise<Uint8Array>;
+}
+
+export function attachmentKind(mime: string): 'image' | 'file' {
+  return mime.startsWith('image/') ? 'image' : 'file';
+}
 import { objectBlobName, objectBlobPull, objectBlobPush } from './paths.js';
 import { randomId } from '../core/ids.js';
 

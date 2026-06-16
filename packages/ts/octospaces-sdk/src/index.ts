@@ -96,21 +96,14 @@ export {
   typesIndexName,
   typesIndexPull,
   typesIndexPush,
-  attachmentName,
-  attachmentPull,
-  attachmentPush,
   spaceIdFromRoomId,
   userIdFromEdPub,
   bytesToHex,
 } from './sync/paths.js';
 
-// Attachments
-export type { ByteSealer, AttachmentRef, AttachmentStore } from './sync/attachments.js';
-export { MAX_ATTACHMENT_BYTES, attachmentKind, createAttachmentStore } from './sync/attachments.js';
-
-// Object blobs (sealed files keyed by space — replaces the deprecated attachments collection)
-export type { ObjectBlobRef, ObjectBlobStore } from './sync/object-blobs.js';
-export { MAX_OBJECT_BLOB_BYTES, FileTooLargeError, uploadObjectBlob, loadObjectBlob, createObjectBlobStore } from './sync/object-blobs.js';
+// Object blobs (sealed files keyed by space)
+export type { ByteSealer, ObjectBlobRef, ObjectBlobStore } from './sync/object-blobs.js';
+export { attachmentKind, MAX_OBJECT_BLOB_BYTES, FileTooLargeError, uploadObjectBlob, loadObjectBlob, createObjectBlobStore } from './sync/object-blobs.js';
 
 // Client
 export {
