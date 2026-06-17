@@ -1,5 +1,36 @@
 # Changelog — @drakkar.software/octospaces-ui
 
+## 0.7.0
+
+### BREAKING — generic `specialTiles` API replaces DM-specific rail props
+
+**`SpacesRail`:** the DM-specific props `onSelectDms`, `dmsActive`, `dmUnread`, and
+`dmLabel` have been **removed**. They are replaced by a generic
+`specialTiles?: RailSpecialTile[]` prop that covers any pinned non-space tile (Notes,
+DMs, Inbox, …). Each `RailSpecialTile` carries `key`, `icon`, `onPress`, `active?`,
+`unread?`, and `label?`.
+
+**Migration** (e.g. OctoChat):
+```diff
+- onSelectDms={openDms}
+- dmsActive={isDmHome}
+- dmUnread={dmUnread}
+- dmLabel={DM_HOME_NAME}
++ specialTiles={[{
++   key: 'dm', icon: 'dm',
++   active: isDmHome, unread: dmUnread,
++   label: DM_HOME_NAME,
++   onPress: openDms,
++ }]}
+```
+
+**`RailIconName`:** `'notes'` added. The `'dm'` value is retained so DM tiles can still
+be rendered via the new `specialTiles` API.
+
+**`RailSpecialTile`** type exported from the package.
+
+---
+
 ## 0.6.0
 
 ### New `calendar/` module — `MonthGrid`, `buildMonthMatrix`, `bucketEventsByDay`, `matrixDayKey`

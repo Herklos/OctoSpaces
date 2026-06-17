@@ -21,4 +21,19 @@ export interface RailSpace {
 }
 
 /** Named icon slots injected into the rail via `SpacesRailProps.renderIcon`. */
-export type RailIconName = 'dm' | 'lock' | 'mute' | 'add';
+export type RailIconName = 'dm' | 'lock' | 'mute' | 'add' | 'notes';
+
+/** A pinned non-space tile (Notes, DMs, …) rendered above the space tiles. */
+export interface RailSpecialTile {
+  /** Stable React key. */
+  key: string;
+  /** Glyph slot — rendered by the host via `renderIcon`. */
+  icon: RailIconName;
+  onPress: () => void;
+  /** Highlight this tile when its destination is the active route. */
+  active?: boolean;
+  /** Unread count badge (omit when there is no unread concept). */
+  unread?: number;
+  /** Accessibility label for the tile. */
+  label?: string;
+}

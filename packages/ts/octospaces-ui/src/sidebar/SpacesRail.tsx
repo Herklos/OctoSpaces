@@ -24,7 +24,7 @@ import type { PressableProps, View as RNView } from 'react-native';
 import { useOctoSpacesTheme } from '../theme/provider.js';
 import { railTileState } from './tile-state.js';
 import type { RailTileTokens } from './tile-state.js';
-import type { RailIconName, RailSpace } from './types.js';
+import type { RailIconName, RailSpace, RailSpecialTile } from './types.js';
 
 // ── Pressable with web hover events ───────────────────────────────────────────
 
@@ -48,21 +48,18 @@ export interface SpacesRailProps {
   onSelect?: (id: string) => void;
   /** Called when the user taps the "add" tile. */
   onAdd?: () => void;
-  /** When provided, renders a leading DM-home tile. */
-  onSelectDms?: () => void;
-  /** Whether the DM-home tile is the active selection. */
-  dmsActive?: boolean;
-  /** Unread count for the DM-home tile badge. */
-  dmUnread?: number;
-  /** Accessibility label for the DM-home tile (default: "Direct messages"). */
-  dmLabel?: string;
+  /**
+   * Special tiles pinned above the space tiles (Notes, DMs, Inbox, …).
+   * Rendered in array order before the scrollable space tiles.
+   */
+  specialTiles?: RailSpecialTile[];
   /** Accessibility label for the add-space tile (default: "Create or join a space"). */
   addLabel?: string;
   /**
-   * Render a named icon at the given size and color. Used for the DM tile icon
-   * (`'dm'`), the E2EE lock corner (`'lock'`), the mute corner (`'mute'`),
-   * and the add tile icon (`'add'`). Return `null` to suppress the icon slot.
-   * If omitted, all icon slots render nothing.
+   * Render a named icon at the given size and color. Used for special tile icons
+   * (`'dm'`, `'notes'`, …), the E2EE lock corner (`'lock'`), the mute corner
+   * (`'mute'`), and the add tile icon (`'add'`). Return `null` to suppress the
+   * icon slot. If omitted, all icon slots render nothing.
    */
   renderIcon?: (name: RailIconName, size: number, color: string) => React.ReactNode;
   /**
@@ -381,11 +378,102 @@ const DndTile = React.memo(function DndTile({
   );
 });
 
+// ── SpecialTile — a pinned non-space tile (Notes, DMs, …) ─────────────────────
+
+interface SpecialTileProps {
+  tile: RailSpecialTile;
+  tokens: RailTileTokens;
+  radiusActive: number;
+  radiusDefault: number;
+  showLockCorner?: boolean;
+  cornerBg: string;
+  cornerBorder: string;
+  renderIcon?: SpacesRailProps['renderIcon'];
+  renderBadge?: SpacesRailProps['renderBadge'];
+}
+
+const SpecialTile = React.memo(function SpecialTile({
+  tile,
+  tokens,
+  radiusActive,
+  radiusDefault,
+  showLockCorner,
+  cornerBg,
+  cornerBorder,
+  renderIcon,
+  renderBadge,
+}: SpecialTileProps) {
+  const [hovered, setHovered] = useState(false);
+  const s = railTileState(
+    { active: tile.active ?? false, hovered, over: false },
+    tokens,
+    radiusActive,
+    radiusDefault,
+  );
+  const iconColor = tile.active
+    ? tokens.textOnPrimary
+    : hovered
+    ? tokens.railTileHoverInk
+    : tokens.textSecondary;
+
+  return (
+    <View style={{ position: 'relative' }}>
+      <Pressable
+        onPress={tile.onPress}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        accessibilityRole="button"
+        accessibilityLabel={tile.label ?? tile.icon}
+        style={{
+          width: TILE_SIZE,
+          height: TILE_SIZE,
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: s.radius,
+          backgroundColor: s.bg,
+          borderWidth: s.borderWidth,
+          borderColor: s.borderColor,
+          ...(s.shadow ?? {}),
+        }}
+      >
+        {renderIcon ? renderIcon(tile.icon, 20, iconColor) : null}
+      </Pressable>
+      {/* Lock corner (bottom-right) */}
+      {showLockCorner && renderIcon ? (
+        <View
+          style={{
+            position: 'absolute',
+            bottom: CORNER_OFFSET,
+            right: CORNER_OFFSET,
+            width: CORNER_SIZE,
+            height: CORNER_SIZE,
+            borderRadius: CORNER_SIZE / 2,
+            borderWidth: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: cornerBg,
+            borderColor: cornerBorder,
+          }}
+        >
+          {renderIcon('lock', 9, tokens.textTertiary)}
+        </View>
+      ) : null}
+      {/* Unread badge (top-right) */}
+      {tile.unread ? (
+        <View style={{ position: 'absolute', top: BADGE_OFFSET, right: BADGE_OFFSET }}>
+          {renderBadge ? renderBadge(tile.unread) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+});
+
 // ── SpacesRail ─────────────────────────────────────────────────────────────────
 
 /**
- * Vertical spaces rail — a 64px-wide column of square space tiles, a DM-home tile,
- * an add-space tile, and a pinned foot for the account widget.
+ * Vertical spaces rail — a 64px-wide column of square space tiles, optional pinned
+ * special tiles (Notes, DMs, …), an add-space tile, and a pinned foot for the
+ * account widget.
  *
  * Styled entirely from the injected {@link Theme} via `useOctoSpacesTheme()`.
  * All icons, images, badges, and the account foot are provided by the host app.
@@ -395,10 +483,7 @@ export function SpacesRail({
   activeId,
   onSelect,
   onAdd,
-  onSelectDms,
-  dmsActive = false,
-  dmUnread,
-  dmLabel = 'Direct messages',
+  specialTiles,
   addLabel = 'Create or join a space',
   renderIcon,
   renderTileImage,
@@ -447,18 +532,6 @@ export function SpacesRail({
     lineHeight: footnoteLineH,
   }), [tokens, radiusActive, radiusDefault, renderIcon, renderTileImage, renderBadge, showLockCorner, cornerBg, cornerBorder, monoFont, footnoteSize, footnoteLineH]);
 
-  // DM tile hover state (managed here since DM tile is inline, not a separate component).
-  const [dmHovered, setDmHovered] = useState(false);
-
-  const dmTileStyle = railTileState(
-    { active: dmsActive, hovered: dmHovered, over: false },
-    tokens,
-    radiusActive,
-    radiusDefault,
-  );
-
-  const dmIconColor = dmsActive ? colors.textOnPrimary : dmHovered ? tokens.railTileHoverInk : colors.textSecondary;
-
   // Add-tile hover state.
   const [addHovered, setAddHovered] = useState(false);
 
@@ -487,57 +560,21 @@ export function SpacesRail({
         }}
         showsVerticalScrollIndicator={false}
       >
-        {/* DM-home tile (pinned first when provided) */}
-        {onSelectDms ? (
-          <View style={{ position: 'relative' }}>
-            <Pressable
-              onPress={onSelectDms}
-              onMouseEnter={() => setDmHovered(true)}
-              onMouseLeave={() => setDmHovered(false)}
-              accessibilityRole="button"
-              accessibilityLabel={dmLabel}
-              style={{
-                width: TILE_SIZE,
-                height: TILE_SIZE,
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRadius: dmTileStyle.radius,
-                backgroundColor: dmTileStyle.bg,
-                borderWidth: dmTileStyle.borderWidth,
-                borderColor: dmTileStyle.borderColor,
-                ...(dmTileStyle.shadow ?? {}),
-              }}
-            >
-              {renderIcon ? renderIcon('dm', 20, dmIconColor) : null}
-            </Pressable>
-            {/* Lock corner */}
-            {showLockCorner && renderIcon ? (
-              <View
-                style={{
-                  position: 'absolute',
-                  bottom: CORNER_OFFSET,
-                  right: CORNER_OFFSET,
-                  width: CORNER_SIZE,
-                  height: CORNER_SIZE,
-                  borderRadius: CORNER_SIZE / 2,
-                  borderWidth: 1,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: cornerBg,
-                  borderColor: cornerBorder,
-                }}
-              >
-                {renderIcon('lock', 9, tokens.textTertiary)}
-              </View>
-            ) : null}
-            {/* DM unread badge */}
-            {dmUnread ? (
-              <View style={{ position: 'absolute', top: BADGE_OFFSET, right: BADGE_OFFSET }}>
-                {renderBadge ? renderBadge(dmUnread) : null}
-              </View>
-            ) : null}
-          </View>
-        ) : null}
+        {/* Special tiles (Notes, DMs, …) pinned above the space tiles */}
+        {specialTiles?.map((t) => (
+          <SpecialTile
+            key={t.key}
+            tile={t}
+            tokens={tokens}
+            radiusActive={radiusActive}
+            radiusDefault={radiusDefault}
+            showLockCorner={showLockCorner}
+            cornerBg={cornerBg}
+            cornerBorder={cornerBorder}
+            renderIcon={renderIcon}
+            renderBadge={renderBadge}
+          />
+        ))}
 
         {/* Space tiles */}
         {spaces.map((s) =>

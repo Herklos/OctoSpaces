@@ -55,7 +55,7 @@ export { DiscoverScreen } from './discover/DiscoverScreen.js';
 // AND the sidebar panel shell + header strip (Sidebar / SidebarHeader / SidebarItem).
 // Headless: icons, images, badges and the account foot are injected via props so
 // the package stays free of expo-image / @expo/vector-icons / reanimated.
-export type { RailSpace, RailIconName } from './sidebar/types.js';
+export type { RailSpace, RailIconName, RailSpecialTile } from './sidebar/types.js';
 export type { SpacesRailProps } from './sidebar/SpacesRail.js';
 export { SpacesRail } from './sidebar/SpacesRail.js';
 export type { SidebarProps } from './sidebar/Sidebar.js';
