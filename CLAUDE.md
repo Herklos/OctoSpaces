@@ -42,8 +42,12 @@ Worktrees do NOT have node_modules — point to `<main-repo>/node_modules/.bin/<
 
 ## Key security invariants (enforced in code)
 - `acceptResourceRequest` MUST call `inviteToNode` with `{ isolated: true }` — otherwise requesters receive space-wide caps (H1 fix)
-- `inviteToSpace` / `inviteToNode` / `scanResourceRequests` MUST verify `userId === await userIdFromEdPub(edPub)` before trusting a requester's userId (M2 fix)
+- `inviteToSpace` / `inviteToNode` / `scanResourceRequests` MUST verify `userId === await userIdFromEdPub(edPub)` before trusting a requester's userId (I1/M2 fix)
+- `inviteToSpace` / `inviteToNode` / `scanResourceRequests` MUST verify `kemSig` (Ed25519 sig of kemPub by edPriv) before using kemPub — prevents MITM kemPub substitution (K4/I2 fix)
 - Pairing rendezvous push MUST be hash-guarded (pull baseHash first); slot MUST be cleared after `completeDevicePairing` (H2 fix)
 - Identity links are v:2 — kemPub is signed by edPriv (`kemSig`); `verifyIdentityLinkBinding` verifies BOTH ownerId and kemSig offline (M3 fix)
-- Inbox seals use AES-GCM AAD = `octospaces:inbox:v1:${recipientUserId}`; resource-request/grant/reject must pass this context (M1 fix)
+- Inbox seals use AES-GCM AAD = `octospaces:inbox:v1:${recipientUserId}:${shard}`; resource-request/grant/reject must pass this context (M1+S3 fix — shard-bound since 0.12.9)
+- `removeNodeKeyringRecipient` is **rotate-only** (forward secrecy). For full eviction use `revokeNodeAccess(session, spaceId, nodeId, userId)` from `spaces/nodes.ts` which calls `evictMember` (keyring rotation + cap revocation via POST /revocations) — K1 fix
+- `inviteToNode(isolated+enc)` auto-stores cap nonces in `nodeInviteStore`; `revokeNodeAccess` reads from it — do NOT use `revokeNodeAccess` without a prior `inviteToNode` or `saveNodeInviteEntry` call
+- `NodeInviteBundle.kind` MUST be a valid `NodeInviteKind` ('plaintext' | 'space-enc' | 'node-enc'); `acceptNodeInvite` rejects unknown kinds (I3 fix)
 - `_MAX_AUTHORIZED_SPACES = _MAX_CANDIDATES // 2` lives in the Infra Python backend (not in this repo) — do not hunt for it here
