@@ -21,6 +21,7 @@ import { ed25519 } from '@noble/curves/ed25519.js';
 
 import type { Space } from '../core/types.js';
 import type { Session } from '../sync/identity.js';
+import { ownerTrustedAdders } from '../sync/identity.js';
 import {
   getSpaceAccessEntry,
   hydrateSpaceAccessStore,
@@ -90,7 +91,7 @@ export async function inviteToSpace(
   // Ensure the space-wide keyring exists (creates it with only the owner if absent),
   // then add the invitee as a recipient so they can decrypt enc nodes from the start.
   // ownerEnsureKeyring is a no-op if the keyring already exists.
-  await ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId));
+  await ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId), ownerTrustedAdders(session));
   await addSpaceKeyringRecipient(session, spaceId, { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, 8) });
 
   // NOTE: 'chat' is the cap collection the deployed server's space-member enricher recognises.
@@ -204,7 +205,7 @@ export async function createSpaceInviteLink(
   await addSpaceMember(session.accountClient, spaceId, session.userId, ephemeralUserId);
 
   // Ensure the keyring exists, then add the ephemeral KEM so link-bearers can decrypt enc content.
-  await ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId));
+  await ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId), ownerTrustedAdders(session));
   await addSpaceKeyringRecipient(session, spaceId, { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, 8) });
 
   const token: SpaceInviteLinkToken = {

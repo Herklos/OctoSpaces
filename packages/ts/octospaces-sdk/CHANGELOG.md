@@ -1,5 +1,29 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.12.10 (2026-06-17)
+
+### Fixes
+
+- **Space keyring `trustedAdders` corrected for paired devices.** `ownerEnsureKeyring`
+  calls in `inviteToSpace` and `createSpaceInviteLink` now pass `ownerTrustedAdders(session)`
+  (the owner + paired-device key pair) instead of defaulting to only the current device's key.
+  `addSpaceKeyringRecipient` derives trusted adders from `session.ownerEdPub` so rotation on a
+  non-root paired device no longer silently drops recipients added by the root device.
+
+- **`nodeInviteStore` serialization helpers.** New `serializeNodeInviteStore()` and
+  `hydrateNodeInviteStore(entries)` exports let callers persist the invite-nonce store
+  (e.g. to IndexedDB or AsyncStorage) and restore it on startup — preventing revocation
+  from becoming impossible after a page reload or process restart.
+
+- **`node-keyring.ts`: internal `revokeNodeAccess` renamed to `revokeNodeKeyringRecipients`**
+  to avoid confusion with the higher-level `revokeNodeAccess` exported from `spaces/nodes.ts`.
+  The lower-level function was never in `index.ts`; only path-import callers are affected.
+
+- **`revokeNodeKeyringRecipients` generation default changed to `Date.now()` (milliseconds)**
+  from `Math.floor(Date.now() / 1000)` (seconds). Two revocations within the same wall-clock
+  second no longer produce a duplicate generation number that the server's monotonicity check
+  would reject.
+
 ## 0.12.9 (2026-06-17)
 
 ### Security fixes

@@ -58,7 +58,7 @@ import {
   ensureNodeKeyringRecipient,
   removeNodeKeyringRecipient,
   listNodeKeyringRecipients,
-  revokeNodeAccess,
+  revokeNodeKeyringRecipients as revokeNodeAccess,
 } from './node-keyring.js';
 import {
   nodeKeyringName,
@@ -300,15 +300,15 @@ describe('device session uses ownerTrustedAdders (owner + device)', () => {
   });
 });
 
-// ── revokeNodeAccess — full eviction (rotate + revoke) ───────────────────────
+// ── revokeNodeKeyringRecipients — full eviction (rotate + revoke) ────────────────
 //
 // removeNodeKeyringRecipient only rotates the epoch (forward secrecy) — it never
 // revokes the removed party's cap. The removed requester keeps a valid cap and
-// can still read/write the node stream. revokeNodeAccess fixes this by composing
-// keyring rotation (removeNodeKeyringRecipient) with a signed RevocationList
+// can still read/write the node stream. revokeNodeKeyringRecipients fixes this by
+// composing keyring rotation (removeNodeKeyringRecipient) with a signed RevocationList
 // submission — invalidating every cap for the evicted subjects server-side.
 
-describe('revokeNodeAccess composes rotation + cap revocation', () => {
+describe('revokeNodeKeyringRecipients composes rotation + cap revocation', () => {
   const revokedSubjects: RevokedSubject[] = [
     { sub: 'bob-ed-pub', exp: 9999999999 },
   ];

@@ -1,5 +1,22 @@
 # Changelog — @drakkar.software/octospaces-ui
 
+## 0.7.1
+
+### Fixes
+
+- **`Radii` type narrowed to `Record<string, number>`.** The previous `number | string`
+  union allowed string values like `'8px'` which React Native rejects at render time.
+  Host apps must supply numeric pixel values only (they already did in practice).
+
+- **`SpacesRail`: `tokens` now memoized.** `resolveRailTokens(theme)` returned a new object
+  reference on every render, causing `tileShared` to always invalidate and `React.memo` on
+  `PlainTile`, `DndTile`, and `SpecialTile` to be a no-op. Now memoized on `theme`.
+
+- **`DiscoverScreen`: `reloadRef` wired via `useEffect` instead of `useImperativeHandle`.**
+  `useImperativeHandle` is designed for `forwardRef`-forwarded refs; using it with a plain
+  prop `RefObject` caused `readonly` TypeScript errors on strict configs. The behaviour is
+  identical at runtime.
+
 ## 0.7.0
 
 ### BREAKING — generic `specialTiles` API replaces DM-specific rail props

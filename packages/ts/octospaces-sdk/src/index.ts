@@ -263,6 +263,8 @@ export {
   saveNodeInviteEntry,
   getNodeInviteEntry,
   clearNodeInviteStore,
+  serializeNodeInviteStore,
+  hydrateNodeInviteStore,
 } from './spaces/nodes.js';
 export type { CreateNodeInput, NodeInviteBundle, NodeInviteKind, NodeInviteLinkToken, StoredNodeInvite } from './spaces/nodes.js';
 

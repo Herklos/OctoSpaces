@@ -213,10 +213,10 @@ async function defaultSubmitRevocation(list: RevocationList): Promise<void> {
  * `opts.generation` MUST be strictly greater than any prior generation submitted
  * by this issuer (`session.keys.edPub`). The server rejects out-of-order lists.
  * Callers should persist the last-used generation and increment it. If omitted,
- * the current unix-second timestamp is used (sufficient when revocations are
- * spaced more than 1 second apart; use an explicit counter for burst scenarios).
+ * the current millisecond timestamp is used (safe for burst revocations within the
+ * same second; use an explicit counter for very high-frequency scenarios).
  */
-export async function revokeNodeAccess(
+export async function revokeNodeKeyringRecipients(
   session: Session,
   spaceId: string,
   nodeId: string,
@@ -237,7 +237,7 @@ export async function revokeNodeAccess(
   if (!opts.revokedSubjects || opts.revokedSubjects.length === 0) {
     return { newEpoch, revoked: false };
   }
-  const generation = opts.generation ?? Math.floor(Date.now() / 1000);
+  const generation = opts.generation ?? Date.now();
   const list = buildRevocationList({
     issEdPubHex: session.keys.edPub,
     issEdPrivHex: session.keys.edPriv,

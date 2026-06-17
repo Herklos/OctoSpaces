@@ -497,7 +497,9 @@ export function SpacesRail({
   const t = useTokens();
   const { colors, type: typeScale, fonts } = theme;
 
-  const tokens = resolveRailTokens(theme);
+  // Memoize so the reference is stable when `theme` hasn't changed — prevents
+  // `tileShared` from invalidating and React.memo on tile components from firing.
+  const tokens = useMemo(() => resolveRailTokens(theme), [theme]);
 
   // Layout constants with fallbacks for hosts that haven't set them.
   const railWidth = t.lay('railWidth');

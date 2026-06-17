@@ -112,6 +112,23 @@ export function clearNodeInviteStore(): void {
   nodeInviteStore.clear();
 }
 
+/**
+ * Serialize the in-memory invite store so callers can persist it across reloads
+ * (IndexedDB, AsyncStorage, etc.) and later restore it via `hydrateNodeInviteStore`.
+ */
+export function serializeNodeInviteStore(): Array<[string, StoredNodeInvite]> {
+  return [...nodeInviteStore.entries()];
+}
+
+/**
+ * Restore previously-serialized invite entries into the in-memory store.
+ * Call on app startup before any `revokeNodeAccess` call to ensure revocation
+ * remains possible after a page reload or process restart.
+ */
+export function hydrateNodeInviteStore(entries: Array<[string, StoredNodeInvite]>): void {
+  for (const [k, v] of entries) nodeInviteStore.set(k, v);
+}
+
 // ── createNode ────────────────────────────────────────────────────────────────
 
 export interface CreateNodeInput {

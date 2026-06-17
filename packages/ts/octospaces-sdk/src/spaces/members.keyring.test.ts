@@ -169,6 +169,22 @@ describe('inviteToSpace — keyring ordering and error handling', () => {
     expect(pushPath).toContain('sp-1');
   });
 
+  it('ownerEnsureKeyring receives ownerTrustedAdders (root device: single key)', async () => {
+    // mockSession.ownerEdPub equals keys.edPub → single-element trustedAdders
+    const rootSession = { ...mockSession, ownerEdPub: 'alice-ed-pub' } as unknown as Session;
+    await inviteToSpace(rootSession, 'sp-1', bobRequest);
+    const [, , , , trustedAdders] = vi.mocked(ownerEnsureKeyring).mock.calls[0]!;
+    expect(trustedAdders).toEqual(['alice-ed-pub']);
+  });
+
+  it('ownerEnsureKeyring receives ownerTrustedAdders (paired device: both keys)', async () => {
+    // ownerEdPub differs from keys.edPub → two-element trustedAdders
+    const pairedSession = { ...mockSession, ownerEdPub: 'root-ed-pub' } as unknown as Session;
+    await inviteToSpace(pairedSession, 'sp-1', bobRequest);
+    const [, , , , trustedAdders] = vi.mocked(ownerEnsureKeyring).mock.calls[0]!;
+    expect(trustedAdders).toEqual(['root-ed-pub', 'alice-ed-pub']);
+  });
+
   it('addCollectionRecipient is called with the correct invitee KEM and userId', async () => {
     await inviteToSpace(mockSession, 'sp-1', bobRequest);
 

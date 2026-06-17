@@ -17,7 +17,7 @@
  *   idle → loading → (ready | error)
  *   Any pull of `loadEntries` updates the entries; errors show a retry button.
  */
-import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, TextInput, View, type TextStyle } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
@@ -124,7 +124,15 @@ export function DiscoverScreen({
   }, [loadEntries]);
 
   // Expose handleRefresh via reloadRef so a host can trigger a soft reload on focus.
-  useImperativeHandle(reloadRef, () => handleRefresh, [handleRefresh]);
+  // useEffect is used instead of useImperativeHandle because reloadRef is a plain prop
+  // ref (not forwarded via forwardRef), and RefObject.current is readonly in React 18 types.
+  useEffect(() => {
+    if (!reloadRef) return;
+    (reloadRef as React.MutableRefObject<(() => void) | null>).current = handleRefresh;
+    return () => {
+      (reloadRef as React.MutableRefObject<(() => void) | null>).current = null;
+    };
+  }, [reloadRef, handleRefresh]);
 
   useEffect(() => {
     cancelledRef.current = false;

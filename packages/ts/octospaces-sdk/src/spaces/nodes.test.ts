@@ -119,6 +119,10 @@ import {
   inviteToNode,
   acceptNodeInvite,
   createNodeInviteLink,
+  clearNodeInviteStore,
+  saveNodeInviteEntry,
+  serializeNodeInviteStore,
+  hydrateNodeInviteStore,
 } from './nodes.js';
 import { ownerEnsureKeyring } from '../sync/client.js';
 import { ensureNodeKeyringRecipient } from '../sync/node-keyring.js';
@@ -784,5 +788,55 @@ describe('acceptNodeInvite rejects unknown bundle kind', () => {
       nodeCap: { kind: 'member', sub: 'pub' },
     });
     await expect(acceptNodeInvite(makeSession(), bundle)).resolves.toBe('n-42');
+  });
+});
+
+// ── serializeNodeInviteStore / hydrateNodeInviteStore ─────────────────────────
+
+describe('serializeNodeInviteStore / hydrateNodeInviteStore', () => {
+  beforeEach(() => clearNodeInviteStore());
+
+  it('serialize returns empty array when store is empty', () => {
+    expect(serializeNodeInviteStore()).toEqual([]);
+  });
+
+  it('serialize captures saved entries', () => {
+    saveNodeInviteEntry('sp-1', 'node-1', 'user-1', {
+      edPub: 'ed-pub-1',
+      kemPub: 'kem-pub-1',
+      caps: { keyring: { nonce: 'nonce-kr', exp: 9999 } },
+    });
+    const entries = serializeNodeInviteStore();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]![0]).toBe('sp-1:node-1:user-1');
+    expect(entries[0]![1]).toMatchObject({ edPub: 'ed-pub-1', kemPub: 'kem-pub-1' });
+  });
+
+  it('hydrate restores entries cleared from the in-memory store (simulates reload)', () => {
+    const entry = {
+      edPub: 'ed-pub-2',
+      kemPub: 'kem-pub-2',
+      caps: { keyring: { nonce: 'nonce-2', exp: 9999 } },
+    };
+    saveNodeInviteEntry('sp-2', 'node-2', 'user-2', entry);
+    const serialized = serializeNodeInviteStore();
+
+    clearNodeInviteStore();
+    expect(serializeNodeInviteStore()).toEqual([]);
+
+    hydrateNodeInviteStore(serialized);
+    const restored = serializeNodeInviteStore();
+    expect(restored).toHaveLength(1);
+    expect(restored[0]![1]).toMatchObject(entry);
+  });
+
+  it('hydrate is additive (does not clear existing entries)', () => {
+    saveNodeInviteEntry('sp-a', 'n-a', 'u-a', { edPub: 'e-a', kemPub: 'k-a', caps: {} });
+    const before = serializeNodeInviteStore();
+    saveNodeInviteEntry('sp-b', 'n-b', 'u-b', { edPub: 'e-b', kemPub: 'k-b', caps: {} });
+    clearNodeInviteStore();
+    hydrateNodeInviteStore(before);
+    saveNodeInviteEntry('sp-b', 'n-b', 'u-b', { edPub: 'e-b', kemPub: 'k-b', caps: {} });
+    expect(serializeNodeInviteStore()).toHaveLength(2);
   });
 });

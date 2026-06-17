@@ -48,6 +48,6 @@ Worktrees do NOT have node_modules — point to `<main-repo>/node_modules/.bin/<
 - Identity links are v:2 — kemPub is signed by edPriv (`kemSig`); `verifyIdentityLinkBinding` verifies BOTH ownerId and kemSig offline
 - Inbox seals use AES-GCM AAD = `octospaces:inbox:v1:${recipientUserId}:${shard}`; resource-request/grant/reject must pass this context (shard-bound since 0.12.9)
 - `removeNodeKeyringRecipient` is **rotate-only** (forward secrecy). For full eviction use `revokeNodeAccess(session, spaceId, nodeId, userId)` from `spaces/nodes.ts` which calls `evictMember` (keyring rotation + cap revocation via POST /revocations)
-- `inviteToNode(isolated+enc)` auto-stores cap nonces in `nodeInviteStore`; `revokeNodeAccess` reads from it — do NOT use `revokeNodeAccess` without a prior `inviteToNode` or `saveNodeInviteEntry` call
+- `inviteToNode(isolated+enc)` auto-stores cap nonces in `nodeInviteStore`; `revokeNodeAccess` reads from it — do NOT use `revokeNodeAccess` without a prior `inviteToNode` or `saveNodeInviteEntry` call. `nodeInviteStore` is in-memory; call `serializeNodeInviteStore()` to persist and `hydrateNodeInviteStore(entries)` to restore on startup.
 - `NodeInviteBundle.kind` MUST be a valid `NodeInviteKind` ('plaintext' | 'space-enc' | 'node-enc'); `acceptNodeInvite` rejects unknown kinds
 - `_MAX_AUTHORIZED_SPACES = _MAX_CANDIDATES // 2` lives in the Infra Python backend (not in this repo) — do not hunt for it here

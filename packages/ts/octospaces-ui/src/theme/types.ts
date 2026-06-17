@@ -101,9 +101,10 @@ export interface Palette {
 export type Spacing = Record<string, number>;
 
 /**
- * Border-radius scale.
+ * Border-radius scale. Values MUST be numbers (not CSS strings like '8px') —
+ * React Native does not accept string pixel values for borderRadius.
  */
-export type Radii = Record<string, number | string>;
+export type Radii = Record<string, number>;
 
 /**
  * Typography scale: font sizes, line heights, weights — keyed by variant name.

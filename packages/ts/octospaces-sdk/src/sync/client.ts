@@ -155,17 +155,21 @@ export function isAlreadyPresentRecipient(err: unknown): boolean {
  * `addNodeKeyringRecipient` in node-keyring.ts. Swallows "already present".
  */
 export async function addSpaceKeyringRecipient(
-  session: { chatClient: StarfishClient; keys: DeviceKeys },
+  session: { chatClient: StarfishClient; keys: DeviceKeys; ownerEdPub?: string },
   spaceId: string,
   recipient: { subKem: string; userId: string; label: string },
 ): Promise<void> {
+  const ownerEdPub = session.ownerEdPub ?? session.keys.edPub;
+  const trustedAdders = ownerEdPub !== session.keys.edPub
+    ? [ownerEdPub, session.keys.edPub]
+    : [session.keys.edPub];
   try {
     await addCollectionRecipient(
       session.chatClient,
       keyringName(spaceId),
       recipient,
       { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
-      { trustedAdders: [session.keys.edPub] },
+      { trustedAdders },
     );
   } catch (err) {
     if (!isAlreadyPresentRecipient(err)) throw err;
