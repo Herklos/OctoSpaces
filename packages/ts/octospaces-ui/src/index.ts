@@ -6,7 +6,7 @@ export type { OctoSpacesThemeProviderProps } from './theme/provider.js';
 
 // Token accessors — typed fallback-safe helpers for numeric theme tokens.
 export { useTokens } from './theme/tokens.js';
-export type { ThemeTokens } from './theme/tokens.js';
+export type { ThemeTokens, ResolvedTypeScale } from './theme/tokens.js';
 
 // Theme types — host apps use these to type their resolved Theme object.
 export type {

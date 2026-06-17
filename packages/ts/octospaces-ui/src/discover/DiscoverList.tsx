@@ -61,7 +61,7 @@ export function DiscoverList({
       >
         <Text
           style={{
-            fontSize: theme.type['body']?.size ?? 15,
+            fontSize: t.type('body').size,
             color: theme.colors.textSecondary,
             textAlign: 'center',
           }}

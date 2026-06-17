@@ -72,8 +72,8 @@ export function DiscoverRow({ entry, renderIcon, onOpen }: DiscoverRowProps) {
         <Text
           numberOfLines={1}
           style={{
-            fontSize: (theme.type['body']?.size ?? 15),
-            lineHeight: (theme.type['body']?.lineHeight ?? 22),
+            fontSize: t.type('body').size,
+            lineHeight: t.type('body').lineHeight,
             color: entry.title ? theme.colors.text : theme.colors.textTertiary,
             fontFamily: theme.fonts['body'] ?? undefined,
           }}
@@ -83,8 +83,8 @@ export function DiscoverRow({ entry, renderIcon, onOpen }: DiscoverRowProps) {
         <Text
           numberOfLines={1}
           style={{
-            fontSize: (theme.type['caption']?.size ?? 12),
-            lineHeight: (theme.type['caption']?.lineHeight ?? 18),
+            fontSize: t.type('caption').size,
+            lineHeight: t.type('caption').lineHeight,
             color: theme.colors.textSecondary,
             marginTop: 1,
             textTransform: 'capitalize',

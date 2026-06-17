@@ -17,7 +17,7 @@
  *   idle → loading → (ready | error)
  *   Any pull of `loadEntries` updates the entries; errors show a retry button.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, TextInput, View, type TextStyle } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
@@ -76,6 +76,9 @@ type State =
   | { status: 'loading' }
   | { status: 'ready'; entries: DiscoverEntry[] }
   | { status: 'error'; message: string };
+
+/** Stable empty reference for non-ready states so the filter memo doesn't recompute. */
+const EMPTY_ENTRIES: DiscoverEntry[] = [];
 
 export function DiscoverScreen({
   loadEntries,
@@ -143,8 +146,8 @@ export function DiscoverScreen({
   }, [load]);
 
   // ── Derived list ─────────────────────────────────────────────────────────
-  const allEntries = state.status === 'ready' ? state.entries : [];
-  const visibleEntries = filterDiscoverEntries(allEntries, query);
+  const allEntries = state.status === 'ready' ? state.entries : EMPTY_ENTRIES;
+  const visibleEntries = useMemo(() => filterDiscoverEntries(allEntries, query), [allEntries, query]);
   const noSearchResults = !!query.trim() && visibleEntries.length === 0 && allEntries.length > 0;
   const resolvedEmptyMessage = noSearchResults
     ? (emptySearchMessage ?? `No results for "${query.trim()}"`)
@@ -168,9 +171,9 @@ export function DiscoverScreen({
       >
         <Text
           style={{
-            fontSize: theme.type['title2']?.size ?? 22,
-            fontWeight: (theme.type['title2']?.weight as TextStyle['fontWeight']) ?? '700',
-            lineHeight: theme.type['title2']?.lineHeight ?? 28,
+            fontSize: t.type('title2').size,
+            fontWeight: t.type('title2').weight as TextStyle['fontWeight'],
+            lineHeight: t.type('title2').lineHeight,
             color: theme.colors.text,
             fontFamily: theme.fonts['heading'] ?? undefined,
             marginBottom: sp3,
@@ -200,7 +203,7 @@ export function DiscoverScreen({
               onChangeText={setQuery}
               style={{
                 flex: 1,
-                fontSize: theme.type['body']?.size ?? 15,
+                fontSize: t.type('body').size,
                 color: theme.colors.text,
                 fontFamily: theme.fonts['body'] ?? undefined,
               }}
@@ -229,7 +232,7 @@ export function DiscoverScreen({
           <Text
             style={{
               color: theme.colors.textSecondary,
-              fontSize: theme.type['body']?.size ?? 15,
+              fontSize: t.type('body').size,
               textAlign: 'center',
               marginBottom: sp3,
             }}

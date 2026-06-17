@@ -1,5 +1,32 @@
 # Changelog — @drakkar.software/octospaces-ui
 
+## 0.8.0 (2026-06-17)
+
+### Added
+
+- **`useTokens().type(key, fallback?)` typography accessor.** Resolves `theme.type[key]`
+  to a complete `{ size, lineHeight, weight, letterSpacing? }` with per-field canonical
+  fallbacks — a single source of truth for typography, analogous to the existing
+  `sp`/`rad`/`lay`/`opa` numeric-token accessors. Exposed alongside the new
+  `ResolvedTypeScale` type.
+
+- **`RailSpace.name` (optional).** The full space name, used for a tile's
+  `accessibilityLabel` (falling back to `short`). Previously the rail announced only the
+  2-letter monogram to screen readers.
+
+### Fixes
+
+- **Typography fallback drift eliminated.** The `body` size was hardcoded as `14` in
+  `MonthGrid` but `15` everywhere else, and `body` lineHeight as `20` vs `22`. All
+  `theme.type[...]?.size ?? n` call sites (DiscoverScreen, DiscoverList, DiscoverRow,
+  MonthGrid, SpaceSwitcher heading) now route through `useTokens().type()`, so the
+  canonical `body = { size: 15, lineHeight: 22 }` applies consistently.
+
+- **`DiscoverScreen`: search filtering is memoized.** `filterDiscoverEntries(allEntries,
+  query)` ran on every render (per-keystroke full re-filter); it is now wrapped in
+  `useMemo` keyed on `[allEntries, query]`, with a stable empty-array reference for the
+  non-ready states.
+
 ## 0.7.1
 
 ### Fixes

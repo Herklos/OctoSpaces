@@ -15,6 +15,15 @@
  * ```
  */
 import { useOctoSpacesTheme } from './provider.js';
+import type { TypeScale } from './types.js';
+
+/** A typography scale with `size`/`lineHeight`/`weight` always resolved (canonical or host). */
+export interface ResolvedTypeScale {
+  size: number;
+  lineHeight: number;
+  weight: string | number;
+  letterSpacing?: number;
+}
 
 /**
  * Canonical fallback values used when the host theme does not supply a token.
@@ -64,6 +73,21 @@ const OPACITY_FALLBACKS: Record<string, number> = {
 };
 
 /**
+ * Canonical typography fallbacks (size / lineHeight / weight), keyed by variant.
+ * Single source of truth — fixes the `body` 14-vs-15 size and 20-vs-22 lineHeight
+ * drift that was copy-pasted with different numbers across components.
+ */
+const TYPE_FALLBACKS: Record<string, ResolvedTypeScale> = {
+  title2:  { size: 22, lineHeight: 28, weight: '700' },
+  heading: { size: 15, lineHeight: 20, weight: '600' },
+  body:    { size: 15, lineHeight: 22, weight: '400' },
+  caption: { size: 12, lineHeight: 18, weight: '400' },
+  micro:   { size: 10, lineHeight: 13, weight: '400' },
+};
+
+const TYPE_DEFAULT: ResolvedTypeScale = { size: 14, lineHeight: 20, weight: '400' };
+
+/**
  * Typed accessor helpers for the active theme's numeric tokens.
  *
  * - `t.sp(key)` — `theme.spacing[key]` with a canonical fallback
@@ -83,6 +107,12 @@ export interface ThemeTokens {
   lay: (key: string, fallback?: number) => number;
   /** Opacity token: `theme.opacity[key]`. Canonical: disabled=0.5, subtle=0.7. */
   opa: (key: string, fallback?: number) => number;
+  /**
+   * Typography token: `theme.type[key]` resolved to a complete `{size, lineHeight, weight}`
+   * with per-field canonical fallbacks. Host values always take precedence; a partial
+   * `fallback` overrides the canonical default per field.
+   */
+  type: (key: string, fallback?: Partial<TypeScale>) => ResolvedTypeScale;
 }
 
 /**
@@ -96,5 +126,16 @@ export function useTokens(): ThemeTokens {
     rad: (key, fallback) => (theme.radii[key]          as number | undefined) ?? fallback ?? RADII_FALLBACKS[key]   ?? 0,
     lay: (key, fallback) => (theme.layout[key]         as number | undefined) ?? fallback ?? LAYOUT_FALLBACKS[key]  ?? 0,
     opa: (key, fallback) => (theme.opacity[key]        as number | undefined) ?? fallback ?? OPACITY_FALLBACKS[key] ?? 1,
+    type: (key, fallback) => {
+      const host = theme.type[key] as TypeScale | undefined;
+      const canon = TYPE_FALLBACKS[key] ?? TYPE_DEFAULT;
+      const letterSpacing = host?.letterSpacing ?? fallback?.letterSpacing;
+      return {
+        size:       host?.size       ?? fallback?.size       ?? canon.size,
+        lineHeight: host?.lineHeight ?? fallback?.lineHeight ?? canon.lineHeight,
+        weight:     host?.weight     ?? fallback?.weight     ?? canon.weight,
+        ...(letterSpacing !== undefined ? { letterSpacing } : {}),
+      };
+    },
   };
 }

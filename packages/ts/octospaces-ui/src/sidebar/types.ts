@@ -11,6 +11,9 @@ export interface RailSpace {
   id: string;
   /** Short display name or initials shown as a monogram when no image is available. */
   short: string;
+  /** Full space name — used for the tile's `accessibilityLabel` (falls back to `short`
+   *  when absent, which would otherwise announce only the 2-letter monogram). */
+  name?: string;
   /** Optional image URI (data URI or URL) rendered as the tile background via
    *  `SpacesRailProps.renderTileImage`. */
   image?: string;

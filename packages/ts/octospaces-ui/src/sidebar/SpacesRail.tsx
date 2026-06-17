@@ -274,7 +274,7 @@ const PlainTile = React.memo(function PlainTile({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       accessibilityRole="button"
-      accessibilityLabel={space.short}
+      accessibilityLabel={space.name ?? space.short}
       style={{
         position: 'relative',
         width: TILE_SIZE,
@@ -346,7 +346,7 @@ const DndTile = React.memo(function DndTile({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       accessibilityRole="button"
-      accessibilityLabel={space.short}
+      accessibilityLabel={space.name ?? space.short}
       style={{
         position: 'relative',
         width: TILE_SIZE,

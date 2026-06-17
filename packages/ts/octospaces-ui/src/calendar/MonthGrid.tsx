@@ -17,6 +17,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
+import { useTokens } from '../theme/tokens.js';
 import { buildMonthMatrix, type MatrixDay } from './month-matrix.js';
 
 const WEEKDAY_LABELS_MON = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
@@ -71,6 +72,7 @@ export function MonthGrid({
   renderDayEvents,
 }: MonthGridProps) {
   const theme = useOctoSpacesTheme();
+  const t = useTokens();
   const { colors } = theme;
 
   const todayMs = todayTimestamp ?? Date.now();
@@ -81,10 +83,10 @@ export function MonthGrid({
   // so the component renders even if the host hasn't set every key.
   const monoFont: string | undefined = theme.fonts['mono'] ?? theme.fonts['body'];
   const serifFont: string | undefined = theme.fonts['heading'] ?? theme.fonts['display'] ?? theme.fonts['body'];
-  const microSize: number = theme.type['micro']?.size ?? 10;
-  const microLineHeight: number = theme.type['micro']?.lineHeight ?? 13;
-  const bodySize: number = theme.type['body']?.size ?? 14;
-  const bodyLineHeight: number = theme.type['body']?.lineHeight ?? 20;
+  const microSize: number = t.type('micro').size;
+  const microLineHeight: number = t.type('micro').lineHeight;
+  const bodySize: number = t.type('body').size;
+  const bodyLineHeight: number = t.type('body').lineHeight;
   const labelSpacing: number = theme.labelTracking['mono'] ?? 0.8;
 
   return (
