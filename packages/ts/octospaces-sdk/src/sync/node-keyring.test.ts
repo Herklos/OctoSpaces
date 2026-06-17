@@ -24,6 +24,10 @@ vi.mock('./client.js', () => ({
   openEncryptor: vi.fn().mockResolvedValue({ tag: 'enc' }),
   buildEncryptor: vi.fn().mockResolvedValue({ tag: 'enc' }),
   ownerEnsureKeyring: vi.fn().mockResolvedValue({ tag: 'enc' }),
+  // Required after P1 dedup: node-keyring.ts now imports isAlreadyPresentRecipient from client.js.
+  isAlreadyPresentRecipient: vi.fn().mockImplementation(
+    (e: unknown) => /already (present|a recipient|exists)|duplicate/i.test(e instanceof Error ? e.message : String(e)),
+  ),
 }));
 
 vi.mock('@drakkar.software/starfish-keyring', () => ({

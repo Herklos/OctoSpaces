@@ -15,7 +15,7 @@
  * `enc` nodes; adding the device once unlocks the whole space's E2EE content.
  */
 import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
-import { addCollectionRecipient, hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
+import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
 import { mintMemberCap } from '@drakkar.software/starfish-sharing';
 import { ed25519 } from '@noble/curves/ed25519.js';
 
@@ -241,16 +241,17 @@ export async function addDeviceToSpaceKeyring(
   spaceId: string,
   device: { kemPub: string; edPub: string; userId: string },
 ): Promise<void> {
+  // Delegate to addSpaceKeyringRecipient (handles isAlreadyPresentRecipient internally).
+  // Swallow isKeyringMissing separately — owner may not have created E2EE yet for this space.
+  // INVARIANT: must NOT call ownerEnsureKeyring here (device pairing ≠ owner flow).
   try {
-    await addCollectionRecipient(
-      session.chatClient,
-      keyringName(spaceId),
-      { subKem: device.kemPub, userId: device.userId, label: device.userId.slice(0, 8) },
-      { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
-      { trustedAdders: [session.keys.edPub] },
-    );
+    await addSpaceKeyringRecipient(session, spaceId, {
+      subKem: device.kemPub,
+      userId: device.userId,
+      label: device.userId.slice(0, 8),
+    });
   } catch (err) {
-    if (!isAlreadyPresentRecipient(err) && !isKeyringMissing(err)) throw err;
+    if (!isKeyringMissing(err)) throw err;
   }
 }
 
