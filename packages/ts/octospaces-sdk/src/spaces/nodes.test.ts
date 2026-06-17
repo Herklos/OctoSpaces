@@ -445,6 +445,38 @@ describe('inviteToNode — stream cap + isolation', () => {
   });
 });
 
+// ── I3: NodeInviteBundle kind discriminator ────────────────────────────────────
+
+describe('I3: NodeInviteBundle carries a kind discriminator', () => {
+  const joinReq = JSON.stringify({ edPub: 'deadbeef'.repeat(8), kemPub: 'cafebabe'.repeat(8), userId: 'requester', kemSig: 'ab'.repeat(64) });
+
+  beforeEach(() => {
+    vi.mocked(addSpaceMember).mockClear();
+    vi.mocked(ensureNodeKeyringRecipient).mockClear().mockResolvedValue({} as never);
+    vi.mocked(addCollectionRecipient).mockClear().mockResolvedValue(undefined);
+  });
+
+  it('plaintext non-isolated: kind === "plaintext"', async () => {
+    const bundle = JSON.parse(await inviteToNode(makeSession(), 'sp-1', 'n-1', joinReq, { enc: false }));
+    expect(bundle.kind).toBe('plaintext');
+  });
+
+  it('isolated enc (OctoDesk ticket): kind === "node-enc"', async () => {
+    const bundle = JSON.parse(await inviteToNode(makeSession(), 'sp-1', 'n-1', joinReq, { enc: true }, undefined, { isolated: true }));
+    expect(bundle.kind).toBe('node-enc');
+  });
+
+  it('non-isolated enc (legacy space-keyring): kind === "space-enc"', async () => {
+    const bundle = JSON.parse(await inviteToNode(makeSession(), 'sp-1', 'n-1', joinReq, { enc: true }));
+    expect(bundle.kind).toBe('space-enc');
+  });
+
+  it('isolated plaintext: kind === "plaintext"', async () => {
+    const bundle = JSON.parse(await inviteToNode(makeSession(), 'sp-1', 'n-1', joinReq, { enc: false }, undefined, { isolated: true }));
+    expect(bundle.kind).toBe('plaintext');
+  });
+});
+
 describe('acceptNodeInvite — isolated bundle (no space cap)', () => {
   beforeEach(() => {
     vi.mocked(saveSpaceAccessEntry).mockClear();
@@ -691,5 +723,71 @@ describe('K4 regression: inviteToNode validates kemSig binding', () => {
     await expect(
       inviteToNode(session, 'sp-1', 'n-42', req, { enc: false }),
     ).resolves.toBeDefined();
+  });
+});
+
+// ── I3b: acceptNodeInvite validates bundle kind ───────────────────────────────
+//
+// I3 finding: NodeInviteBundle.kind is optional — acceptNodeInvite never validates
+// it. A future-format bundle with an unrecognised kind could be silently accepted
+// and mis-processed (kind-confusion). The handler infers E2EE model from cap
+// presence rather than from the explicit discriminator, so a bundle crafted to have
+// both space and node caps could be accepted under the wrong E2EE model.
+//
+// Fix: acceptNodeInvite validates bundle.kind against the NodeInviteKind set
+// ('plaintext' | 'space-enc' | 'node-enc'). Unknown kinds are rejected. Absent
+// kind is still accepted (backward-compat with pre-I3 bundles).
+
+describe('I3b: acceptNodeInvite rejects unknown bundle kind', () => {
+  beforeEach(() => {
+    vi.mocked(saveSpaceAccessEntry).mockClear();
+    vi.mocked(saveNodeAccessEntry).mockClear();
+    vi.mocked(saveNodeStreamAccessEntry).mockClear();
+    vi.mocked(saveNodeKeyringAccessEntry).mockClear();
+  });
+
+  it('FAILS (pre-fix): rejects a bundle with an unknown kind', async () => {
+    const bundle = JSON.stringify({
+      spaceId: 'sp-1', nodeId: 'n-42', nodeName: 'Test',
+      kind: 'future-unknown-kind',
+      nodeCap: { kind: 'member', sub: 'pub' },
+    });
+    await expect(acceptNodeInvite(makeSession(), bundle)).rejects.toThrow(/unknown kind|invalid.*bundle|invalid.*kind/i);
+  });
+
+  it('accepts kind === "plaintext"', async () => {
+    const bundle = JSON.stringify({
+      spaceId: 'sp-1', nodeId: 'n-42', nodeName: 'Test',
+      kind: 'plaintext',
+      nodeCap: { kind: 'member', sub: 'pub' },
+    });
+    await expect(acceptNodeInvite(makeSession(), bundle)).resolves.toBe('n-42');
+  });
+
+  it('accepts kind === "space-enc"', async () => {
+    const bundle = JSON.stringify({
+      spaceId: 'sp-1', nodeId: 'n-42', nodeName: 'Test',
+      kind: 'space-enc',
+      cap: { kind: 'member', sub: 'pub' },
+    });
+    await expect(acceptNodeInvite(makeSession(), bundle)).resolves.toBe('n-42');
+  });
+
+  it('accepts kind === "node-enc"', async () => {
+    const bundle = JSON.stringify({
+      spaceId: 'sp-1', nodeId: 'n-42', nodeName: 'Test',
+      kind: 'node-enc',
+      nodeCap: { kind: 'member', sub: 'pub' },
+      keyringCap: { kind: 'member', sub: 'pub' },
+    });
+    await expect(acceptNodeInvite(makeSession(), bundle)).resolves.toBe('n-42');
+  });
+
+  it('accepts legacy bundles without kind (backward compat pre-0.12.9)', async () => {
+    const bundle = JSON.stringify({
+      spaceId: 'sp-1', nodeId: 'n-42', nodeName: 'Test',
+      nodeCap: { kind: 'member', sub: 'pub' },
+    });
+    await expect(acceptNodeInvite(makeSession(), bundle)).resolves.toBe('n-42');
   });
 });

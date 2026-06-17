@@ -27,9 +27,11 @@
  *   - Bearer: `joinNodeByLink` — stores per-node `{kind:'link'}` entry.
  */
 import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
-import { mintMemberCap } from '@drakkar.software/starfish-sharing';
+import { mintMemberCap, evictMember } from '@drakkar.software/starfish-sharing';
 import { hexToBytes } from '@drakkar.software/starfish-keyring';
 import { ed25519 } from '@noble/curves/ed25519.js';
+import type { CapCert } from '@drakkar.software/starfish-protocol';
+import type { RevocationEntry, RevocationList } from '@drakkar.software/starfish-protocol';
 
 import type { NodeAccess, ObjectNode, ObjectType } from '../core/types.js';
 import { addSpaceKeyringRecipient, ownerEnsureKeyring } from '../sync/client.js';
@@ -38,6 +40,7 @@ import { ownerTrustedAdders } from '../sync/identity.js';
 import {
   keyringPull,
   keyringPush,
+  nodeKeyringName,
   nodeKeyringScope,
   nodeMemberScope,
   nodeStreamScope,
@@ -62,6 +65,52 @@ import { updateObjectIndex } from './object-index.js';
 import { addSpaceMember, buildSpace, readSpaces } from './registry.js';
 import { randomId } from '../core/ids.js';
 import type { JoinRequest } from './members.js';
+
+// ── K1: owner-side node invite store (nonces for revocation) ─────────────────
+//
+// When the owner issues an isolated per-node-keyring invite (e.g. an OctoDesk ticket),
+// they retain the cap nonces here so `revokeNodeAccess` can revoke ALL three caps
+// (keyring + content + stream) in a single RevocationList submission.
+//
+// This store is in-memory (module-level Map). It survives the current JS execution
+// context (e.g. a browser tab or server process), but is cleared on reload. Callers
+// that need persistence across reloads should hydrate from their own durable store and
+// call `saveNodeInviteEntry` on startup.
+
+export interface StoredNodeInvite {
+  /** Invitee's Ed25519 signing pubkey (hex) — the cap's `sub`. */
+  edPub: string;
+  /** Invitee's X25519 KEM pubkey (hex) — the keyring recipient entry to drop on rotation. */
+  kemPub: string;
+  /** Nonces of the caps the owner minted (each is a separate revocation target). */
+  caps: {
+    keyring?: { nonce: string; exp: number };
+    node?: { nonce: string; exp: number };
+    stream?: { nonce: string; exp: number };
+  };
+}
+
+const nodeInviteStore = new Map<string, StoredNodeInvite>();
+
+/** Record the caps minted for an isolated node invite (owner side). Keyed by
+ *  `${spaceId}:${nodeId}:${userId}`. */
+export function saveNodeInviteEntry(
+  spaceId: string, nodeId: string, userId: string, entry: StoredNodeInvite,
+): void {
+  nodeInviteStore.set(`${spaceId}:${nodeId}:${userId}`, entry);
+}
+
+/** Retrieve the stored invite entry for a user on a node, or null if absent. */
+export function getNodeInviteEntry(
+  spaceId: string, nodeId: string, userId: string,
+): StoredNodeInvite | null {
+  return nodeInviteStore.get(`${spaceId}:${nodeId}:${userId}`) ?? null;
+}
+
+/** Clear all stored invite entries (for test isolation or sign-out). */
+export function clearNodeInviteStore(): void {
+  nodeInviteStore.clear();
+}
 
 // ── createNode ────────────────────────────────────────────────────────────────
 
@@ -197,10 +246,27 @@ export async function setNodeAccess(
 
 // ── Direct invite ─────────────────────────────────────────────────────────────
 
+/**
+ * Discriminates the E2EE model for a node invite so the invitee can handle the bundle
+ * correctly without reverse-engineering which caps are present.
+ *
+ * - `'plaintext'`  — no encryption; content is readable without any keyring.
+ * - `'space-enc'`  — space-wide keyring (legacy enc invite); invitee receives a
+ *                    space-level cap and uses the space keyring to decrypt.
+ * - `'node-enc'`   — per-node keyring (OctoDesk/isolated E2EE ticket); invitee receives
+ *                    a `keyringCap` (READ-only) scoped to this node's keyring only.
+ */
+export type NodeInviteKind = 'plaintext' | 'space-enc' | 'node-enc';
+
 export interface NodeInviteBundle {
   spaceId: string;
   nodeId: string;
   nodeName: string;
+  /**
+   * I3: discriminates the invite's E2EE model. Absent in bundles produced before 0.12.9
+   * (pre-I3 fix); treat absent as `'plaintext'` or derive from which caps are present.
+   */
+  kind?: NodeInviteKind;
   /**
    * Space-level member cap — grants index read access (and thus visibility of every
    * node's metadata). Omitted for `isolated` invites that must NOT grant space-wide
@@ -283,6 +349,8 @@ export async function inviteToNode(
     spaceId,
     nodeId,
     nodeName: nodeName ?? nodeId,
+    // I3: discriminate the invite's E2EE model so the invitee can handle it correctly.
+    kind: perNodeKeyring ? 'node-enc' : (node.enc ? 'space-enc' : 'plaintext'),
   };
 
   if (perNodeKeyring) {
@@ -336,6 +404,24 @@ export async function inviteToNode(
     );
   }
 
+  // K1: retain cap nonces for future revocation (per-node-keyring invites only).
+  // The owner needs all three nonces to submit a complete RevocationList covering
+  // every cap the invitee holds (keyring + content + stream).
+  if (perNodeKeyring) {
+    const keyringCert = bundle.keyringCap as CapCert | undefined;
+    const nodeCert = bundle.nodeCap as CapCert | undefined;
+    const streamCert = bundle.streamCap as CapCert | undefined;
+    saveNodeInviteEntry(spaceId, nodeId, req.userId, {
+      edPub: req.edPub,
+      kemPub: req.kemPub,
+      caps: {
+        ...(keyringCert?.nonce ? { keyring: { nonce: keyringCert.nonce, exp: keyringCert.exp } } : {}),
+        ...(nodeCert?.nonce ? { node: { nonce: nodeCert.nonce, exp: nodeCert.exp } } : {}),
+        ...(streamCert?.nonce ? { stream: { nonce: streamCert.nonce, exp: streamCert.exp } } : {}),
+      },
+    });
+  }
+
   return JSON.stringify(bundle);
 }
 
@@ -343,9 +429,18 @@ export async function inviteToNode(
  * Invitee: accept a direct node invite — store the cap(s) and register access.
  * Returns the nodeId.
  */
+/** Set of valid NodeInviteBundle kind discriminators (I3). */
+const VALID_INVITE_KINDS: ReadonlySet<string> = new Set(['plaintext', 'space-enc', 'node-enc']);
+
 export async function acceptNodeInvite(session: Session, bundleJson: string): Promise<string> {
   const bundle = JSON.parse(bundleJson) as Partial<NodeInviteBundle>;
   if (!bundle.spaceId || !bundle.nodeId) throw new Error('Invalid node invite.');
+
+  // I3: reject bundles with an unrecognised kind. Absent kind is allowed for
+  // backward-compat with bundles produced before 0.12.9 (treat as 'plaintext').
+  if (bundle.kind !== undefined && !VALID_INVITE_KINDS.has(bundle.kind)) {
+    throw new Error(`Invalid node invite: unknown kind '${bundle.kind}'.`);
+  }
 
   // Validate every cap that IS present was issued for this identity. `isolated`
   // invites omit the space cap, so it's optional; but the bundle must carry at
@@ -384,6 +479,83 @@ export async function acceptNodeInvite(session: Session, bundleJson: string): Pr
   }
 
   return bundle.nodeId;
+}
+
+// ── K1: revokeNodeAccess ─────────────────────────────────────────────────────
+
+/**
+ * Revoke a previously-issued isolated per-node-keyring invite.
+ *
+ * Performs full two-step eviction:
+ *   1. **Revoke**: submits a signed RevocationList containing the nonces of ALL caps
+ *      minted for this invitee (keyring + content + stream) so the server immediately
+ *      rejects their auth tokens.
+ *   2. **Rotate**: removes the invitee's KEM from the node keyring and mints a fresh
+ *      CEK so they cannot decrypt future messages (forward secrecy).
+ *
+ * The caller is responsible for:
+ *   - Tracking `generation` — it MUST strictly increase per issuer across all calls.
+ *     Pass `priorRevoked` from the previous call to carry forward earlier revocations.
+ *   - Providing `submitRevocation` — typically a POST to the server's `/revocations`
+ *     endpoint.
+ *
+ * Throws when no invite entry is found for the given user (call `saveNodeInviteEntry`
+ * first, or use `inviteToNode` which auto-stores entries for isolated enc nodes).
+ */
+export async function revokeNodeAccess(
+  session: Session,
+  spaceId: string,
+  nodeId: string,
+  userId: string,
+  opts: {
+    generation: number;
+    priorRevoked?: RevocationEntry[];
+    submitRevocation: (list: RevocationList) => Promise<void>;
+  },
+): Promise<{ newEpoch?: number; revoked: boolean }> {
+  const invite = nodeInviteStore.get(`${spaceId}:${nodeId}:${userId}`);
+  if (!invite) {
+    throw new Error(`revokeNodeAccess: no stored invite for ${userId} on node ${nodeId} — call saveNodeInviteEntry or use inviteToNode (which auto-stores for isolated enc nodes)`);
+  }
+  if (!invite.caps.keyring) {
+    throw new Error(`revokeNodeAccess: no keyring cap stored for ${userId} — only per-node-keyring (isolated enc) invites support revocation via this function`);
+  }
+
+  // Collect all non-primary cap nonces to carry alongside the primary (keyring) revocation.
+  // This ensures a single RevocationList covers every access credential the invitee holds.
+  const priorRevoked: RevocationEntry[] = [...(opts.priorRevoked ?? [])];
+  if (invite.caps.node) {
+    priorRevoked.push({ sub: invite.edPub, nonce: invite.caps.node.nonce, exp: invite.caps.node.exp });
+  }
+  if (invite.caps.stream) {
+    priorRevoked.push({ sub: invite.edPub, nonce: invite.caps.stream.nonce, exp: invite.caps.stream.exp });
+  }
+
+  return evictMember(
+    session.chatClient,
+    {
+      keyringCollection: nodeKeyringName(spaceId, nodeId),
+      membersCollection: nodeKeyringName(spaceId, nodeId),
+      member: {
+        sub: invite.edPub,
+        nonce: invite.caps.keyring.nonce,
+        exp: invite.caps.keyring.exp,
+        subKem: invite.kemPub,
+      },
+      adder: {
+        edPriv: session.keys.edPriv,
+        edPub: session.keys.edPub,
+        kemPriv: session.keys.kemPriv,
+      },
+      trustedAdders: ownerTrustedAdders(session),
+      issEdPubHex: session.keys.edPub,
+      issEdPrivHex: session.keys.edPriv,
+      generation: opts.generation,
+      ...(priorRevoked.length > 0 ? { priorRevoked } : {}),
+      submitRevocation: opts.submitRevocation,
+    },
+    { rotate: true, revoke: true },
+  );
 }
 
 // ── Link-based node invite ────────────────────────────────────────────────────
