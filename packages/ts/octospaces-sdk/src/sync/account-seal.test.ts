@@ -69,16 +69,15 @@ describe('account-seal', () => {
   });
 });
 
-// ── S1 regression: v:1 blobs MUST be opened with the matching aad ────────────
+// ── v:1 blobs MUST be opened with the matching aad ───────────────────────────
 //
-// S1 finding: open() accepts aad as optional and never asserts blob.v === 1 ⇒
-// aad required. A caller that drops the aad argument silently decrypts an
-// unbound (context-free) blob — enabling relocation/replay attacks.
+// open() must assert aad when blob.v === 1. A caller that drops aad silently
+// decrypts an unbound (context-free) blob — enabling relocation/replay attacks.
 //
 // Fix: if blob.v === 1, aad is mandatory; omitting it must throw before any
 // AES-GCM operation, even if the ciphertext would otherwise decrypt.
 
-describe('S1 regression: v:1 blob requires aad on open', () => {
+describe('v:1 blob requires aad on open', () => {
   let keys: ReturnType<typeof makeKeyPair>;
   let session: ReturnType<typeof makeSession>;
 

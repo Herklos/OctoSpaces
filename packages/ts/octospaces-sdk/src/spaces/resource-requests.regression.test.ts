@@ -1,11 +1,11 @@
 /**
- * Regression tests for resource-requests.ts — H1, M2, L1.
+ * Regression tests for resource-requests.ts.
  *
- * H1: acceptResourceRequest must call inviteToNode with opts.isolated === true,
- *     and must NOT call addSpaceMember directly.
- * M2: scanResourceRequests rejects inbox items where req.requester.userId
- *     does not match userIdFromEdPub(req.requester.edPub).
- * L1: scanResourceGrants deduplicates by reqId.
+ * - acceptResourceRequest must call inviteToNode with opts.isolated === true,
+ *   and must NOT call addSpaceMember directly.
+ * - scanResourceRequests rejects inbox items where req.requester.userId
+ *   does not match userIdFromEdPub(req.requester.edPub).
+ * - scanResourceGrants deduplicates by reqId.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { bytesToHex, hexToBytes } from '@drakkar.software/starfish-keyring';
@@ -143,9 +143,9 @@ function makeInboxItem(addedBy: string) {
   };
 }
 
-// ── H1: acceptResourceRequest — isolated flag ─────────────────────────────────
+// ── acceptResourceRequest — isolated flag ──────────────────────────────────────
 
-describe('H1: acceptResourceRequest — inviteToNode isolated=true', () => {
+describe('acceptResourceRequest — inviteToNode isolated=true', () => {
   let ownerKeys: KeySet;
   let requesterKeys: KeySet;
   let ownerSession: Session;
@@ -159,10 +159,10 @@ describe('H1: acceptResourceRequest — inviteToNode isolated=true', () => {
       req: {
         v: 1,
         kind: 'create-resource',
-        reqId: 'req-h1-test',
+        reqId: 'req-isolated-test',
         spaceId: 'sp-test',
         nodeType: 'ticket',
-        title: 'H1 Test',
+        title: 'Isolated Test',
         requester: {
           userId: requesterKeys.userId,
           edPub: requesterKeys.edPub,
@@ -175,9 +175,9 @@ describe('H1: acceptResourceRequest — inviteToNode isolated=true', () => {
 
   beforeEach(() => {
     vi.mocked(createNode).mockResolvedValue({
-      id: 'node-h1',
+      id: 'node-isolated',
       type: 'ticket',
-      title: 'H1 Test',
+      title: 'Isolated Test',
       access: 'invite',
       enc: false,
     } as Awaited<ReturnType<typeof createNode>>);
@@ -221,7 +221,7 @@ describe('H1: acceptResourceRequest — inviteToNode isolated=true', () => {
     vi.mocked(createNode).mockResolvedValue({
       id: 'node-specific',
       type: 'ticket',
-      title: 'H1 Test',
+      title: 'Isolated Test',
       access: 'invite',
       enc: false,
     } as Awaited<ReturnType<typeof createNode>>);
@@ -232,9 +232,9 @@ describe('H1: acceptResourceRequest — inviteToNode isolated=true', () => {
   });
 });
 
-// ── M2: scanResourceRequests rejects forged userId ────────────────────────────
+// ── scanResourceRequests rejects forged userId ────────────────────────────────
 
-describe('M2: scanResourceRequests — rejects forged userId', () => {
+describe('scanResourceRequests — rejects forged userId', () => {
   let ownerKeys: KeySet;
   let ownerSession: Session;
   let requesterKeys: KeySet;
@@ -452,17 +452,17 @@ describe('L1: scanResourceGrants — deduplicates by reqId', () => {
   });
 });
 
-// ── K4: scanResourceRequests validates kemSig binding ────────────────────────
+// ── scanResourceRequests validates kemSig binding ────────────────────────────
 //
-// K4 finding: ResourceRequest.requester carries kemPub with no proof the
-// requester owns the matching edPriv. Replacing kemPub lets an MITM read all
-// E2EE content sealed for the requester (when the grant uses their kemPub).
+// ResourceRequest.requester carries kemPub with no proof the requester owns the
+// matching edPriv. Replacing kemPub lets an MITM read all E2EE content sealed
+// for the requester (when the grant uses their kemPub).
 //
 // Fix: submitResourceRequest signs kemPub with session.keys.edPriv and includes
 // kemSig. scanResourceRequests verifies kemSig before emitting PendingRequest;
 // items with missing or invalid kemSig are silently skipped.
 
-describe('K4: scanResourceRequests — validates kemSig binding', () => {
+describe('scanResourceRequests — validates kemSig binding', () => {
   let ownerKeys: KeySet;
   let ownerSession: Session;
   let requesterKeys: KeySet;
@@ -481,10 +481,10 @@ describe('K4: scanResourceRequests — validates kemSig binding', () => {
     return {
       v: 1,
       kind: 'create-resource',
-      reqId: 'req-k4',
+      reqId: 'req-kemsig',
       spaceId: 'sp-test',
       nodeType: 'ticket',
-      title: 'K4 test',
+      title: 'kemSig test',
       requester: {
         userId: requesterKeys.userId,
         edPub: requesterKeys.edPub,
@@ -541,7 +541,7 @@ describe('K4: scanResourceRequests — validates kemSig binding', () => {
     } as never, {
       spaceId: 'sp-test',
       nodeType: 'ticket',
-      title: 'K4 submit test',
+      title: 'kemSig submit test',
     });
 
     const parsed = JSON.parse(capturedPlaintext) as ResourceRequest;
@@ -565,25 +565,24 @@ describe('K4: scanResourceRequests — validates kemSig binding', () => {
 
     const results = await scanResourceRequests(ownerSession);
     expect(results).toHaveLength(1);
-    expect(results[0]!.req.reqId).toBe('req-k4');
+    expect(results[0]!.req.reqId).toBe('req-kemsig');
   });
 });
 
-// ── S3 regression: inbox AAD must bind the shard to prevent cross-shard relocation ──
+// ── inbox AAD must bind the shard to prevent cross-shard relocation ──────────
 //
-// S3 finding: inboxAad binds only recipientId — not the shard. Since inboxes are
-// public-write (anyone can append), an adversary can copy a sealed grant from shard
-// 2024-06 to 2024-07 and cause it to be processed again (double-processing a cap).
+// inboxAad must bind both recipientId and shard. Since inboxes are public-write,
+// an adversary can copy a sealed grant from shard 2024-06 to 2024-07 and cause
+// it to be processed again (double-processing a cap).
 //
-// Fix: widen AAD to `octospaces:inbox:v1:${recipientId}:${shard}`. The shard is
-// always known at seal time (inboxShard()) and at unseal time (the loop variable).
+// Fix: AAD = `octospaces:inbox:v1:${recipientId}:${shard}`. The shard is always
+// known at seal time (inboxShard()) and at unseal time (the loop variable).
 // WIRE-FORMAT BREAK: old sealed messages will fail — coordinated version bump.
 //
-// S3b: scanResourceGrants seenReqIds is currently local to each scan call — a grant
-// replayed across two scan invocations would be returned twice.
-// Fix: accept an optional caller-provided `seenReqIds` Set so callers can persist it.
+// scanResourceGrants seenReqIds should be caller-provided for persistence across
+// multiple scan invocations — accept an optional Set<string>.
 
-describe('S3 regression: shard-bound inbox AAD', () => {
+describe('shard-bound inbox AAD', () => {
   let ownerKeys: KeySet;
   let requesterKeys: KeySet;
   let ownerSession: Session;
@@ -613,7 +612,7 @@ describe('S3 regression: shard-bound inbox AAD', () => {
       kemPub: 'cafebabe'.repeat(8),
       kemSig: 'ab'.repeat(64),
       v: 2,
-    } as never, { spaceId: 'sp-test', nodeType: 'ticket', title: 'S3 test' });
+    } as never, { spaceId: 'sp-test', nodeType: 'ticket', title: 'shard AAD test' });
 
     // AAD must contain the current shard (inboxShard() mock returns '2024-06')
     expect(capturedAad).toBe(`octospaces:inbox:v1:${ownerKeys.userId}:2024-06`);
@@ -653,7 +652,7 @@ describe('S3 regression: shard-bound inbox AAD', () => {
   });
 });
 
-describe('S3b regression: scanResourceGrants persistent seenReqIds', () => {
+describe('scanResourceGrants persistent seenReqIds', () => {
   let requesterKeys: KeySet;
   let requesterSession: Session;
 

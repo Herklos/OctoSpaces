@@ -4,7 +4,7 @@
 
 ### Security fixes
 
-- **K1 — Full revocation infrastructure for per-node-keyring nodes.**
+- **Full revocation infrastructure for per-node-keyring nodes.**
   - Server: `POST /revocations` route (added in 0.12.8) accepts signed `RevocationList`
     objects and calls `revocationStore.acceptList`; the role-resolver already rejects any
     cap whose nonce appears in the store.
@@ -21,13 +21,13 @@
 
 ### Added
 
-- **I3 — `NodeInviteBundle` carries a `kind` discriminator** (`'plaintext' | 'space-enc' |
+- **`NodeInviteBundle` carries a `kind` discriminator** (`'plaintext' | 'space-enc' |
   'node-enc'`). `inviteToNode` now stamps the bundle with the E2EE model so the invitee can
   handle the bundle correctly without reverse-engineering which caps are present.
-- **S3 — Inbox AAD widened to include the shard** (`octospaces:inbox:v1:${recipientId}:${shard}`).
+- **Inbox AAD widened to include the shard** (`octospaces:inbox:v1:${recipientId}:${shard}`).
   A sealed grant/request from one shard cannot be relocated to another shard by a
   public-write adversary (cross-shard replay prevention). **Wire-format break.**
-- **S3b — `scanResourceGrants` accepts `opts.seenReqIds`** for persistent cross-call dedup.
+- **`scanResourceGrants` accepts `opts.seenReqIds`** for persistent cross-call dedup.
   A caller-provided `Set<string>` is mutated in-place so processed reqIds survive across
   multiple scan invocations.
 
@@ -38,7 +38,7 @@
 - **BREAKING: Identity links (IdentityLink) are now v:2.** `kemPub` is now signed by
   `edPriv` (`kemSig`: an Ed25519 signature of `kemPub` by the identity's signing key).
   `verifyIdentityLinkBinding` verifies BOTH `ownerId === sha256(edPub)[0:32]` AND the
-  `kemSig` offline (M3 fix). Old v:1 links are no longer accepted — re-generate all
+  `kemSig` offline. Old v:1 links are no longer accepted — re-generate all
   shared identity links after upgrading.
 - **BREAKING: Inbox seals are now context-bound.** AES-GCM AAD
   (`octospaces:inbox:v1:${recipientUserId}`) is applied to all resource-request, grant,
@@ -47,34 +47,34 @@
 
 ### Security fixes
 
-- **H1 — `acceptResourceRequest` now uses `isolated: true`** when calling `inviteToNode`.
+- ** `acceptResourceRequest` now uses `isolated: true`** when calling `inviteToNode`.
   Requesters now receive a `nodeMemberScope` cap (reach only their own node) instead of a
   `spaceMemberScope` cap (space-wide access). All existing grant flows must be re-invited
   to downscope the cap.
-- **H2 — Pairing rendezvous push is now hash-guarded.** The base hash is pulled first so
+- ** Pairing rendezvous push is now hash-guarded.** The base hash is pulled first so
   the push is a compare-and-swap; the slot is cleared after `completeDevicePairing`
   succeeds, preventing replay attacks on the pairing channel.
-- **M2 — `inviteToSpace` / `inviteToNode` / `scanResourceRequests` now verify
+- ** `inviteToSpace` / `inviteToNode` / `scanResourceRequests` now verify
   `userId === await userIdFromEdPub(edPub)`** before trusting a requester's `userId`
   claim. An attacker that substitutes a mismatched `userId` in the join request is
   rejected rather than granted a cap under the wrong identity.
 
 ### Fixed
 
-- **P1 — `loadObjectBlob` now accepts `string | ObjectBlobRef`** (previously only
+- **`loadObjectBlob` now accepts `string | ObjectBlobRef`** (previously only
   `ObjectBlobRef`). All `persist()` call sites now properly handle the returned promise
   (unhandled rejections fixed).
 
 ### Changed
 
-- **P3 — Link-token encoding/decoding centralized** in `sync/link-token.ts`
+- **Link-token encoding/decoding centralized** in `sync/link-token.ts`
   (`encodeLinkFragment` / `decodeLinkFragment`). All invite-link builders now go through
   this module.
-- **P3 — `addSpaceKeyringRecipient` extracted** from inline call sites into a named
+- **`addSpaceKeyringRecipient` extracted** from inline call sites into a named
   helper in `sync/client.ts`.
-- **P3 — `buildSpace` factory added** to `spaces/registry.ts` for constructing `Space`
+- **`buildSpace` factory added** to `spaces/registry.ts` for constructing `Space`
   objects without duplicating field defaults.
-- **P3 — `updateSpacesField` CAS helper extracted** from `updateSpacesDoc` callers.
+- **`updateSpacesField` CAS helper extracted** from `updateSpacesDoc` callers.
 
 ### Internal
 

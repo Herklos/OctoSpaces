@@ -54,7 +54,7 @@ async function seal(session: Session, recipientKemPub: string, plaintext: string
 }
 
 async function open(session: Session, blob: SealedBlob, aad?: string): Promise<string> {
-  // S1 fix: v:1 blobs were sealed with context AAD — opening without it is a
+  // v:1 blobs were sealed with context AAD — opening without it is a
   // downgrade / relocation attack. Reject eagerly before any crypto operation.
   if (blob.v === 1 && !aad) {
     throw new Error('aad required: this blob (v:1) was sealed with context binding — pass the matching aad to open it.');

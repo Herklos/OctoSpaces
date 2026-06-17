@@ -258,7 +258,7 @@ export {
   decodeNodeInviteLink,
   encodeNodeInviteLink,
   joinNodeByLink,
-  // K1: revocation infrastructure for isolated per-node-keyring (OctoDesk ticket) nodes
+  // revocation infrastructure for isolated per-node-keyring (OctoDesk ticket) nodes
   revokeNodeAccess,
   saveNodeInviteEntry,
   getNodeInviteEntry,

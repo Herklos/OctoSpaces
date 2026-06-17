@@ -1,5 +1,5 @@
 /**
- * K1 regression: revokeNodeAccess — full revocation infrastructure for per-node-keyring
+ * revokeNodeAccess — full revocation infrastructure for per-node-keyring
  * (OctoDesk ticket) nodes.
  *
  * Three pillars:

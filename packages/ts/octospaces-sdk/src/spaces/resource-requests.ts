@@ -63,7 +63,7 @@ import { ed25519 } from '@noble/curves/ed25519.js';
  * AES-GCM additional-data context binding for inbox seals.
  * Binds to BOTH the recipient and the shard, preventing cross-shard relocation:
  * a sealed message from shard `2024-06` cannot be replayed in `2024-07` even
- * though both shards are under the same recipient's inbox (S3 fix).
+ * though both shards are under the same recipient's inbox.
  */
 const inboxAad = (recipientId: string, shard: string) =>
   `octospaces:inbox:v1:${recipientId}:${shard}`;
@@ -91,7 +91,7 @@ export interface ResourceRequest {
     userId: string;
     edPub: string;
     kemPub: string;
-    /** Ed25519 sig of kemPub by edPriv — proves kemPub ownership (K4). */
+    /** Ed25519 sig of kemPub by edPriv — proves kemPub ownership. */
     kemSig: string;
   };
 }
@@ -278,7 +278,7 @@ export async function scanResourceRequests(
       // (cap minting in acceptResourceRequest uses req.requester.userId as the cap subject).
       if ((await userIdFromEdPub(req.requester.edPub)) !== req.requester.userId) continue;
 
-      // K4 fix: verify kemSig — Ed25519 sig of kemPub by edPriv — prevents an MITM from
+      // Verify kemSig — Ed25519 sig of kemPub by edPriv — prevents an MITM from
       // substituting their own kemPub so they can read E2EE content sealed for the requester.
       try {
         if (!ed25519.verify(hexToBytes(req.requester.kemSig), hexToBytes(req.requester.kemPub), hexToBytes(req.requester.edPub))) {

@@ -175,7 +175,7 @@ export async function listNodeKeyringRecipients(
   });
 }
 
-// ── Full revocation (K1) ──────────────────────────────────────────────────────
+// ── Full revocation ───────────────────────────────────────────────────────────
 
 /**
  * POST a signed {@link RevocationList} to the server's `/revocations` endpoint.

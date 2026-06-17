@@ -72,11 +72,11 @@ export async function inviteToSpace(
 ): Promise<string> {
   const req = JSON.parse(requestJson) as JoinRequest;
   if (!req.edPub || !req.kemPub || !req.userId) throw new Error('That is not a valid join request.');
-  // M2/I1 fix: reject requests whose claimed userId doesn't derive from their edPub.
+  // Reject requests whose claimed userId doesn't derive from their edPub.
   if ((await userIdFromEdPub(req.edPub)) !== req.userId) {
     throw new Error('That is not a valid join request: userId does not match edPub.');
   }
-  // K4 fix: verify kemSig — Ed25519 sig of kemPub by edPriv — proves the requester
+  // Verify kemSig — Ed25519 sig of kemPub by edPriv — proves the requester
   // actually owns the private key for edPub and created kemPub (prevents KEM-key substitution).
   let kemSigValid = false;
   try {

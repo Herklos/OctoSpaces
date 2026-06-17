@@ -1,10 +1,10 @@
 /**
- * I1 regression: inviteToSpace must validate userId ↔ edPub.
+ * Regression tests: inviteToSpace must validate userId ↔ edPub.
  *
- * I1 finding: inviteToSpace trusts req.userId presence-only — a caller could
- * pass a forged userId that flows into addSpaceMember + minted cap subject.
- * Fix: userIdFromEdPub(req.edPub) must equal req.userId, mirroring the check
- * that already exists in scanResourceRequests.
+ * inviteToSpace must not trust req.userId presence-only — a caller could pass a
+ * forged userId that flows into addSpaceMember + minted cap subject. Fix:
+ * userIdFromEdPub(req.edPub) must equal req.userId, mirroring the check in
+ * scanResourceRequests.
  *
  * CLAUDE.md invariant: inviteToSpace / inviteToNode MUST verify
  * `userId === await userIdFromEdPub(edPub)` before trusting a requester's userId.
@@ -44,7 +44,7 @@ vi.mock('@drakkar.software/starfish-keyring', async (importOriginal) => {
   return {
     ...original,
     addCollectionRecipient: vi.fn().mockResolvedValue(undefined),
-    // Safe stubs so K4 kemSig try/catch in members.ts succeeds for any hex input.
+    // Safe stubs so the kemSig try/catch in members.ts succeeds for any hex input.
     hexToBytes: vi.fn().mockReturnValue(new Uint8Array(32)),
     bytesToHex: vi.fn().mockReturnValue('ab'.repeat(32)),
   };
@@ -97,7 +97,7 @@ function makeSession() {
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
-describe('I1 regression: inviteToSpace rejects mismatched userId↔edPub', () => {
+describe('inviteToSpace rejects mismatched userId↔edPub', () => {
   beforeEach(() => {
     vi.mocked(userIdFromEdPub).mockResolvedValue('real-user-id');
   });
@@ -122,18 +122,18 @@ describe('I1 regression: inviteToSpace rejects mismatched userId↔edPub', () =>
   });
 });
 
-// ── K4 regression: inviteToSpace must validate kemSig ────────────────────────
+// ── inviteToSpace must validate kemSig ───────────────────────────────────────
 //
-// K4 finding: JoinRequest carries kemPub with no cryptographic proof the
-// requester owns the corresponding private key. An MITM can replace kemPub so
-// all sealed E2EE content is readable only by the attacker.
+// JoinRequest carries kemPub with no cryptographic proof the requester owns the
+// corresponding private key. An MITM can replace kemPub so all sealed E2EE
+// content is readable only by the attacker.
 //
 // Fix: makeJoinRequest signs kemPub with edPriv; inviteToSpace verifies the
 // signature before using kemPub. Missing or invalid kemSig → reject.
 
 import { ed25519 } from '@noble/curves/ed25519.js';
 
-describe('K4 regression: inviteToSpace validates kemSig binding', () => {
+describe('inviteToSpace validates kemSig binding', () => {
   beforeEach(() => {
     vi.mocked(userIdFromEdPub).mockResolvedValue('real-user-id');
     vi.mocked(ed25519.verify).mockReturnValue(true);

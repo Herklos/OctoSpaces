@@ -103,10 +103,10 @@ const ENSURE_KEYRING_MAX_ATTEMPTS = 3;
  * `keyringPullPath` / `keyringPushPath` are the full `/pull|push/.../_keyring`
  * paths (e.g. from `keyringPull`/`keyringPush`).
  *
- * K6 fix: the create-push uses a CAS retry loop. If two devices race to create
- * the same keyring simultaneously, the second push fails with a hash-conflict
- * (409/412). We re-pull on conflict; if the keyring now exists we open it
- * directly (the concurrent device's create wins). A non-conflict error propagates.
+ * The create-push uses a CAS retry loop. If two devices race to create the same
+ * keyring simultaneously, the second push fails with a hash-conflict (409/412).
+ * We re-pull on conflict; if the keyring now exists we open it directly (the
+ * concurrent device's create wins). A non-conflict error propagates.
  */
 export async function ownerEnsureKeyring(
   client: StarfishClient,

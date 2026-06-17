@@ -41,7 +41,7 @@ vi.mock('../sync/client.js', async (importOriginal) => {
 
 vi.mock('@drakkar.software/starfish-keyring', () => ({
   addCollectionRecipient: vi.fn().mockResolvedValue(undefined),
-  // Safe stubs so the K4 kemSig try/catch in members.ts succeeds for fixture strings.
+  // Safe stubs so the kemSig try/catch in members.ts succeeds for fixture strings.
   hexToBytes: vi.fn().mockReturnValue(new Uint8Array(32)),
   bytesToHex: vi.fn().mockReturnValue('ab'.repeat(32)),
 }));
@@ -73,7 +73,7 @@ vi.mock('@drakkar.software/starfish-identities', () => ({
   }),
 }));
 
-// K4: mock ed25519 so kemSig validation passes for all test fixtures.
+// Mock ed25519 so kemSig validation passes for all test fixtures.
 vi.mock('@noble/curves/ed25519.js', () => ({
   ed25519: {
     sign: vi.fn().mockReturnValue(new Uint8Array(64).fill(0xab)),
@@ -134,7 +134,7 @@ const bobRequest = JSON.stringify({
   edPub: 'bob-ed-pub',
   kemPub: 'bob-kem-pub',
   userId: 'bob-user-id',
-  kemSig: 'ab'.repeat(64), // K4: ed25519 sig of kemPub by edPriv (mocked to verify=true)
+  kemSig: 'ab'.repeat(64), // ed25519 sig of kemPub by edPriv (mocked to verify=true)
 });
 
 // ── inviteToSpace ─────────────────────────────────────────────────────────────

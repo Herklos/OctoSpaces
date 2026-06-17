@@ -14,7 +14,7 @@ export default defineConfig({
         'src/index.ts',
       ],
       thresholds: {
-        // Conservative floor — most visual components lack tests (P2 gap).
+        // Conservative floor — most visual components lack tests.
         // Raise as component tests are added.
         lines:      30,
         branches:   25,

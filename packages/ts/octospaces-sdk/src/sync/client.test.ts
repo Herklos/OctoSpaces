@@ -2,7 +2,7 @@
  * client.ts — unit tests for ownerEnsureKeyring and related helpers.
  *
  * Tests cover:
- *   K6 regression: ownerEnsureKeyring CAS retry on hash-conflict.
+ *   ownerEnsureKeyring CAS retry on hash-conflict.
  *     When two devices concurrently create the same keyring, the second push
  *     fails with a "conflict" error (stale hash = null vs current hash).
  *     The function must retry: re-pull the now-existing keyring, skip create,
@@ -112,18 +112,18 @@ describe('ownerEnsureKeyring — baseline', () => {
   });
 });
 
-// ── K6 regression: CAS retry on hash conflict ─────────────────────────────────
+// ── CAS retry on hash conflict ────────────────────────────────────────────────
 //
-// K6 finding: ownerEnsureKeyring pushes with `krRes?.hash ?? null` — if both
-// pull returned null, two concurrent devices race. The second push fails
-// (conflict / stale hash). Without a retry loop the function throws; the owner
-// cannot create their keyring and the invite flow is broken.
+// ownerEnsureKeyring pushes with `krRes?.hash ?? null` — if both pulls returned
+// null, two concurrent devices race. The second push fails (conflict / stale
+// hash). Without a retry loop the function throws; the owner cannot create their
+// keyring and the invite flow is broken.
 //
 // Fix: catch hash-conflict errors, re-pull, and if the keyring now exists, open
 // it directly (don't overwrite). If it still doesn't exist, retry the create
 // (up to MAX_RETRIES, default 3).
 
-describe('K6 regression: ownerEnsureKeyring retries on hash conflict', () => {
+describe('ownerEnsureKeyring retries on hash conflict', () => {
   beforeEach(() => {
     vi.mocked(createKeyring).mockClear();
     vi.mocked(createKeyringEncryptor).mockClear();

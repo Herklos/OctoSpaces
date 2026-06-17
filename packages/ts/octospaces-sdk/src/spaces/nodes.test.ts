@@ -57,7 +57,7 @@ vi.mock('@drakkar.software/starfish-keyring', async (importOriginal) => {
     ...original,
     addCollectionRecipient: vi.fn().mockResolvedValue(undefined),
     // Return a safe Uint8Array so hex-invalid fixture strings ('r-ed', 'r-kem' etc.)
-    // don't throw inside the K4 kemSig try/catch and cause false validation failures.
+    // don't throw inside the kemSig try/catch and cause false validation failures.
     hexToBytes: vi.fn().mockReturnValue(new Uint8Array(32)),
     bytesToHex: vi.fn().mockReturnValue('ab'.repeat(32)),
   };
@@ -445,9 +445,9 @@ describe('inviteToNode — stream cap + isolation', () => {
   });
 });
 
-// ── I3: NodeInviteBundle kind discriminator ────────────────────────────────────
+// ── NodeInviteBundle kind discriminator ───────────────────────────────────────
 
-describe('I3: NodeInviteBundle carries a kind discriminator', () => {
+describe('NodeInviteBundle carries a kind discriminator', () => {
   const joinReq = JSON.stringify({ edPub: 'deadbeef'.repeat(8), kemPub: 'cafebabe'.repeat(8), userId: 'requester', kemSig: 'ab'.repeat(64) });
 
   beforeEach(() => {
@@ -645,16 +645,16 @@ describe('inviteToNode — write parameter in opts', () => {
   });
 });
 
-// ── I1 regression: inviteToNode must validate userId ↔ edPub ─────────────────
+// ── inviteToNode must validate userId ↔ edPub ────────────────────────────────
 //
-// I1 finding: inviteToNode (and inviteToSpace) trusted req.userId presence-only —
+// inviteToNode (and inviteToSpace) must not trust req.userId presence-only —
 // a caller could pass a forged userId that flows into addSpaceMember + the minted
 // cap subject without any derivation check. Fix: userIdFromEdPub(req.edPub) must
 // equal req.userId, mirroring the check in scanResourceRequests.
 
 import { userIdFromEdPub } from '../sync/paths.js';
 
-describe('I1 regression: inviteToNode rejects mismatched userId↔edPub', () => {
+describe('inviteToNode rejects mismatched userId↔edPub', () => {
   const session = makeSession();
 
   beforeEach(() => {
@@ -682,18 +682,18 @@ describe('I1 regression: inviteToNode rejects mismatched userId↔edPub', () => 
   });
 });
 
-// ── K4 regression: inviteToNode must validate kemSig ─────────────────────────
+// ── inviteToNode must validate kemSig ────────────────────────────────────────
 //
-// K4 finding: JoinRequest carries kemPub but no signature proving the requester
-// owns the matching edPriv. An MITM can replace kemPub with their own key so all
-// future E2EE content is sealed to them, not the intended recipient.
+// JoinRequest carries kemPub but no signature proving the requester owns the
+// matching edPriv. An MITM can replace kemPub with their own key so all future
+// E2EE content is sealed to them, not the intended recipient.
 //
 // Fix: makeJoinRequest signs kemPub with edPriv (Ed25519) and includes kemSig.
 // inviteToNode verifies kemSig before processing; missing or invalid sig → reject.
 
 import { ed25519 } from '@noble/curves/ed25519.js';
 
-describe('K4 regression: inviteToNode validates kemSig binding', () => {
+describe('inviteToNode validates kemSig binding', () => {
   const session = makeSession();
 
   beforeEach(() => {
@@ -726,19 +726,14 @@ describe('K4 regression: inviteToNode validates kemSig binding', () => {
   });
 });
 
-// ── I3b: acceptNodeInvite validates bundle kind ───────────────────────────────
+// ── acceptNodeInvite validates bundle kind ────────────────────────────────────
 //
-// I3 finding: NodeInviteBundle.kind is optional — acceptNodeInvite never validates
-// it. A future-format bundle with an unrecognised kind could be silently accepted
-// and mis-processed (kind-confusion). The handler infers E2EE model from cap
-// presence rather than from the explicit discriminator, so a bundle crafted to have
-// both space and node caps could be accepted under the wrong E2EE model.
-//
-// Fix: acceptNodeInvite validates bundle.kind against the NodeInviteKind set
-// ('plaintext' | 'space-enc' | 'node-enc'). Unknown kinds are rejected. Absent
-// kind is still accepted (backward-compat with pre-I3 bundles).
+// NodeInviteBundle.kind is optional — acceptNodeInvite validates it against the
+// NodeInviteKind set ('plaintext' | 'space-enc' | 'node-enc'). A future-format
+// bundle with an unrecognised kind must be rejected to prevent kind-confusion.
+// Absent kind is still accepted (backward-compat with pre-0.12.9 bundles).
 
-describe('I3b: acceptNodeInvite rejects unknown bundle kind', () => {
+describe('acceptNodeInvite rejects unknown bundle kind', () => {
   beforeEach(() => {
     vi.mocked(saveSpaceAccessEntry).mockClear();
     vi.mocked(saveNodeAccessEntry).mockClear();

@@ -24,7 +24,7 @@ vi.mock('./client.js', () => ({
   openEncryptor: vi.fn().mockResolvedValue({ tag: 'enc' }),
   buildEncryptor: vi.fn().mockResolvedValue({ tag: 'enc' }),
   ownerEnsureKeyring: vi.fn().mockResolvedValue({ tag: 'enc' }),
-  // Required after P1 dedup: node-keyring.ts now imports isAlreadyPresentRecipient from client.js.
+  // node-keyring.ts imports isAlreadyPresentRecipient from client.js.
   isAlreadyPresentRecipient: vi.fn().mockImplementation(
     (e: unknown) => /already (present|a recipient|exists)|duplicate/i.test(e instanceof Error ? e.message : String(e)),
   ),
@@ -246,19 +246,18 @@ describe('ensureNodeKeyringRecipient — ordering invariant', () => {
   });
 });
 
-// ── K2 regression: trustedAdders must be ownerTrustedAdders(session) ─────────
+// ── trustedAdders must be ownerTrustedAdders(session) ────────────────────────
 //
-// K2 finding: all node-keyring functions default trustedAdders to
-// [session.keys.edPub] — but for a paired device (ownerEdPub ≠ keys.edPub)
-// the correct default is ownerTrustedAdders(session) = [ownerEdPub, keys.edPub].
-// Without this, a rotation by one device drops recipients added by another
-// device or the owner (accidental self-eviction).
+// All node-keyring functions must default trustedAdders to
+// ownerTrustedAdders(session) = [ownerEdPub, keys.edPub] for a paired device
+// (ownerEdPub ≠ keys.edPub). Without this, a rotation by one device drops
+// recipients added by another device or the owner (accidental self-eviction).
 //
 // Fix: import ownerTrustedAdders from identity.js and use it as the default
 // in all four functions (ownerEnsureNodeKeyring, addNodeKeyringRecipient,
 // removeNodeKeyringRecipient, listNodeKeyringRecipients).
 
-describe('K2 regression: device session uses ownerTrustedAdders (owner + device)', () => {
+describe('device session uses ownerTrustedAdders (owner + device)', () => {
   beforeEach(() => {
     vi.mocked(ownerEnsureKeyring).mockClear().mockResolvedValue({ tag: 'enc' } as never);
     vi.mocked(addCollectionRecipient).mockClear().mockResolvedValue(undefined);
@@ -301,16 +300,15 @@ describe('K2 regression: device session uses ownerTrustedAdders (owner + device)
   });
 });
 
-// ── K1 regression: revokeNodeAccess — full eviction (rotate + revoke) ─────────
+// ── revokeNodeAccess — full eviction (rotate + revoke) ───────────────────────
 //
-// K1 finding: removeNodeKeyringRecipient only rotates the epoch (forward secrecy)
-// — it never revokes the removed party's cap. The removed requester keeps a valid
-// cap and can still read/write the node stream. revokeNodeAccess fixes this by
-// composing keyring rotation (removeNodeKeyringRecipient) with a signed
-// RevocationList submission — invalidating every cap for the evicted subjects
-// server-side so authenticated requests are rejected.
+// removeNodeKeyringRecipient only rotates the epoch (forward secrecy) — it never
+// revokes the removed party's cap. The removed requester keeps a valid cap and
+// can still read/write the node stream. revokeNodeAccess fixes this by composing
+// keyring rotation (removeNodeKeyringRecipient) with a signed RevocationList
+// submission — invalidating every cap for the evicted subjects server-side.
 
-describe('K1 regression: revokeNodeAccess composes rotation + cap revocation', () => {
+describe('revokeNodeAccess composes rotation + cap revocation', () => {
   const revokedSubjects: RevokedSubject[] = [
     { sub: 'bob-ed-pub', exp: 9999999999 },
   ];

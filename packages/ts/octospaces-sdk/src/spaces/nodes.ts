@@ -66,7 +66,7 @@ import { addSpaceMember, buildSpace, readSpaces } from './registry.js';
 import { randomId } from '../core/ids.js';
 import type { JoinRequest } from './members.js';
 
-// ── K1: owner-side node invite store (nonces for revocation) ─────────────────
+// ── owner-side node invite store (nonces for revocation) ─────────────────────
 //
 // When the owner issues an isolated per-node-keyring invite (e.g. an OctoDesk ticket),
 // they retain the cap nonces here so `revokeNodeAccess` can revoke ALL three caps
@@ -263,8 +263,8 @@ export interface NodeInviteBundle {
   nodeId: string;
   nodeName: string;
   /**
-   * I3: discriminates the invite's E2EE model. Absent in bundles produced before 0.12.9
-   * (pre-I3 fix); treat absent as `'plaintext'` or derive from which caps are present.
+   * Discriminates the invite's E2EE model. Absent in bundles produced before 0.12.9;
+   * treat absent as `'plaintext'` or derive from which caps are present.
    */
   kind?: NodeInviteKind;
   /**
@@ -307,11 +307,11 @@ export async function inviteToNode(
 ): Promise<string> {
   const req = JSON.parse(requestJson) as JoinRequest;
   if (!req.edPub || !req.kemPub || !req.userId) throw new Error('Invalid join request.');
-  // M2/I1 fix: reject requests whose claimed userId doesn't derive from their edPub.
+  // Reject requests whose claimed userId doesn't derive from their edPub.
   if ((await userIdFromEdPub(req.edPub)) !== req.userId) {
     throw new Error('Invalid join request: userId does not match edPub.');
   }
-  // K4 fix: verify kemSig — Ed25519 sig of kemPub by edPriv — prevents KEM-key substitution.
+  // Verify kemSig — Ed25519 sig of kemPub by edPriv — prevents KEM-key substitution.
   let kemSigValid = false;
   try {
     kemSigValid = !!req.kemSig && ed25519.verify(hexToBytes(req.kemSig), hexToBytes(req.kemPub), hexToBytes(req.edPub));
@@ -349,7 +349,7 @@ export async function inviteToNode(
     spaceId,
     nodeId,
     nodeName: nodeName ?? nodeId,
-    // I3: discriminate the invite's E2EE model so the invitee can handle it correctly.
+    // Discriminate the invite's E2EE model so the invitee can handle it correctly.
     kind: perNodeKeyring ? 'node-enc' : (node.enc ? 'space-enc' : 'plaintext'),
   };
 
@@ -404,7 +404,7 @@ export async function inviteToNode(
     );
   }
 
-  // K1: retain cap nonces for future revocation (per-node-keyring invites only).
+  // Retain cap nonces for future revocation (per-node-keyring invites only).
   // The owner needs all three nonces to submit a complete RevocationList covering
   // every cap the invitee holds (keyring + content + stream).
   if (perNodeKeyring) {
@@ -429,14 +429,14 @@ export async function inviteToNode(
  * Invitee: accept a direct node invite — store the cap(s) and register access.
  * Returns the nodeId.
  */
-/** Set of valid NodeInviteBundle kind discriminators (I3). */
+/** Set of valid NodeInviteBundle kind discriminators. */
 const VALID_INVITE_KINDS: ReadonlySet<string> = new Set(['plaintext', 'space-enc', 'node-enc']);
 
 export async function acceptNodeInvite(session: Session, bundleJson: string): Promise<string> {
   const bundle = JSON.parse(bundleJson) as Partial<NodeInviteBundle>;
   if (!bundle.spaceId || !bundle.nodeId) throw new Error('Invalid node invite.');
 
-  // I3: reject bundles with an unrecognised kind. Absent kind is allowed for
+  // Reject bundles with an unrecognised kind. Absent kind is allowed for
   // backward-compat with bundles produced before 0.12.9 (treat as 'plaintext').
   if (bundle.kind !== undefined && !VALID_INVITE_KINDS.has(bundle.kind)) {
     throw new Error(`Invalid node invite: unknown kind '${bundle.kind}'.`);
@@ -481,7 +481,7 @@ export async function acceptNodeInvite(session: Session, bundleJson: string): Pr
   return bundle.nodeId;
 }
 
-// ── K1: revokeNodeAccess ─────────────────────────────────────────────────────
+// ── revokeNodeAccess ──────────────────────────────────────────────────────────
 
 /**
  * Revoke a previously-issued isolated per-node-keyring invite.
