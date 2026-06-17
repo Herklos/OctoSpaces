@@ -19,7 +19,7 @@
  */
 import { readProfile } from '../sync/client.js';
 import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
-import { userIdFromEdPub } from '../sync/paths.js';
+import { userIdFromEdPub, ED_PUB_HEX_RE, KEM_PUB_HEX_RE, KEM_SIG_HEX_RE, USER_ID_HEX_RE } from '../sync/paths.js';
 import type { Session } from '../sync/identity.js';
 import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
 import { ed25519 } from '@noble/curves/ed25519.js';
@@ -42,12 +42,12 @@ export interface IdentityLink {
   kemSig: string; // Ed25519 sig of hexToBytes(kemPub) by edPriv
 }
 
-const OWNER_ID_RE = /^[0-9a-f]{32}$/;
-const ED_PUB_RE = /^[0-9a-f]{64}$/;
-/** X25519 KEM public key: 32 bytes = 64 hex chars. */
-const KEM_PUB_RE = /^[0-9a-f]{64}$/;
-/** Ed25519 signature: 64 bytes = 128 hex chars. */
-const KEM_SIG_RE = /^[0-9a-f]{128}$/;
+// Hex-format anchored regexes — use the shared constants from paths.ts so there
+// is exactly one place to change if the key sizes ever change.
+const OWNER_ID_RE = USER_ID_HEX_RE;
+const ED_PUB_RE = ED_PUB_HEX_RE;
+const KEM_PUB_RE = KEM_PUB_HEX_RE;
+const KEM_SIG_RE = KEM_SIG_HEX_RE;
 
 const MALFORMED = 'That identity link is malformed or incomplete.';
 

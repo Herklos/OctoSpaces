@@ -37,6 +37,10 @@ vi.mock('@drakkar.software/starfish-keyring', async (importOriginal) => {
     addCollectionRecipient: vi.fn().mockResolvedValue(undefined),
     hexToBytes: vi.fn().mockReturnValue(new Uint8Array(32)),
     bytesToHex: vi.fn().mockReturnValue('ab'.repeat(32)),
+    // Stubs so ownerEnsureKeyring (called via ensureSpaceKeyringRecipient internally)
+    // can complete without real hex crypto — non-isolated enc invites hit this path.
+    createKeyring: vi.fn().mockResolvedValue({ keyring: { epochs: [] } }),
+    createKeyringEncryptor: vi.fn().mockResolvedValue({}),
   };
 });
 
@@ -66,8 +70,11 @@ vi.mock('../sync/client.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../sync/client.js')>();
   return {
     ...original,
-    ownerEnsureKeyring: vi.fn().mockResolvedValue({}),
-    addSpaceKeyringRecipient: vi.fn().mockResolvedValue(undefined),
+    // makeClient override so internal pull/push calls don't hit a real server.
+    makeClient: vi.fn().mockReturnValue({
+      pull: vi.fn().mockResolvedValue(null),
+      push: vi.fn().mockResolvedValue(undefined),
+    }),
   };
 });
 

@@ -86,6 +86,8 @@ import {
   scanResourceGrants,
   acceptResourceRequest,
   submitResourceRequest,
+  saveReqIdOwner,
+  clearReqIdOwnerStore,
 } from './resource-requests.js';
 import type { PendingRequest, ResourceRequest, ResourceGrant } from './resource-requests.js';
 import type { Session } from '../sync/identity.js';
@@ -452,6 +454,94 @@ describe('L1: scanResourceGrants — deduplicates by reqId', () => {
   });
 });
 
+// ── scanResourceGrants — grant sender authenticity ──────────────────────────
+//
+// A grant is delivered on the requester's PUBLIC-WRITE inbox, so anyone can append
+// a forged grant. Without a sender check, the forged grant's reqId is burned in
+// seenReqIds and the REAL grant (arriving later, or in the same scan) is silently
+// skipped. Fix: the requester records reqId → ownerEdPub at submit time; a grant
+// whose `sealed.entry.addedBy` ≠ the recorded owner is skipped WITHOUT burning the reqId.
+
+describe('scanResourceGrants — rejects forged grants (sender authenticity)', () => {
+  let requesterKeys: KeySet;
+  let requesterSession: Session;
+
+  beforeAll(async () => {
+    requesterKeys = await makeKeys();
+    requesterSession = makeSession(requesterKeys);
+  });
+
+  beforeEach(() => {
+    clearReqIdOwnerStore();
+    vi.mocked(pullInbox).mockReset();
+    vi.mocked(unsealFromRecipient).mockReset();
+  });
+
+  function makeGrant(reqId: string, nodeId: string): ResourceGrant {
+    return { v: 1, kind: 'grant', reqId, spaceId: 'sp-test', nodeId, bundle: '{"spaceId":"sp-test"}' };
+  }
+
+  it('skips a grant whose addedBy does not match the recorded owner edPub', async () => {
+    saveReqIdOwner('req-c2', 'real-owner');
+    const forged = makeGrant('req-c2', 'node-forged');
+
+    vi.mocked(pullInbox)
+      .mockResolvedValueOnce([makeInboxItem('attacker')]) // shard 2024-06
+      .mockResolvedValueOnce([]); // shard 2024-05
+    vi.mocked(unsealFromRecipient).mockResolvedValueOnce(JSON.stringify(forged));
+
+    const results = await scanResourceGrants(requesterSession);
+    expect(results).toHaveLength(0);
+  });
+
+  it('a forged grant does NOT burn the reqId — the real grant still arrives', async () => {
+    saveReqIdOwner('req-c2', 'real-owner');
+    const forged = makeGrant('req-c2', 'node-forged');
+    const genuine = makeGrant('req-c2', 'node-genuine');
+
+    // Both items in the first shard: forged first, then the genuine owner grant.
+    vi.mocked(pullInbox)
+      .mockResolvedValueOnce([makeInboxItem('attacker'), makeInboxItem('real-owner')])
+      .mockResolvedValueOnce([]);
+    vi.mocked(unsealFromRecipient)
+      .mockResolvedValueOnce(JSON.stringify(forged))
+      .mockResolvedValueOnce(JSON.stringify(genuine));
+
+    const results = await scanResourceGrants(requesterSession);
+    expect(results).toHaveLength(1);
+    // The genuine grant survived — the forged one did not poison seenReqIds.
+    expect(results[0]!.nodeId).toBe('node-genuine');
+  });
+
+  it('accepts a grant whose addedBy matches the recorded owner edPub', async () => {
+    saveReqIdOwner('req-c2', 'real-owner');
+    const genuine = makeGrant('req-c2', 'node-genuine');
+
+    vi.mocked(pullInbox)
+      .mockResolvedValueOnce([makeInboxItem('real-owner')])
+      .mockResolvedValueOnce([]);
+    vi.mocked(unsealFromRecipient).mockResolvedValueOnce(JSON.stringify(genuine));
+
+    const results = await scanResourceGrants(requesterSession);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.nodeId).toBe('node-genuine');
+  });
+
+  it('accepts a grant when no owner was recorded for the reqId (TOFU / back-compat)', async () => {
+    // No saveReqIdOwner call — the requester has no record, so the gate is skipped.
+    const grant = makeGrant('req-untracked', 'node-x');
+
+    vi.mocked(pullInbox)
+      .mockResolvedValueOnce([makeInboxItem('whoever')])
+      .mockResolvedValueOnce([]);
+    vi.mocked(unsealFromRecipient).mockResolvedValueOnce(JSON.stringify(grant));
+
+    const results = await scanResourceGrants(requesterSession);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.reqId).toBe('req-untracked');
+  });
+});
+
 // ── scanResourceRequests validates kemSig binding ────────────────────────────
 //
 // ResourceRequest.requester carries kemPub with no proof the requester owns the
@@ -614,8 +704,8 @@ describe('shard-bound inbox AAD', () => {
       v: 2,
     } as never, { spaceId: 'sp-test', nodeType: 'ticket', title: 'shard AAD test' });
 
-    // AAD must contain the current shard (inboxShard() mock returns '2024-06')
-    expect(capturedAad).toBe(`octospaces:inbox:v1:${ownerKeys.userId}:2024-06`);
+    // AAD must contain the current shard and kind (inboxShard() mock returns '2024-06')
+    expect(capturedAad).toBe(`octospaces:inbox:v1:${ownerKeys.userId}:2024-06:request`);
   });
 
   it('FAILS (pre-fix): scanResourceRequests unseals with per-shard AAD', async () => {
@@ -631,8 +721,9 @@ describe('shard-bound inbox AAD', () => {
 
     await scanResourceRequests(ownerSession);
 
-    expect(capturedAads[0]).toBe(`octospaces:inbox:v1:${ownerSession.userId}:2024-06`);
-    expect(capturedAads[1]).toBe(`octospaces:inbox:v1:${ownerSession.userId}:2024-05`);
+    // Kind-bound attempt is first per item; fallback shard-only is second.
+    expect(capturedAads[0]).toBe(`octospaces:inbox:v1:${ownerSession.userId}:2024-06:request`);
+    expect(capturedAads[2]).toBe(`octospaces:inbox:v1:${ownerSession.userId}:2024-05:request`);
   });
 
   it('FAILS (pre-fix): scanResourceGrants unseals with per-shard AAD', async () => {
@@ -647,8 +738,9 @@ describe('shard-bound inbox AAD', () => {
 
     await scanResourceGrants(requesterSession);
 
-    expect(capturedAads[0]).toBe(`octospaces:inbox:v1:${requesterSession.userId}:2024-06`);
-    expect(capturedAads[1]).toBe(`octospaces:inbox:v1:${requesterSession.userId}:2024-05`);
+    // Kind-bound attempt is first per item; fallback shard-only is second.
+    expect(capturedAads[0]).toBe(`octospaces:inbox:v1:${requesterSession.userId}:2024-06:grant`);
+    expect(capturedAads[2]).toBe(`octospaces:inbox:v1:${requesterSession.userId}:2024-05:grant`);
   });
 });
 

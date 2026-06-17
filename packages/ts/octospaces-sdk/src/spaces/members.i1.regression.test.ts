@@ -30,8 +30,8 @@ vi.mock('./registry.js', () => ({
 }));
 
 vi.mock('../sync/client.js', () => ({
-  ownerEnsureKeyring: vi.fn().mockResolvedValue({}),
-  addSpaceKeyringRecipient: vi.fn().mockResolvedValue(undefined),
+  ownerEnsureSpaceKeyring: vi.fn().mockResolvedValue({}),
+  ensureSpaceKeyringRecipient: vi.fn().mockResolvedValue(undefined),
   isAlreadyPresentRecipient: vi.fn().mockReturnValue(false),
 }));
 

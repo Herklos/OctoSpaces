@@ -34,22 +34,18 @@ import type { CapCert } from '@drakkar.software/starfish-protocol';
 import type { RevocationEntry, RevocationList } from '@drakkar.software/starfish-protocol';
 
 import type { NodeAccess, ObjectNode, ObjectType } from '../core/types.js';
-import { addSpaceKeyringRecipient, ownerEnsureKeyring } from '../sync/client.js';
+import { ensureSpaceKeyringRecipient, ownerEnsureSpaceKeyring } from '../sync/client.js';
 import type { Session } from '../sync/identity.js';
 import { ownerTrustedAdders } from '../sync/identity.js';
 import {
-  keyringPull,
-  keyringPush,
   nodeKeyringName,
   nodeKeyringScope,
   nodeMemberScope,
   nodeStreamScope,
+  RECIPIENT_LABEL_LEN,
   spaceMemberScope,
   userIdFromEdPub,
 } from '../sync/paths.js';
-import {
-  getSpaceClient,
-} from '../sync/space-access.js';
 import { ensureNodeKeyringRecipient } from '../sync/node-keyring.js';
 import {
   getNodeAccessEntry,
@@ -165,14 +161,7 @@ export async function createNode(
 
   if (enc) {
     // Ensure the space-wide keyring exists (idempotent — minted once per space).
-    const client = getSpaceClient(spaceId, session);
-    await ownerEnsureKeyring(
-      client,
-      session.keys,
-      keyringPull(spaceId),
-      keyringPush(spaceId),
-      ownerTrustedAdders(session),
-    );
+    await ownerEnsureSpaceKeyring(session, spaceId);
   }
 
   let createdNode: ObjectNode | null = null;
@@ -193,6 +182,19 @@ export async function createNode(
   });
 
   if (!createdNode) throw new Error('createNode: index update did not produce a node');
+
+  // Mint the owner's per-node stream cap (objinvlog) so the owner can read this node's
+  // invite-log. ownerScope (paths: ['spaces/**']) is not honoured by the sharing plugin
+  // for the objinvlog collection — a per-node cap is required.
+  const ownerStreamCap = await mintMemberCap(
+    session.keys.edPriv,
+    session.keys.edPub,
+    { edPubHex: session.keys.edPub, kemPubHex: session.keys.kemPub, userIdHex: session.userId },
+    'objinvlog',
+    nodeStreamScope(spaceId, nodeId, true),
+  );
+  saveNodeStreamAccessEntry(spaceId, nodeId, { kind: 'member', cap: JSON.stringify(ownerStreamCap) });
+
   return createdNode;
 }
 
@@ -216,14 +218,7 @@ export async function setNodeAccess(
 
   if (patch.enc) {
     // Ensure the space-wide keyring exists (idempotent).
-    const client = getSpaceClient(spaceId, session);
-    await ownerEnsureKeyring(
-      client,
-      session.keys,
-      keyringPull(spaceId),
-      keyringPush(spaceId),
-      ownerTrustedAdders(session),
-    );
+    await ownerEnsureSpaceKeyring(session, spaceId);
   }
 
   await updateObjectIndex(session, spaceId, (nodes, now) => {
@@ -351,15 +346,7 @@ export async function inviteToNode(
   if (node.enc && !perNodeKeyring) {
     // LEGACY space-wide keyring path (non-isolated enc): add the invitee as a recipient of
     // the space keyring (grants decryption of ALL enc nodes in the space). Ensure-first.
-    const encClient = getSpaceClient(spaceId, session);
-    await ownerEnsureKeyring(
-      encClient,
-      session.keys,
-      keyringPull(spaceId),
-      keyringPush(spaceId),
-      ownerTrustedAdders(session),
-    );
-    await addSpaceKeyringRecipient(session, spaceId, { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, 8) });
+    await ensureSpaceKeyringRecipient(session, spaceId, { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, RECIPIENT_LABEL_LEN) });
   }
 
   const bundle: NodeInviteBundle = {
@@ -377,13 +364,13 @@ export async function inviteToNode(
     await ensureNodeKeyringRecipient(session, spaceId, nodeId, {
       subKem: req.kemPub,
       userId: req.userId,
-      label: req.userId.slice(0, 8),
+      label: req.userId.slice(0, RECIPIENT_LABEL_LEN),
     });
     bundle.keyringCap = await mintMemberCap(
       session.keys.edPriv,
       session.keys.edPub,
       subject,
-      'chat',
+      'nodekeyring',
       nodeKeyringScope(spaceId, nodeId),
     );
   }
@@ -409,14 +396,14 @@ export async function inviteToNode(
       session.keys.edPriv,
       session.keys.edPub,
       subject,
-      'chat',
+      'objinv',
       nodeMemberScope(spaceId, nodeId, canWrite),
     );
     bundle.streamCap = await mintMemberCap(
       session.keys.edPriv,
       session.keys.edPub,
       subject,
-      'chat',
+      'objinvlog',
       nodeStreamScope(spaceId, nodeId, canWrite),
     );
   }
@@ -657,16 +644,8 @@ export async function createNodeInviteLink(
 
   if (node.enc && !perNodeKeyring) {
     // LEGACY space-wide keyring path (non-isolated enc): add the ephemeral KEM to the space
-    // keyring. Ensure-first (invariant: ownerEnsureKeyring precedes addCollectionRecipient).
-    const encClient = getSpaceClient(spaceId, session);
-    await ownerEnsureKeyring(
-      encClient,
-      session.keys,
-      keyringPull(spaceId),
-      keyringPush(spaceId),
-      ownerTrustedAdders(session),
-    );
-    await addSpaceKeyringRecipient(session, spaceId, { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, 8) });
+    // keyring. Ensure-first (invariant: ownerEnsureSpaceKeyring precedes addCollectionRecipient).
+    await ensureSpaceKeyringRecipient(session, spaceId, { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, RECIPIENT_LABEL_LEN) });
   }
 
   let keyringCap: unknown;
@@ -676,13 +655,13 @@ export async function createNodeInviteLink(
     await ensureNodeKeyringRecipient(session, spaceId, nodeId, {
       subKem: ek.kemPub,
       userId: ephemeralUserId,
-      label: ephemeralUserId.slice(0, 8),
+      label: ephemeralUserId.slice(0, RECIPIENT_LABEL_LEN),
     });
     keyringCap = await mintMemberCap(
       session.keys.edPriv,
       session.keys.edPub,
       subject,
-      'chat',
+      'nodekeyring',
       nodeKeyringScope(spaceId, nodeId),
     );
   }
@@ -693,7 +672,7 @@ export async function createNodeInviteLink(
     session.keys.edPriv,
     session.keys.edPub,
     subject,
-    'chat',
+    node.enc && !perNodeKeyring ? 'chat' : 'objinv',
     node.enc && !perNodeKeyring
       ? spaceMemberScope(spaceId, write)
       : nodeMemberScope(spaceId, nodeId, write),
@@ -707,7 +686,7 @@ export async function createNodeInviteLink(
       session.keys.edPriv,
       session.keys.edPub,
       subject,
-      'chat',
+      'objinvlog',
       nodeStreamScope(spaceId, nodeId, write),
     );
   }

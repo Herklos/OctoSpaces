@@ -8,7 +8,13 @@
  * LINK join: the owner mints an ephemeral Ed/KEM keypair whose *private* key ships
  * inside a URL-fragment token, adds the ephemeral userId to the roster so the server
  * grants `space:member`, and mints a member cap scoped to that ephemeral subject.
- * Any bearer of the link stores a `{kind:'link'}` entry. Revocation = `removeSpaceMember`.
+ * Any bearer of the link stores a `{kind:'link'}` entry.
+ *
+ * REVOCATION (roster-only): `removeSpaceMember` removes the userId from the server
+ * roster so the server stops granting `space:member` to new requests. This alone is
+ * sufficient for non-encrypted spaces. For `enc` spaces call `revokeSpaceAccess`
+ * instead — it rotates the space keyring (forward secrecy) AND submits a signed
+ * RevocationList so the server immediately rejects the evicted member's cap.
  *
  * DEVICE PAIRING: after pairing, call `addDeviceToSpaceKeyring(session, spaceId, device)`
  * for each space the paired device should decrypt. ONE keyring per space encrypts all
@@ -16,8 +22,9 @@
  */
 import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
 import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
-import { mintMemberCap } from '@drakkar.software/starfish-sharing';
+import { mintMemberCap, evictMember } from '@drakkar.software/starfish-sharing';
 import { ed25519 } from '@noble/curves/ed25519.js';
+import type { CapCert, RevocationEntry, RevocationList } from '@drakkar.software/starfish-protocol';
 
 import type { Space } from '../core/types.js';
 import type { Session } from '../sync/identity.js';
@@ -28,9 +35,9 @@ import {
   localSpaceAccessEntries,
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
-import { keyringName, keyringPull, keyringPush, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
-import { addSpaceKeyringRecipient, isAlreadyPresentRecipient, ownerEnsureKeyring } from '../sync/client.js';
-import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, buildSpace, readSpaces, updateSpacesDoc } from './registry.js';
+import { keyringName, keyringPull, keyringPush, RECIPIENT_LABEL_LEN, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
+import { addSpaceKeyringRecipient, ensureSpaceKeyringRecipient, isAlreadyPresentRecipient, ownerEnsureSpaceKeyring } from '../sync/client.js';
+import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, buildSpace, readSpaces, updateSpacesDoc, removeSpaceMember } from './registry.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
 import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
 
@@ -50,6 +57,50 @@ export function makeJoinRequest(session: Session): string {
 
 function isKeyringMissing(err: unknown): boolean {
   return err instanceof Error && /not found|404|does not exist|no keyring exists/i.test(err.message);
+}
+
+// ── Space invite store (nonces for full eviction) ─────────────────────────────
+//
+// When the owner issues a space invite (`inviteToSpace` or `createSpaceInviteLink`)
+// they retain `{edPub, kemPub, cap nonce, exp}` here so `revokeSpaceAccess` can
+// later revoke the cap AND rotate the space keyring in a single operation.
+//
+// This store is in-memory (module-level Map). It survives the current JS execution
+// context but is cleared on reload. Callers that need persistence across reloads
+// should call `serializeSpaceInviteStore()` and `hydrateSpaceInviteStore()`.
+
+export interface StoredSpaceInvite {
+  edPub: string;
+  kemPub: string;
+  /** Retained cap nonce + expiry for the space member cap (`spaceMemberScope`). */
+  cap: { nonce: string; exp: number };
+}
+
+const spaceInviteStore = new Map<string, StoredSpaceInvite>(); // `${spaceId}:${userId}` → invite
+
+/** Save an invite entry for future revocation. Called internally by `inviteToSpace` / `createSpaceInviteLink`. */
+export function saveSpaceInviteEntry(spaceId: string, userId: string, entry: StoredSpaceInvite): void {
+  spaceInviteStore.set(`${spaceId}:${userId}`, entry);
+}
+
+/** Retrieve a stored invite entry. Returns null when absent. */
+export function getSpaceInviteEntry(spaceId: string, userId: string): StoredSpaceInvite | null {
+  return spaceInviteStore.get(`${spaceId}:${userId}`) ?? null;
+}
+
+/** Clear all entries (e.g. on sign-out). */
+export function clearSpaceInviteStore(): void {
+  spaceInviteStore.clear();
+}
+
+/** Snapshot the store for persistence across reloads. */
+export function serializeSpaceInviteStore(): Array<[string, StoredSpaceInvite]> {
+  return [...spaceInviteStore.entries()];
+}
+
+/** Restore the store after a reload (additive — does not clear existing entries). */
+export function hydrateSpaceInviteStore(entries: Array<[string, StoredSpaceInvite]>): void {
+  for (const [k, v] of entries) spaceInviteStore.set(k, v);
 }
 
 interface SpaceInvite {
@@ -90,9 +141,7 @@ export async function inviteToSpace(
 
   // Ensure the space-wide keyring exists (creates it with only the owner if absent),
   // then add the invitee as a recipient so they can decrypt enc nodes from the start.
-  // ownerEnsureKeyring is a no-op if the keyring already exists.
-  await ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId), ownerTrustedAdders(session));
-  await addSpaceKeyringRecipient(session, spaceId, { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, 8) });
+  await ensureSpaceKeyringRecipient(session, spaceId, { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, RECIPIENT_LABEL_LEN) });
 
   // NOTE: 'chat' is the cap collection the deployed server's space-member enricher recognises.
   const cap = await mintMemberCap(
@@ -102,6 +151,11 @@ export async function inviteToSpace(
     'chat',
     spaceMemberScope(spaceId, canWrite),
   );
+  // Retain the cap nonce so `revokeSpaceAccess` can revoke it later.
+  const capCert = cap as CapCert | undefined;
+  if (capCert?.nonce) {
+    saveSpaceInviteEntry(spaceId, req.userId, { edPub: req.edPub, kemPub: req.kemPub, cap: { nonce: capCert.nonce, exp: capCert.exp } });
+  }
   let name = spaceName?.trim();
   if (!name) {
     const { spaces } = await readSpaces(session.accountClient, session.userId);
@@ -201,12 +255,16 @@ export async function createSpaceInviteLink(
     'chat',
     spaceMemberScope(spaceId, write),
   );
+  // Retain the cap nonce so `revokeSpaceAccess` can revoke the link's ephemeral cap later.
+  const capCert = cap as CapCert | undefined;
+  if (capCert?.nonce) {
+    saveSpaceInviteEntry(spaceId, ephemeralUserId, { edPub: ek.edPub, kemPub: ek.kemPub, cap: { nonce: capCert.nonce, exp: capCert.exp } });
+  }
   // Add the ephemeral userId to the roster so the server grants `space:member`
   await addSpaceMember(session.accountClient, spaceId, session.userId, ephemeralUserId);
 
   // Ensure the keyring exists, then add the ephemeral KEM so link-bearers can decrypt enc content.
-  await ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId), ownerTrustedAdders(session));
-  await addSpaceKeyringRecipient(session, spaceId, { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, 8) });
+  await ensureSpaceKeyringRecipient(session, spaceId, { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, RECIPIENT_LABEL_LEN) });
 
   const token: SpaceInviteLinkToken = {
     v: 1, spaceId, spaceName, cap, key: ek.edPriv, kemPriv: ek.kemPriv, kemPub: ek.kemPub, write,
@@ -249,7 +307,7 @@ export async function addDeviceToSpaceKeyring(
     await addSpaceKeyringRecipient(session, spaceId, {
       subKem: device.kemPub,
       userId: device.userId,
-      label: device.userId.slice(0, 8),
+      label: device.userId.slice(0, RECIPIENT_LABEL_LEN),
     });
   } catch (err) {
     if (!isKeyringMissing(err)) throw err;
@@ -308,4 +366,83 @@ export async function recoverSpaceAccess(
   } catch (e) {
     console.error('[octospaces] recoverSpaceAccess: backfill failed', (e instanceof Error ? e.message : String(e)));
   }
+}
+
+// ── Space-tier full eviction ──────────────────────────────────────────────────
+
+/**
+ * Fully evict a space member — the space-tier equivalent of `revokeNodeAccess`.
+ *
+ * Performs two cryptographic steps in order:
+ *   1. **Cap revocation** — builds a signed `RevocationList` for the member's
+ *      `spaceMemberScope` cap and submits it via `opts.submitRevocation`. The server
+ *      rejects subsequent authenticated requests from the evicted member's cap.
+ *   2. **Keyring rotation** (forward secrecy) — removes the member's KEM from the
+ *      space-wide keyring and mints a fresh CEK so they cannot decrypt future `enc`
+ *      content. Members who already hold the old CEK keep read access to already-
+ *      stored content, but not to anything sealed after the rotation.
+ *   3. **Roster removal** — removes the userId from the `_access.members` roster so
+ *      the server stops granting `space:member` on new requests.
+ *
+ * Throws when no invite entry exists for `userId` in `spaceId` — call
+ * `saveSpaceInviteEntry` on the issuing device before using this function.
+ *
+ * @param opts.generation  MUST be strictly greater than any prior generation submitted
+ *   by this issuer (`session.keys.edPub`). The server rejects out-of-order lists.
+ * @param opts.priorRevoked  Earlier `RevocationEntry` items to carry in the same list
+ *   (avoids a separate submission for each eviction).
+ * @param opts.submitRevocation  HTTP transport for the `RevocationList` — typically
+ *   a POST to `${syncBase}${syncPrefix}/revocations`.
+ */
+export async function revokeSpaceAccess(
+  session: Session,
+  spaceId: string,
+  userId: string,
+  opts: {
+    generation: number;
+    priorRevoked?: RevocationEntry[];
+    submitRevocation: (list: RevocationList) => Promise<void>;
+  },
+): Promise<{ revoked: boolean }> {
+  const invite = spaceInviteStore.get(`${spaceId}:${userId}`);
+  if (!invite) {
+    throw new Error(
+      `revokeSpaceAccess: no stored invite for ${userId} on space ${spaceId} — call saveSpaceInviteEntry or use inviteToSpace / createSpaceInviteLink (which auto-store the entry)`,
+    );
+  }
+
+  const priorRevoked: RevocationEntry[] = [...(opts.priorRevoked ?? [])];
+
+  // Evict from the space keyring (rotate + revoke cap in one operation).
+  await evictMember(
+    session.chatClient,
+    {
+      keyringCollection: keyringName(spaceId),
+      membersCollection: keyringName(spaceId),
+      member: {
+        sub: invite.edPub,
+        nonce: invite.cap.nonce,
+        exp: invite.cap.exp,
+        subKem: invite.kemPub,
+      },
+      adder: {
+        edPriv: session.keys.edPriv,
+        edPub: session.keys.edPub,
+        kemPriv: session.keys.kemPriv,
+      },
+      trustedAdders: ownerTrustedAdders(session),
+      issEdPubHex: session.keys.edPub,
+      issEdPrivHex: session.keys.edPriv,
+      generation: opts.generation,
+      ...(priorRevoked.length > 0 ? { priorRevoked } : {}),
+      submitRevocation: opts.submitRevocation,
+    },
+    { rotate: true, revoke: true },
+  );
+
+  // Remove from the server roster (caps + keyring eviction do the cryptographic work;
+  // this prevents the server from granting new `space:member` tokens).
+  await removeSpaceMember(session.accountClient, spaceId, userId);
+
+  return { revoked: true };
 }

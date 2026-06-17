@@ -61,12 +61,46 @@ import { ed25519 } from '@noble/curves/ed25519.js';
 
 /**
  * AES-GCM additional-data context binding for inbox seals.
- * Binds to BOTH the recipient and the shard, preventing cross-shard relocation:
- * a sealed message from shard `2024-06` cannot be replayed in `2024-07` even
- * though both shards are under the same recipient's inbox.
+ * Binds to the recipient, the shard, AND the message kind, preventing:
+ *   - Cross-shard relocation (`2024-06` seal not replayable in `2024-07`).
+ *   - Cross-kind confusion (a `reject` seal cannot open with the `grant` AAD).
+ *
+ * Legacy seals (pre-0.13) used no `:kind` suffix. When `kind` is omitted the
+ * legacy AAD is produced for backward-compatible trial-unseal.
  */
-const inboxAad = (recipientId: string, shard: string) =>
-  `octospaces:inbox:v1:${recipientId}:${shard}`;
+const inboxAad = (recipientId: string, shard: string, kind?: string) =>
+  kind ? `octospaces:inbox:v1:${recipientId}:${shard}:${kind}` : `octospaces:inbox:v1:${recipientId}:${shard}`;
+
+// ── Owner-store: reqId → owner edPub (sender-authenticity for scanResourceGrants) ────────────
+//
+// When a requester submits a request they record which owner edPub they sent it to.
+// `scanResourceGrants` checks that the grant's `sealed.entry.addedBy` matches the
+// recorded owner, preventing a third party from burning a reqId by forging a grant.
+//
+// In-memory only (module-level Map). Callers that need persistence across reloads
+// should call `serializeReqIdOwnerStore()` and `hydrateReqIdOwnerStore()`.
+
+const reqIdOwnerStore = new Map<string, string>(); // reqId → ownerEdPub
+
+/** Record the owner edPub for a submitted request (called by `submitResourceRequest`). */
+export function saveReqIdOwner(reqId: string, ownerEdPub: string): void {
+  reqIdOwnerStore.set(reqId, ownerEdPub);
+}
+
+/** Snapshot the store for persistence across reloads. */
+export function serializeReqIdOwnerStore(): Array<[string, string]> {
+  return [...reqIdOwnerStore.entries()];
+}
+
+/** Restore the store after a reload (additive — does not clear existing entries). */
+export function hydrateReqIdOwnerStore(entries: Array<[string, string]>): void {
+  for (const [k, v] of entries) reqIdOwnerStore.set(k, v);
+}
+
+/** Clear the store (e.g. on sign-out). */
+export function clearReqIdOwnerStore(): void {
+  reqIdOwnerStore.clear();
+}
 
 // ── Payload types ─────────────────────────────────────────────────────────────
 
@@ -131,6 +165,12 @@ export interface PendingRequest {
 interface InboxPayload {
   sealed: SealedBlob;
   ts: number;
+  /**
+   * Cleartext message kind — used to select the matching kind-bound AAD on
+   * trial-unseal. Present on seals produced by SDK ≥0.13; absent on legacy seals
+   * (fall back to the shard-only AAD for backward compatibility).
+   */
+  mkind?: string;
 }
 
 // ── REQUESTER: submit a request ───────────────────────────────────────────────
@@ -192,10 +232,14 @@ export async function submitResourceRequest(
     },
   };
 
+  // Track which owner this request was sent to, enabling sender-auth on the grant.
+  saveReqIdOwner(reqId, ownerLink.edPub);
+
   // Seal the request to the owner's KEM key — only they can read it.
   const shard = inboxShard();
-  const sealed = await sealToRecipient(session, ownerLink.kemPub, JSON.stringify(request), inboxAad(ownerLink.ownerId, shard));
-  const element: InboxPayload = { sealed, ts: Date.now() };
+  const mkind = 'request';
+  const sealed = await sealToRecipient(session, ownerLink.kemPub, JSON.stringify(request), inboxAad(ownerLink.ownerId, shard, mkind));
+  const element: InboxPayload = { sealed, ts: Date.now(), mkind };
 
   await appendToInbox(ownerLink.ownerId, shard, element as unknown as Record<string, unknown>, {
     edPubHex: session.keys.edPub,
@@ -240,7 +284,13 @@ export async function scanResourceRequests(
 
       let plaintext: string;
       try {
-        plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId, shard));
+        // Try kind-bound AAD first (SDK ≥0.13 seals); fall back to legacy shard-only AAD.
+        const aad = inboxAad(session.userId, shard, payload.mkind ?? 'request');
+        try {
+          plaintext = await unsealFromRecipient(session, payload.sealed, aad);
+        } catch {
+          plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId, shard));
+        }
       } catch {
         continue; // not sealed to us or tampered — trial-unseal skip
       }
@@ -381,11 +431,12 @@ export async function acceptResourceRequest(
     bundle: bundleJson,
   };
   const grantShard = inboxShard();
-  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(grant), inboxAad(req.requester.userId, grantShard));
+  const grantKind = 'grant';
+  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(grant), inboxAad(req.requester.userId, grantShard, grantKind));
   await appendToInbox(
     req.requester.userId,
     grantShard,
-    { sealed, ts: Date.now() } as unknown as Record<string, unknown>,
+    { sealed, ts: Date.now(), mkind: grantKind } as unknown as Record<string, unknown>,
     { edPubHex: session.keys.edPub, edPrivHex: session.keys.edPriv },
   );
 
@@ -411,11 +462,12 @@ export async function rejectResourceRequest(
     ...(reason ? { reason } : {}),
   };
   const rejectShard = inboxShard();
-  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(rejection), inboxAad(req.requester.userId, rejectShard));
+  const rejectKind = 'reject';
+  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(rejection), inboxAad(req.requester.userId, rejectShard, rejectKind));
   await appendToInbox(
     req.requester.userId,
     rejectShard,
-    { sealed, ts: Date.now() } as unknown as Record<string, unknown>,
+    { sealed, ts: Date.now(), mkind: rejectKind } as unknown as Record<string, unknown>,
     { edPubHex: session.keys.edPub, edPrivHex: session.keys.edPriv },
   );
 }
@@ -448,7 +500,13 @@ export async function scanResourceGrants(
 
       let plaintext: string;
       try {
-        plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId, shard));
+        // Try kind-bound AAD first (SDK ≥0.13); fall back to legacy shard-only AAD.
+        const aad = inboxAad(session.userId, shard, payload.mkind ?? 'grant');
+        try {
+          plaintext = await unsealFromRecipient(session, payload.sealed, aad);
+        } catch {
+          plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId, shard));
+        }
       } catch {
         continue;
       }
@@ -470,6 +528,16 @@ export async function scanResourceGrants(
       ) {
         continue;
       }
+
+      // Sender-authenticity check: when we have a record of which owner edPub we sent
+      // this reqId to, the grant MUST come from that owner. This prevents a third party
+      // from forging a grant and burning the reqId in seenReqIds (which would cause the
+      // legitimate grant to be silently skipped).
+      const expectedOwnerEdPub = reqIdOwnerStore.get(g.reqId!);
+      if (expectedOwnerEdPub && payload.sealed.entry.addedBy !== expectedOwnerEdPub) {
+        continue; // forged sender — skip without burning the reqId
+      }
+
       if (seenReqIds.has(g.reqId!)) continue; // skip replayed/duplicate grant
       seenReqIds.add(g.reqId!);
       out.push(g as ResourceGrant);

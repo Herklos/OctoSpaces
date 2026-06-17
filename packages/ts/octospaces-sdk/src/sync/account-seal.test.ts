@@ -144,3 +144,48 @@ describe('v:1 blob requires aad on open', () => {
     expect(result).toBe('legacy-payload');
   });
 });
+
+// ── unsealFromSelf provenance: addedBy + signature must bind to this account ───
+//
+// unsealFromSelf opens a blob from a SYNCED doc — a malicious server (or a tampered
+// local cache) could swap in a blob authored by someone else. The provenance gate
+// rejects a blob whose `addedBy` is not this account, and a blob whose `addedSig`
+// does not verify, BEFORE attempting to decrypt.
+
+describe('unsealFromSelf rejects tampered provenance', () => {
+  let keys: ReturnType<typeof makeKeyPair>;
+  let session: ReturnType<typeof makeSession>;
+
+  beforeAll(() => {
+    keys = makeKeyPair();
+    session = makeSession(keys);
+  });
+
+  it('rejects a blob whose addedBy is not this account (not self-signed)', async () => {
+    const blob = await sealToSelf(session, 'payload');
+    // Re-stamp the entry as authored by a different identity.
+    const other = makeKeyPair();
+    const tampered: SealedBlob = { ...blob, entry: { ...blob.entry, addedBy: other.edPub } };
+    await expect(unsealFromSelf(session, tampered)).rejects.toThrow(/not self-signed/i);
+  });
+
+  it('rejects a blob whose signature does not verify (addedBy kept as self)', async () => {
+    const blob = await sealToSelf(session, 'payload');
+    // addedBy stays self (passes the self-signed check) but the signature is corrupted,
+    // so verifyEntrySignature must fail.
+    const badSig = blob.entry.addedSig.slice(0, -4) + (blob.entry.addedSig.endsWith('AAAA') ? 'BBBB' : 'AAAA');
+    const tampered: SealedBlob = { ...blob, entry: { ...blob.entry, addedSig: badSig } };
+    await expect(unsealFromSelf(session, tampered)).rejects.toThrow(/signature invalid/i);
+  });
+
+  it('rejects a blob signed by another identity but masquerading via addedBy (sig mismatch)', async () => {
+    // A blob legitimately sealed by `other`, with addedBy rewritten to `session` to
+    // bypass the self-signed check. The signature was made over `other`'s pubkey, so it
+    // cannot verify against the claimed self identity.
+    const other = makeKeyPair();
+    const otherSession = makeSession(other);
+    const otherBlob = await sealToSelf(otherSession, 'payload');
+    const masq: SealedBlob = { ...otherBlob, entry: { ...otherBlob.entry, addedBy: keys.edPub } };
+    await expect(unsealFromSelf(session, masq)).rejects.toThrow(/signature invalid/i);
+  });
+});

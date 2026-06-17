@@ -55,16 +55,22 @@ export async function hydrateSpaceAccessStore(
   serverLinkAccess: Record<string, { cap: unknown; key: string; kemPriv?: string; kemPub?: string; write: boolean }>,
 ): Promise<void> {
   const key = keyFor(userId);
-  if (activeKey === key) return;
-  activeKey = key;
-  cache = {};
-  const raw = await kvGet(key);
-  if (raw) {
-    try {
-      cache = JSON.parse(raw) as SpaceAccessMap;
-    } catch (e) {
-      console.error('[octospaces] space-access-store: corrupt cache, resetting:', e);
-      cache = {};
+  // First call for this account: load the kv cache and reset in-memory state.
+  // Subsequent calls (e.g. re-sync after a newly-granted cap) skip the kv reload but
+  // ALWAYS run the server-cap merge — the merge is idempotent ("server wins") so
+  // re-running it on a second call is correct and necessary.
+  const firstLoad = activeKey !== key;
+  if (firstLoad) {
+    activeKey = key;
+    cache = {};
+    const raw = await kvGet(key);
+    if (raw) {
+      try {
+        cache = JSON.parse(raw) as SpaceAccessMap;
+      } catch (e) {
+        console.error('[octospaces] space-access-store: corrupt cache, resetting:', e);
+        cache = {};
+      }
     }
   }
   let changed = false;

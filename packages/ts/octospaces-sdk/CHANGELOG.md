@@ -1,5 +1,75 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.13.0 (2026-06-17)
+
+### Security fixes
+
+- **Grant sender authenticity.** `scanResourceGrants` now verifies that a grant's
+  `sealed.entry.addedBy` matches the owner edPub the requester originally messaged.
+  Grants are delivered on the requester's public-write inbox, so previously a third party
+  could forge a grant carrying a real `reqId`, burning it in `seenReqIds` and causing the
+  legitimate grant to be silently skipped. The requester now records `reqId → ownerEdPub`
+  at submit time (`saveReqIdOwner`, auto-called by `submitResourceRequest`); a grant from
+  an unexpected sender is dropped **without** burning the reqId. New
+  `saveReqIdOwner` / `serializeReqIdOwnerStore` / `hydrateReqIdOwnerStore` /
+  `clearReqIdOwnerStore` exports persist this store across reloads.
+
+- **Full space-tier eviction (`revokeSpaceAccess`).** The space-tier equivalent of
+  `revokeNodeAccess`. `removeSpaceMember` alone only edits the roster — for `enc` spaces an
+  evicted member kept the space CEK and could decrypt all current and future content.
+  `revokeSpaceAccess(session, spaceId, userId, opts)` now performs full eviction via
+  `evictMember`: submits a signed `RevocationList` for the member's `spaceMemberScope` cap
+  (server immediately rejects their tokens), rotates the space keyring for forward secrecy,
+  then drops them from the roster. `inviteToSpace` / `createSpaceInviteLink` auto-retain the
+  member's `{edPub, kemPub, cap nonce}` in a new `spaceInviteStore`; new
+  `saveSpaceInviteEntry` / `getSpaceInviteEntry` / `clearSpaceInviteStore` /
+  `serializeSpaceInviteStore` / `hydrateSpaceInviteStore` exports manage and persist it.
+
+### Fixes
+
+- **Re-sync after a newly-granted cap is no longer a silent no-op.**
+  `hydrateSpaceAccessStore` early-returned when the active account key was unchanged,
+  **before** the server-cap merge loop — so a second call carrying a freshly-granted cap
+  never reached the cache, producing spurious `SpaceAccessError` until sign-out/in. The
+  kv reload + cache reset is now gated on first-load only; the (idempotent, "server wins")
+  merge always runs.
+
+### Hardening
+
+- **`userIdFromEdPub` validates its input** against an anchored `^[0-9a-f]{64}$` regex
+  (non-hex previously coerced to `NaN`→`0` bytes). The hex-format regexes
+  (`ED_PUB_HEX_RE`, `KEM_PUB_HEX_RE`, `KEM_SIG_HEX_RE`, `USER_ID_HEX_RE`) are now shared
+  constants in `paths.ts`; `identity-link.ts` reuses them so key sizes live in one place.
+
+- **Inbox seal AAD includes the message kind** (`octospaces:inbox:v1:${id}:${shard}:${kind}`,
+  where kind is `request` | `grant` | `reject`). Trial-unseal tries the kind-bound AAD first
+  and falls back to the legacy shard-only AAD, so blobs sealed by ≤0.12.x still open
+  (no wire break). Defense-in-depth against cross-kind blob relocation.
+
+- **WAL snapshot writes use a CAS retry loop.** `createWalSnapshotStore().write` now re-pulls
+  the base hash and retries up to 3× on a `409/412/conflict/stale` push, so concurrent
+  snapshot writers no longer permanently conflict.
+
+- **Owner per-node invite-stream cap.** `createNode` now mints the owner's own per-node
+  `objinvlog` (invite-stream) cap and saves it to the node-stream access store, so the owner
+  can read a node's invite/ticket log without relying on the broad `ownerScope` cap (which
+  the server's sharing plugin does not honour for `objinvlog`). `objinvlog` is added to
+  `OWNER_COLLECTIONS` (and thus `ownerScope` / `linkedDeviceScope`).
+
+### Internal
+
+- **Space-keyring helper consolidation.** New `ownerEnsureSpaceKeyring(session, spaceId)`
+  and `ensureSpaceKeyringRecipient(session, spaceId, recipient)` wrappers (analogues of the
+  per-node-keyring helpers) replace the repeated `ownerEnsureKeyring(...keyringPull/Push)` +
+  `addSpaceKeyringRecipient` call sites across `nodes.ts` and `members.ts`. The
+  ensure-before-add invariant is now encapsulated in one place. New `RECIPIENT_LABEL_LEN`
+  constant replaces the hardcoded `8` for keyring recipient labels.
+
+- **Tests.** New `members.revoke.test.ts` (space-tier eviction + invite-store
+  serialize/hydrate), grant sender-authenticity regression tests in
+  `resource-requests.regression.test.ts`, and `unsealFromSelf` provenance-tamper tests in
+  `account-seal.test.ts`. 649 tests passing.
+
 ## 0.12.10 (2026-06-17)
 
 ### Fixes

@@ -34,7 +34,8 @@
         "typeindex",
         "objpub",
         "objpublog",
-        "objowner"
+        "objowner",
+        "objinvlog"
       ],
       "paths": [
         "spaces/**"
@@ -144,6 +145,7 @@
         "objpub",
         "objpublog",
         "objowner",
+        "objinvlog",
         "profile",
         "devices",
         "spaces",

@@ -30,6 +30,46 @@ function makeKvStore() {
   return store;
 }
 
+// ── C1 regression: second hydrateSpaceAccessStore call must still merge server caps ──────────────────
+
+describe('C1 regression — hydrateSpaceAccessStore merges server caps on every call', () => {
+  beforeEach(() => {
+    clearSpaceAccessStore();
+    makeKvStore();
+  });
+
+  it('merges NEW server caps on the SECOND call for the same userId (was broken pre-fix)', async () => {
+    // First call with no caps — simulates initial sign-in before any space invite arrives.
+    await hydrateSpaceAccessStore('user-c1', {}, {});
+    expect(getSpaceAccessEntry('sp-new')).toBeNull();
+
+    // Peer grants access; client re-syncs. Second call carries the newly-granted cap.
+    // Before the fix: the early-return skipped the merge → cap never reached the cache
+    // → SpaceAccessError until sign-out/in.
+    await hydrateSpaceAccessStore('user-c1', { 'sp-new': 'cap-newly-granted' }, {});
+    expect(getSpaceAccessEntry('sp-new')).toEqual({ kind: 'member', cap: 'cap-newly-granted' });
+  });
+
+  it('server caps overwrite stale local caps ("server wins") on re-hydrate', async () => {
+    await hydrateSpaceAccessStore('user-c1b', { 'sp-1': 'cap-v1' }, {});
+    // Server promotes the cap (e.g. write → admin) — the re-sync call must apply it.
+    await hydrateSpaceAccessStore('user-c1b', { 'sp-1': 'cap-v2' }, {});
+    expect(getSpaceAccessEntry('sp-1')).toEqual({ kind: 'member', cap: 'cap-v2' });
+  });
+
+  it('merges new link access on a second call', async () => {
+    await hydrateSpaceAccessStore('user-c1c', {}, {});
+    await hydrateSpaceAccessStore('user-c1c', {}, {
+      'sp-link': { cap: { kind: 'member' }, key: 'ek', write: true },
+    });
+    const e = getSpaceAccessEntry('sp-link');
+    expect(e?.kind).toBe('link');
+    if (e?.kind === 'link') expect(e.key).toBe('ek');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 describe('space-access-store', () => {
   beforeEach(() => {
     clearSpaceAccessStore();

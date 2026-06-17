@@ -13,7 +13,7 @@ import { getSyncBase, getSyncNamespace, getSyncPrefix, getOnServerReachable } fr
 import { fetchWithTimeout } from './fetch-timeout.js';
 import { pullCache, PULL_CACHE_MAX_AGE_MS } from './pull-cache.js';
 import { cacheProfile, loadCachedProfile } from './profile-cache.js';
-import { keyringName, profilePull, profilePush } from './paths.js';
+import { keyringName, keyringPull, keyringPush, profilePull, profilePush } from './paths.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
 
 export interface DeviceKeys {
@@ -174,6 +174,43 @@ export async function addSpaceKeyringRecipient(
   } catch (err) {
     if (!isAlreadyPresentRecipient(err)) throw err;
   }
+}
+
+// ── Space-keyring convenience wrappers ────────────────────────────────────────
+//
+// Mirror the per-node wrappers in node-keyring.ts (`ownerEnsureNodeKeyring` /
+// `ensureNodeKeyringRecipient`) so that every space-keyring call site can use a
+// single helper instead of spelling out the pull/push/trustedAdders triple.
+
+type SpaceKeyringSession = { chatClient: StarfishClient; keys: DeviceKeys; ownerEdPub?: string };
+
+/**
+ * Create the space keyring if it doesn't exist, then return the owner's encryptor.
+ * Delegates to `ownerEnsureKeyring` with the canonical space keyring paths.
+ */
+export function ownerEnsureSpaceKeyring(
+  session: SpaceKeyringSession,
+  spaceId: string,
+): Promise<Encryptor> {
+  const ownerEdPub = session.ownerEdPub ?? session.keys.edPub;
+  const trustedAdders = ownerEdPub !== session.keys.edPub
+    ? [ownerEdPub, session.keys.edPub]
+    : [session.keys.edPub];
+  return ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId), trustedAdders);
+}
+
+/**
+ * Ensure the space keyring exists, then add a recipient — in that order (the keyring
+ * invariant). Returns the owner's encryptor so the creator can immediately seal.
+ */
+export async function ensureSpaceKeyringRecipient(
+  session: SpaceKeyringSession,
+  spaceId: string,
+  recipient: { subKem: string; userId: string; label: string },
+): Promise<Encryptor> {
+  const enc = await ownerEnsureSpaceKeyring(session, spaceId);
+  await addSpaceKeyringRecipient(session, spaceId, recipient);
+  return enc;
 }
 
 /** A user's public profile: display pseudo + optional inline avatar + public identity keys. */

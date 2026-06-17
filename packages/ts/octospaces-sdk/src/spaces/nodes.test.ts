@@ -19,14 +19,12 @@ vi.mock('../sync/client.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../sync/client.js')>();
   return {
     ...original,
-    ownerEnsureKeyring: vi.fn().mockResolvedValue({}),
     makeClient: vi.fn().mockReturnValue({
       pull: vi.fn().mockResolvedValue(null),
       push: vi.fn().mockResolvedValue(undefined),
     }),
-    // addSpaceKeyringRecipient uses the real implementation so it calls the mocked
-    // addCollectionRecipient from @drakkar.software/starfish-keyring, preserving
-    // the test invariants about call args and error handling.
+    // Real ownerEnsureSpaceKeyring/addSpaceKeyringRecipient — they call through to
+    // the mocked createKeyring/addCollectionRecipient from @drakkar.software/starfish-keyring.
   };
 });
 
@@ -56,6 +54,10 @@ vi.mock('@drakkar.software/starfish-keyring', async (importOriginal) => {
   return {
     ...original,
     addCollectionRecipient: vi.fn().mockResolvedValue(undefined),
+    // Stubs so ownerEnsureKeyring (called internally via ownerEnsureSpaceKeyring)
+    // can run without real hex keys — no real crypto is performed.
+    createKeyring: vi.fn().mockResolvedValue({ keyring: { epochs: [] } }),
+    createKeyringEncryptor: vi.fn().mockResolvedValue({}),
     // Return a safe Uint8Array so hex-invalid fixture strings ('r-ed', 'r-kem' etc.)
     // don't throw inside the kemSig try/catch and cause false validation failures.
     hexToBytes: vi.fn().mockReturnValue(new Uint8Array(32)),
@@ -124,7 +126,6 @@ import {
   serializeNodeInviteStore,
   hydrateNodeInviteStore,
 } from './nodes.js';
-import { ownerEnsureKeyring } from '../sync/client.js';
 import { ensureNodeKeyringRecipient } from '../sync/node-keyring.js';
 import { addSpaceMember } from './registry.js';
 import { saveNodeStreamAccessEntry, saveSpaceAccessEntry, saveNodeAccessEntry, saveNodeKeyringAccessEntry } from '../sync/space-access-store.js';
@@ -156,7 +157,7 @@ function makeSession(indexClient?: StarfishClient) {
 
 describe('createNode', () => {
   beforeEach(() => {
-    vi.mocked(ownerEnsureKeyring).mockClear();
+    vi.mocked(addCollectionRecipient).mockClear();
   });
 
   it('creates a node with default access "space" (no access field in stored node)', async () => {
@@ -189,14 +190,18 @@ describe('createNode', () => {
 
   it('mints a per-node keyring for enc nodes', async () => {
     const session = makeSession();
+    const { createKeyring } = await import('@drakkar.software/starfish-keyring');
+    vi.mocked(createKeyring).mockClear();
     await createNode(session, 'sp-1', { type: 'page', title: 'E2EE', enc: true });
-    expect(ownerEnsureKeyring).toHaveBeenCalledOnce();
+    expect(createKeyring).toHaveBeenCalledOnce();
   });
 
   it('does NOT mint a keyring for plaintext nodes', async () => {
     const session = makeSession();
+    const { createKeyring } = await import('@drakkar.software/starfish-keyring');
+    vi.mocked(createKeyring).mockClear();
     await createNode(session, 'sp-1', { type: 'page', title: 'Plain' });
-    expect(ownerEnsureKeyring).not.toHaveBeenCalled();
+    expect(createKeyring).not.toHaveBeenCalled();
   });
 
   it('pushes the new node to the index (via the space client)', async () => {
@@ -216,10 +221,6 @@ describe('createNode', () => {
 // ── setNodeAccess ─────────────────────────────────────────────────────────────
 
 describe('setNodeAccess', () => {
-  beforeEach(() => {
-    vi.mocked(ownerEnsureKeyring).mockClear();
-  });
-
   it('rejects public+enc patch', async () => {
     const session = makeSession();
     await expect(
@@ -228,21 +229,25 @@ describe('setNodeAccess', () => {
   });
 
   it('mints a keyring when enabling enc', async () => {
+    const { createKeyring } = await import('@drakkar.software/starfish-keyring');
+    vi.mocked(createKeyring).mockClear();
     const client = makeIndexClient([
       { id: 'n-1', type: 'page', parentId: null, order: 1, title: 'T', updatedAt: 1 },
     ]);
     const session = makeSession(client);
     await setNodeAccess(session, 'sp-1', 'n-1', { enc: true });
-    expect(ownerEnsureKeyring).toHaveBeenCalledOnce();
+    expect(createKeyring).toHaveBeenCalledOnce();
   });
 
   it('does not mint a keyring when not enabling enc', async () => {
+    const { createKeyring } = await import('@drakkar.software/starfish-keyring');
+    vi.mocked(createKeyring).mockClear();
     const client = makeIndexClient([
       { id: 'n-1', type: 'page', parentId: null, order: 1, title: 'T', updatedAt: 1 },
     ]);
     const session = makeSession(client);
     await setNodeAccess(session, 'sp-1', 'n-1', { access: 'invite' });
-    expect(ownerEnsureKeyring).not.toHaveBeenCalled();
+    expect(createKeyring).not.toHaveBeenCalled();
   });
 
   it('is a no-op when the node does not exist in the index', async () => {
@@ -574,47 +579,45 @@ describe('joinNodeByLink — stream cap persistence', () => {
   });
 });
 
-// ── ownerEnsureKeyring-before-addCollectionRecipient invariant ───────────────
+// ── ensureSpaceKeyringRecipient-for-enc-nodes invariant ───────────────────────
 
-describe('inviteToNode — ownerEnsureKeyring precedes addCollectionRecipient for enc nodes', () => {
+describe('inviteToNode — addCollectionRecipient called for enc nodes', () => {
   beforeEach(() => {
-    vi.mocked(ownerEnsureKeyring).mockClear();
-    vi.mocked(addCollectionRecipient).mockClear();
+    vi.mocked(addCollectionRecipient).mockClear().mockResolvedValue(undefined);
   });
 
-  it('enc node: ownerEnsureKeyring is called before addCollectionRecipient', async () => {
-    const callOrder: string[] = [];
-    vi.mocked(ownerEnsureKeyring).mockImplementation(async () => { callOrder.push('ensure'); return {} as ReturnType<typeof ownerEnsureKeyring extends (...args: unknown[]) => Promise<infer R> ? () => Promise<R> : never>; });
-    vi.mocked(addCollectionRecipient).mockImplementation(async () => { callOrder.push('addRecipient'); });
+  it('enc node: addCollectionRecipient is called with the invitee KEM', async () => {
     const joinReq = JSON.stringify({ edPub: 'deadbeef'.repeat(8), kemPub: 'cafebabe'.repeat(8), userId: 'requester', kemSig: 'ab'.repeat(64) });
     await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: true });
-    expect(callOrder).toEqual(['ensure', 'addRecipient']);
+    expect(vi.mocked(addCollectionRecipient)).toHaveBeenCalledOnce();
+    const [, keyringNameArg, recipientArg] = vi.mocked(addCollectionRecipient).mock.calls[0]!;
+    expect(keyringNameArg).toContain('sp-1');
+    expect(recipientArg).toMatchObject({ subKem: 'cafebabe'.repeat(8) });
   });
 
-  it('plaintext node: does NOT call ownerEnsureKeyring', async () => {
+  it('plaintext node: does NOT call addCollectionRecipient for space keyring', async () => {
     const joinReq = JSON.stringify({ edPub: 'deadbeef'.repeat(8), kemPub: 'cafebabe'.repeat(8), userId: 'requester', kemSig: 'ab'.repeat(64) });
     await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: false });
-    expect(ownerEnsureKeyring).not.toHaveBeenCalled();
+    expect(vi.mocked(addCollectionRecipient)).not.toHaveBeenCalled();
   });
 });
 
-describe('createNodeInviteLink — ownerEnsureKeyring precedes addCollectionRecipient for enc nodes', () => {
+describe('createNodeInviteLink — addCollectionRecipient called for enc nodes', () => {
   beforeEach(() => {
-    vi.mocked(ownerEnsureKeyring).mockClear();
-    vi.mocked(addCollectionRecipient).mockClear();
+    vi.mocked(addCollectionRecipient).mockClear().mockResolvedValue(undefined);
   });
 
-  it('enc node: ownerEnsureKeyring is called before addCollectionRecipient', async () => {
-    const callOrder: string[] = [];
-    vi.mocked(ownerEnsureKeyring).mockImplementation(async () => { callOrder.push('ensure'); return {} as ReturnType<typeof ownerEnsureKeyring extends (...args: unknown[]) => Promise<infer R> ? () => Promise<R> : never>; });
-    vi.mocked(addCollectionRecipient).mockImplementation(async () => { callOrder.push('addRecipient'); });
+  it('enc node: addCollectionRecipient is called with the ephemeral KEM', async () => {
     await createNodeInviteLink(makeSession(), 'sp-1', 'n-42', 'Doc', { enc: true }, true, 'https://x');
-    expect(callOrder).toEqual(['ensure', 'addRecipient']);
+    expect(vi.mocked(addCollectionRecipient)).toHaveBeenCalledOnce();
+    const [, keyringNameArg, recipientArg] = vi.mocked(addCollectionRecipient).mock.calls[0]!;
+    expect(keyringNameArg).toContain('sp-1');
+    expect(recipientArg).toMatchObject({ subKem: 'eph-kempub' });
   });
 
-  it('plaintext node: does NOT call ownerEnsureKeyring', async () => {
+  it('plaintext node: does NOT call addCollectionRecipient for space keyring', async () => {
     await createNodeInviteLink(makeSession(), 'sp-1', 'n-42', 'Ticket', { enc: false }, true, 'https://x');
-    expect(ownerEnsureKeyring).not.toHaveBeenCalled();
+    expect(vi.mocked(addCollectionRecipient)).not.toHaveBeenCalled();
   });
 });
 

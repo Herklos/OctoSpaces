@@ -20,22 +20,35 @@ export function createWalSnapshotStore(client: StarfishClient): WalSnapshotStore
       return data as WalSnapshotDoc;
     },
     async write(snapshotKey, doc) {
-      // Refresh the baseHash right before the LWW push so a concurrent snapshot
-      // from another writer doesn't 409 us; snapshots are infrequent so the extra
-      // round-trip is cheap.
-      let base = hashes.get(snapshotKey) ?? null;
-      try {
-        const cur = await client.pull(`/pull/${snapshotKey}`);
-        base = cur.hash ?? null;
-      } catch {
-        base = base ?? null;
+      // CAS push with retry: re-pull the current hash before each attempt so
+      // concurrent writers don't permanently 409 each other. Snapshots are
+      // infrequent so the extra round-trip(s) are cheap.
+      const MAX_ATTEMPTS = 3;
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        let base = hashes.get(snapshotKey) ?? null;
+        try {
+          const cur = await client.pull(`/pull/${snapshotKey}`);
+          base = cur.hash ?? null;
+        } catch {
+          /* use cached hash if the pull fails */
+        }
+        try {
+          const res = await client.push(
+            `/push/${snapshotKey}`,
+            doc as unknown as Record<string, unknown>,
+            base,
+          );
+          hashes.set(snapshotKey, res.hash ?? null);
+          return; // success
+        } catch (err) {
+          lastErr = err;
+          hashes.delete(snapshotKey); // force re-pull on next attempt
+          if (!/conflict|stale|412|409/i.test(String(err))) throw err;
+          // Conflict — another writer won; retry with fresh hash
+        }
       }
-      const res = await client.push(
-        `/push/${snapshotKey}`,
-        doc as unknown as Record<string, unknown>,
-        base,
-      );
-      hashes.set(snapshotKey, res.hash ?? null);
+      throw lastErr;
     },
   };
 }

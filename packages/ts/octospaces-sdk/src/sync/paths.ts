@@ -176,8 +176,9 @@ export const OBJECT_COLLECTIONS: string[] = [
   'spacekeyring', 'objindex', 'objlog', 'objsnap', 'objdoc', 'objblob', 'typeindex', 'objpub', 'objpublog',
 ];
 
-// OWNER_COLLECTIONS extends member collections with the owner-only content tier.
-const OWNER_COLLECTIONS: string[] = [...OBJECT_COLLECTIONS, 'objowner'];
+// OWNER_COLLECTIONS extends member collections with objowner (webhook registry) and
+// objinvlog so the space owner can read all per-node invite streams (e.g. ticket inbox).
+const OWNER_COLLECTIONS: string[] = [...OBJECT_COLLECTIONS, 'objowner', 'objinvlog'];
 
 // ── Cap scopes ────────────────────────────────────────────────────────────────
 
@@ -309,10 +310,26 @@ export function bytesToHex(b: Uint8Array): string {
   return s;
 }
 
-/** The canonical identity derivation: `userId = sha256(edPub)[0:32]` (hex). */
+/** Ed25519 public key: 32 bytes = 64 lowercase hex chars. */
+export const ED_PUB_HEX_RE = /^[0-9a-f]{64}$/i;
+/** X25519 KEM public key: 32 bytes = 64 lowercase hex chars. */
+export const KEM_PUB_HEX_RE = /^[0-9a-f]{64}$/i;
+/** Ed25519 signature: 64 bytes = 128 lowercase hex chars. */
+export const KEM_SIG_HEX_RE = /^[0-9a-f]{128}$/i;
+/** Length (in hex chars) of an OctoSpaces userId (first 16 bytes of sha256(edPub)). */
+export const USER_ID_HEX_LENGTH = 32;
+/** Short label length (hex chars) used for human-readable keyring recipient labels. */
+export const RECIPIENT_LABEL_LEN = 8;
+/** OctoSpaces userId regex: first {@link USER_ID_HEX_LENGTH} hex chars of sha256(edPub). */
+export const USER_ID_HEX_RE = new RegExp(`^[0-9a-f]{${USER_ID_HEX_LENGTH}}$`, 'i');
+
+/** The canonical identity derivation: `userId = sha256(edPub)[0:${USER_ID_HEX_LENGTH}]` (hex). */
 export async function userIdFromEdPub(edPubHex: string): Promise<string> {
+  if (!ED_PUB_HEX_RE.test(edPubHex)) {
+    throw new Error(`userIdFromEdPub: invalid edPub — expected 64 hex chars, got length ${edPubHex.length}`);
+  }
   const bytes = new Uint8Array(edPubHex.length / 2);
   for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(edPubHex.slice(i * 2, i * 2 + 2), 16);
   const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
-  return bytesToHex(new Uint8Array(digest)).slice(0, 32);
+  return bytesToHex(new Uint8Array(digest)).slice(0, USER_ID_HEX_LENGTH);
 }

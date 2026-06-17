@@ -104,6 +104,11 @@ export {
   spaceIdFromRoomId,
   userIdFromEdPub,
   bytesToHex,
+  ED_PUB_HEX_RE,
+  KEM_PUB_HEX_RE,
+  KEM_SIG_HEX_RE,
+  USER_ID_HEX_RE,
+  RECIPIENT_LABEL_LEN,
 } from './sync/paths.js';
 
 // Object blobs (sealed files keyed by space)
@@ -119,6 +124,8 @@ export {
   ownerEnsureKeyring,
   isAlreadyPresentRecipient,
   addSpaceKeyringRecipient,
+  ownerEnsureSpaceKeyring,
+  ensureSpaceKeyringRecipient,
   readProfile,
   readPseudo,
   readProfiles,
@@ -245,8 +252,15 @@ export {
   joinSpaceByLink,
   recoverSpaceAccess,
   addDeviceToSpaceKeyring,
+  // space-tier eviction
+  revokeSpaceAccess,
+  saveSpaceInviteEntry,
+  getSpaceInviteEntry,
+  clearSpaceInviteStore,
+  serializeSpaceInviteStore,
+  hydrateSpaceInviteStore,
 } from './spaces/members.js';
-export type { JoinRequest, SpaceInviteLinkToken } from './spaces/members.js';
+export type { JoinRequest, SpaceInviteLinkToken, StoredSpaceInvite } from './spaces/members.js';
 
 // Nodes (per-node creation + access management + invite flows)
 export {
@@ -353,6 +367,11 @@ export {
   rejectResourceRequest,
   scanResourceGrants,
   acceptResourceGrant,
+  // reqId → owner-edPub store (sender-auth for scanResourceGrants, persistence across reloads)
+  saveReqIdOwner,
+  serializeReqIdOwnerStore,
+  hydrateReqIdOwnerStore,
+  clearReqIdOwnerStore,
 } from './spaces/resource-requests.js';
 export type {
   ResourceRequest,

@@ -32,15 +32,18 @@ vi.mock('../sync/client.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../sync/client.js')>();
   return {
     ...original,
-    ownerEnsureKeyring: vi.fn().mockResolvedValue({}),
-    // addSpaceKeyringRecipient and isAlreadyPresentRecipient use the real implementations
-    // so that they invoke the mocked addCollectionRecipient from @drakkar.software/starfish-keyring,
-    // preserving the test invariants about ordering and error swallowing.
+    // Real addSpaceKeyringRecipient + isAlreadyPresentRecipient so they invoke
+    // the mocked addCollectionRecipient, preserving error-swallowing invariants.
+    // ownerEnsureKeyring (internal) uses mocked createKeyring/createKeyringEncryptor
+    // from @drakkar.software/starfish-keyring, so no real hex crypto is needed.
   };
 });
 
 vi.mock('@drakkar.software/starfish-keyring', () => ({
   addCollectionRecipient: vi.fn().mockResolvedValue(undefined),
+  // Stubs for ownerEnsureKeyring (called internally via ownerEnsureSpaceKeyring).
+  createKeyring: vi.fn().mockResolvedValue({ keyring: { epochs: [] } }),
+  createKeyringEncryptor: vi.fn().mockResolvedValue({}),
   // Safe stubs so the kemSig try/catch in members.ts succeeds for fixture strings.
   hexToBytes: vi.fn().mockReturnValue(new Uint8Array(32)),
   bytesToHex: vi.fn().mockReturnValue('ab'.repeat(32)),
@@ -111,7 +114,6 @@ vi.mock('../sync/account-seal.js', () => ({
 import { inviteToSpace, createSpaceInviteLink, joinSpaceByLink, addDeviceToSpaceKeyring, recoverSpaceAccess } from './members.js';
 import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
 import { addSpaceMember } from './registry.js';
-import { ownerEnsureKeyring } from '../sync/client.js';
 import { saveSpaceAccessEntry } from '../sync/space-access-store.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
 import type { Session } from '../sync/identity.js';
@@ -126,8 +128,9 @@ const mockSession = {
     kemPub: 'alice-kem-pub',
     kemPriv: 'alice-kem-priv',
   },
-  chatClient: { pull: vi.fn(), push: vi.fn() },
-  accountClient: { pull: vi.fn(), push: vi.fn() },
+  // pull must return a Promise — ownerEnsureKeyring calls pull(…).catch(…) internally
+  chatClient: { pull: vi.fn().mockResolvedValue(null), push: vi.fn().mockResolvedValue(null) },
+  accountClient: { pull: vi.fn().mockResolvedValue(null), push: vi.fn().mockResolvedValue(null) },
 } as unknown as Session;
 
 const bobRequest = JSON.stringify({
@@ -143,46 +146,6 @@ describe('inviteToSpace — keyring ordering and error handling', () => {
   beforeEach(() => {
     vi.mocked(addCollectionRecipient).mockClear().mockResolvedValue(undefined);
     vi.mocked(addSpaceMember).mockClear().mockResolvedValue(undefined);
-    vi.mocked(ownerEnsureKeyring).mockClear().mockResolvedValue({} as never);
-  });
-
-  it('ownerEnsureKeyring is called before addCollectionRecipient (ordering invariant)', async () => {
-    const callOrder: string[] = [];
-    vi.mocked(ownerEnsureKeyring).mockImplementation(async () => {
-      callOrder.push('ownerEnsureKeyring');
-      return {} as never;
-    });
-    vi.mocked(addCollectionRecipient).mockImplementation(async () => {
-      callOrder.push('addCollectionRecipient');
-    });
-
-    await inviteToSpace(mockSession, 'sp-1', bobRequest);
-
-    expect(callOrder).toEqual(['ownerEnsureKeyring', 'addCollectionRecipient']);
-  });
-
-  it('ownerEnsureKeyring is called with keyring paths for the space', async () => {
-    await inviteToSpace(mockSession, 'sp-1', bobRequest);
-
-    const [, , pullPath, pushPath] = vi.mocked(ownerEnsureKeyring).mock.calls[0]!;
-    expect(pullPath).toContain('sp-1');
-    expect(pushPath).toContain('sp-1');
-  });
-
-  it('ownerEnsureKeyring receives ownerTrustedAdders (root device: single key)', async () => {
-    // mockSession.ownerEdPub equals keys.edPub → single-element trustedAdders
-    const rootSession = { ...mockSession, ownerEdPub: 'alice-ed-pub' } as unknown as Session;
-    await inviteToSpace(rootSession, 'sp-1', bobRequest);
-    const [, , , , trustedAdders] = vi.mocked(ownerEnsureKeyring).mock.calls[0]!;
-    expect(trustedAdders).toEqual(['alice-ed-pub']);
-  });
-
-  it('ownerEnsureKeyring receives ownerTrustedAdders (paired device: both keys)', async () => {
-    // ownerEdPub differs from keys.edPub → two-element trustedAdders
-    const pairedSession = { ...mockSession, ownerEdPub: 'root-ed-pub' } as unknown as Session;
-    await inviteToSpace(pairedSession, 'sp-1', bobRequest);
-    const [, , , , trustedAdders] = vi.mocked(ownerEnsureKeyring).mock.calls[0]!;
-    expect(trustedAdders).toEqual(['root-ed-pub', 'alice-ed-pub']);
   });
 
   it('addCollectionRecipient is called with the correct invitee KEM and userId', async () => {
@@ -209,10 +172,7 @@ describe('inviteToSpace — keyring ordering and error handling', () => {
     await expect(inviteToSpace(mockSession, 'sp-1', bobRequest)).rejects.toThrow('network failure');
   });
 
-  it('"no keyring exists" is rethrown (ownerEnsureKeyring prevents this in practice)', async () => {
-    // ownerEnsureKeyring guarantees the keyring exists before addCollectionRecipient is called.
-    // If somehow addCollectionRecipient still sees "no keyring exists", it means something
-    // went wrong with ensure — we rethrow so the caller can diagnose.
+  it('"no keyring exists" is rethrown (ensureSpaceKeyringRecipient creates the keyring first in practice)', async () => {
     vi.mocked(addCollectionRecipient).mockRejectedValue(
       new Error('Cannot add recipient: no keyring exists at spaces/sp-1/_keyring. Create the keyring first.'),
     );
@@ -255,22 +215,6 @@ describe('createSpaceInviteLink — keyring ordering and error handling', () => 
   beforeEach(() => {
     vi.mocked(addCollectionRecipient).mockClear().mockResolvedValue(undefined);
     vi.mocked(addSpaceMember).mockClear().mockResolvedValue(undefined);
-    vi.mocked(ownerEnsureKeyring).mockClear().mockResolvedValue({} as never);
-  });
-
-  it('ownerEnsureKeyring is called before addCollectionRecipient (ordering invariant)', async () => {
-    const callOrder: string[] = [];
-    vi.mocked(ownerEnsureKeyring).mockImplementation(async () => {
-      callOrder.push('ownerEnsureKeyring');
-      return {} as never;
-    });
-    vi.mocked(addCollectionRecipient).mockImplementation(async () => {
-      callOrder.push('addCollectionRecipient');
-    });
-
-    await createSpaceInviteLink(mockSession, 'sp-1', 'Test Space', true, 'https://app.example.com');
-
-    expect(callOrder).toEqual(['ownerEnsureKeyring', 'addCollectionRecipient']);
   });
 
   it('addCollectionRecipient is called with the ephemeral KEM key and userId', async () => {
@@ -331,7 +275,7 @@ describe('createSpaceInviteLink — keyring ordering and error handling', () => 
       mockSession, 'sp-1', 'Test Space', true, 'https://app.example.com',
     );
 
-    // The mock addCollectionRecipient should have been called with ek.kemPub
+    // addCollectionRecipient should have been called with ek.kemPub
     const recipientArg = vi.mocked(addCollectionRecipient).mock.calls[0]![2];
     expect(recipientArg).toMatchObject({ subKem: 'eph-kempub' });
 
@@ -369,13 +313,6 @@ describe('addDeviceToSpaceKeyring — skip-if-missing, rethrow-unexpected', () =
 
   beforeEach(() => {
     vi.mocked(addCollectionRecipient).mockClear().mockResolvedValue(undefined);
-    vi.mocked(ownerEnsureKeyring).mockClear().mockResolvedValue({} as never);
-  });
-
-  it('does NOT call ownerEnsureKeyring — device pairing must not force-create a keyring', async () => {
-    await addDeviceToSpaceKeyring(mockSession, 'sp-1', device);
-
-    expect(vi.mocked(ownerEnsureKeyring)).not.toHaveBeenCalled();
   });
 
   it('silently skipped when keyring is missing ("not found")', async () => {
