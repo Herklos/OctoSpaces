@@ -8,5 +8,30 @@ export default defineConfig({
     // Run serially — some tests share module-level singletons (member-caps cache).
     pool: 'forks',
     poolOptions: { forks: { singleFork: true } },
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.ts'],
+      exclude: [
+        'src/**/*.test.ts',
+        'src/**/*.vectors.test.ts',
+        'src/**/*.regression.test.ts',
+        'src/index.ts',
+        'src/wal.ts',
+      ],
+      thresholds: {
+        // Overall floor — raise as test coverage improves.
+        lines:      65,
+        branches:   60,
+        functions:  65,
+        statements: 65,
+        // Security-sensitive modules: higher bar.
+        'src/sync/account-seal.ts':          { lines: 85, branches: 80, functions: 90, statements: 85 },
+        'src/sync/node-keyring.ts':          { lines: 85, branches: 80, functions: 90, statements: 85 },
+        'src/spaces/resource-requests.ts':   { lines: 80, branches: 75, functions: 80, statements: 80 },
+        'src/spaces/members.ts':             { lines: 80, branches: 75, functions: 80, statements: 80 },
+        'src/spaces/nodes.ts':               { lines: 75, branches: 70, functions: 75, statements: 75 },
+        'src/sync/client.ts':                { lines: 75, branches: 70, functions: 75, statements: 75 },
+      },
+    },
   },
 });
