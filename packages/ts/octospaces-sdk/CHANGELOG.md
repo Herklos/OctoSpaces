@@ -1,5 +1,36 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.12.9 (2026-06-17)
+
+### Security fixes
+
+- **K1 — Full revocation infrastructure for per-node-keyring nodes.**
+  - Server: `POST /revocations` route (added in 0.12.8) accepts signed `RevocationList`
+    objects and calls `revocationStore.acceptList`; the role-resolver already rejects any
+    cap whose nonce appears in the store.
+  - SDK: `inviteToNode` (isolated + enc) now auto-stores all three cap nonces (keyring,
+    content, stream) in a module-level `nodeInviteStore` keyed by
+    `${spaceId}:${nodeId}:${userId}`.
+  - SDK: New `revokeNodeAccess(session, spaceId, nodeId, userId, opts)` performs full
+    two-step eviction via `evictMember`: (1) submits a signed `RevocationList` containing
+    all three cap nonces in one `generation` so the server immediately rejects the
+    invitee's tokens; (2) rotates the node keyring (removes the invitee's KEM, mints a
+    fresh CEK) for forward secrecy.
+  - SDK: New `saveNodeInviteEntry` / `getNodeInviteEntry` / `clearNodeInviteStore` for
+    callers that need to hydrate the store from their own durable storage across reloads.
+
+### Added
+
+- **I3 — `NodeInviteBundle` carries a `kind` discriminator** (`'plaintext' | 'space-enc' |
+  'node-enc'`). `inviteToNode` now stamps the bundle with the E2EE model so the invitee can
+  handle the bundle correctly without reverse-engineering which caps are present.
+- **S3 — Inbox AAD widened to include the shard** (`octospaces:inbox:v1:${recipientId}:${shard}`).
+  A sealed grant/request from one shard cannot be relocated to another shard by a
+  public-write adversary (cross-shard replay prevention). **Wire-format break.**
+- **S3b — `scanResourceGrants` accepts `opts.seenReqIds`** for persistent cross-call dedup.
+  A caller-provided `Set<string>` is mutated in-place so processed reqIds survive across
+  multiple scan invocations.
+
 ## 0.12.8 (2026-06-16)
 
 ### BREAKING CHANGES

@@ -258,8 +258,13 @@ export {
   decodeNodeInviteLink,
   encodeNodeInviteLink,
   joinNodeByLink,
+  // K1: revocation infrastructure for isolated per-node-keyring (OctoDesk ticket) nodes
+  revokeNodeAccess,
+  saveNodeInviteEntry,
+  getNodeInviteEntry,
+  clearNodeInviteStore,
 } from './spaces/nodes.js';
-export type { CreateNodeInput, NodeInviteBundle, NodeInviteLinkToken } from './spaces/nodes.js';
+export type { CreateNodeInput, NodeInviteBundle, NodeInviteKind, NodeInviteLinkToken, StoredNodeInvite } from './spaces/nodes.js';
 
 // Object core
 export {
