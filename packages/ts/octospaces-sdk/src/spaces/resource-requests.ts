@@ -59,8 +59,14 @@ import { userIdFromEdPub } from '../sync/paths.js';
 import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
 import { ed25519 } from '@noble/curves/ed25519.js';
 
-/** AES-GCM additional-data context binding for inbox seals. Prevents cross-inbox replay. */
-const inboxAad = (recipientId: string) => `octospaces:inbox:v1:${recipientId}`;
+/**
+ * AES-GCM additional-data context binding for inbox seals.
+ * Binds to BOTH the recipient and the shard, preventing cross-shard relocation:
+ * a sealed message from shard `2024-06` cannot be replayed in `2024-07` even
+ * though both shards are under the same recipient's inbox (S3 fix).
+ */
+const inboxAad = (recipientId: string, shard: string) =>
+  `octospaces:inbox:v1:${recipientId}:${shard}`;
 
 // ── Payload types ─────────────────────────────────────────────────────────────
 
@@ -187,10 +193,11 @@ export async function submitResourceRequest(
   };
 
   // Seal the request to the owner's KEM key — only they can read it.
-  const sealed = await sealToRecipient(session, ownerLink.kemPub, JSON.stringify(request), inboxAad(ownerLink.ownerId));
+  const shard = inboxShard();
+  const sealed = await sealToRecipient(session, ownerLink.kemPub, JSON.stringify(request), inboxAad(ownerLink.ownerId, shard));
   const element: InboxPayload = { sealed, ts: Date.now() };
 
-  await appendToInbox(ownerLink.ownerId, inboxShard(), element as unknown as Record<string, unknown>, {
+  await appendToInbox(ownerLink.ownerId, shard, element as unknown as Record<string, unknown>, {
     edPubHex: session.keys.edPub,
     edPrivHex: session.keys.edPriv,
   });
@@ -233,7 +240,7 @@ export async function scanResourceRequests(
 
       let plaintext: string;
       try {
-        plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId));
+        plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId, shard));
       } catch {
         continue; // not sealed to us or tampered — trial-unseal skip
       }
@@ -373,10 +380,11 @@ export async function acceptResourceRequest(
     nodeId,
     bundle: bundleJson,
   };
-  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(grant), inboxAad(req.requester.userId));
+  const grantShard = inboxShard();
+  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(grant), inboxAad(req.requester.userId, grantShard));
   await appendToInbox(
     req.requester.userId,
-    inboxShard(),
+    grantShard,
     { sealed, ts: Date.now() } as unknown as Record<string, unknown>,
     { edPubHex: session.keys.edPub, edPrivHex: session.keys.edPriv },
   );
@@ -402,10 +410,11 @@ export async function rejectResourceRequest(
     reqId: req.reqId,
     ...(reason ? { reason } : {}),
   };
-  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(rejection), inboxAad(req.requester.userId));
+  const rejectShard = inboxShard();
+  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(rejection), inboxAad(req.requester.userId, rejectShard));
   await appendToInbox(
     req.requester.userId,
-    inboxShard(),
+    rejectShard,
     { sealed, ts: Date.now() } as unknown as Record<string, unknown>,
     { edPubHex: session.keys.edPub, edPrivHex: session.keys.edPriv },
   );
@@ -416,13 +425,21 @@ export async function rejectResourceRequest(
 /**
  * REQUESTER: scan this session's own inbox for resource grants (accepted requests).
  *
- * Returns all grants this session can unseal, regardless of prior acceptance state.
- * The caller is responsible for dedup (e.g. track accepted `reqId`s in KV).
+ * Returns all grants this session can unseal that have not already been seen.
  * Grants that can't be unsealed (not for us, tampered) are silently skipped.
+ *
+ * @param opts.seenReqIds  Caller-provided Set for cross-scan dedup (persistent reqId
+ *   tracking). Mutated in place — add to this Set before each call to skip already-
+ *   accepted grants in future scans. When omitted a fresh in-memory Set is used
+ *   (dedup applies only within the current call).
  */
-export async function scanResourceGrants(session: Session): Promise<ResourceGrant[]> {
+export async function scanResourceGrants(
+  session: Session,
+  opts?: { seenReqIds?: Set<string> },
+): Promise<ResourceGrant[]> {
   const out: ResourceGrant[] = [];
-  const seenReqIds = new Set<string>(); // dedup: skip if same reqId appeared earlier in scan
+  // Use caller-provided Set (persistent cross-scan dedup) or a fresh one (in-scan only).
+  const seenReqIds = opts?.seenReqIds ?? new Set<string>();
   for (const shard of inboxShards()) {
     const items = await pullInbox(session.accountClient, session.userId, shard);
     for (const item of items) {
@@ -431,7 +448,7 @@ export async function scanResourceGrants(session: Session): Promise<ResourceGran
 
       let plaintext: string;
       try {
-        plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId));
+        plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId, shard));
       } catch {
         continue;
       }

@@ -568,3 +568,126 @@ describe('K4: scanResourceRequests — validates kemSig binding', () => {
     expect(results[0]!.req.reqId).toBe('req-k4');
   });
 });
+
+// ── S3 regression: inbox AAD must bind the shard to prevent cross-shard relocation ──
+//
+// S3 finding: inboxAad binds only recipientId — not the shard. Since inboxes are
+// public-write (anyone can append), an adversary can copy a sealed grant from shard
+// 2024-06 to 2024-07 and cause it to be processed again (double-processing a cap).
+//
+// Fix: widen AAD to `octospaces:inbox:v1:${recipientId}:${shard}`. The shard is
+// always known at seal time (inboxShard()) and at unseal time (the loop variable).
+// WIRE-FORMAT BREAK: old sealed messages will fail — coordinated version bump.
+//
+// S3b: scanResourceGrants seenReqIds is currently local to each scan call — a grant
+// replayed across two scan invocations would be returned twice.
+// Fix: accept an optional caller-provided `seenReqIds` Set so callers can persist it.
+
+describe('S3 regression: shard-bound inbox AAD', () => {
+  let ownerKeys: KeySet;
+  let requesterKeys: KeySet;
+  let ownerSession: Session;
+  let requesterSession: Session;
+
+  beforeAll(async () => {
+    ownerKeys = await makeKeys();
+    requesterKeys = await makeKeys();
+    ownerSession = makeSession(ownerKeys);
+    requesterSession = makeSession(requesterKeys);
+  });
+
+  it('FAILS (pre-fix): submitResourceRequest seals with shard-aware AAD', async () => {
+    let capturedAad = '';
+    vi.mocked(sealToRecipient).mockImplementation(async (_s, _k, _pt, aad) => {
+      capturedAad = aad ?? '';
+      return { entry: { addedBy: requesterKeys.edPub }, ct: 'ct' } as Awaited<ReturnType<typeof sealToRecipient>>;
+    });
+    vi.mocked(appendToInbox).mockResolvedValue(undefined);
+    const { verifyIdentityLinkBinding, verifyIdentityLinkKeys } = await import('./identity-link.js');
+    vi.mocked(verifyIdentityLinkBinding).mockResolvedValue(true);
+    vi.mocked(verifyIdentityLinkKeys).mockResolvedValue();
+
+    await submitResourceRequest(requesterSession, {
+      ownerId: ownerKeys.userId,
+      edPub: ownerKeys.edPub,
+      kemPub: 'cafebabe'.repeat(8),
+      kemSig: 'ab'.repeat(64),
+      v: 2,
+    } as never, { spaceId: 'sp-test', nodeType: 'ticket', title: 'S3 test' });
+
+    // AAD must contain the current shard (inboxShard() mock returns '2024-06')
+    expect(capturedAad).toBe(`octospaces:inbox:v1:${ownerKeys.userId}:2024-06`);
+  });
+
+  it('FAILS (pre-fix): scanResourceRequests unseals with per-shard AAD', async () => {
+    const capturedAads: string[] = [];
+    // inboxShards() returns ['2024-06', '2024-05']
+    vi.mocked(pullInbox)
+      .mockResolvedValueOnce([makeInboxItem(requesterKeys.edPub)]) // shard '2024-06'
+      .mockResolvedValueOnce([makeInboxItem(requesterKeys.edPub)]); // shard '2024-05'
+    vi.mocked(unsealFromRecipient).mockImplementation(async (_s, _sealed, aad) => {
+      capturedAads.push(aad ?? '');
+      throw new Error('bad seal'); // trial-unseal skip; we only care about the AAD
+    });
+
+    await scanResourceRequests(ownerSession);
+
+    expect(capturedAads[0]).toBe(`octospaces:inbox:v1:${ownerSession.userId}:2024-06`);
+    expect(capturedAads[1]).toBe(`octospaces:inbox:v1:${ownerSession.userId}:2024-05`);
+  });
+
+  it('FAILS (pre-fix): scanResourceGrants unseals with per-shard AAD', async () => {
+    const capturedAads: string[] = [];
+    vi.mocked(pullInbox)
+      .mockResolvedValueOnce([makeInboxItem('sender1')]) // shard '2024-06'
+      .mockResolvedValueOnce([makeInboxItem('sender1')]); // shard '2024-05'
+    vi.mocked(unsealFromRecipient).mockImplementation(async (_s, _sealed, aad) => {
+      capturedAads.push(aad ?? '');
+      throw new Error('bad seal');
+    });
+
+    await scanResourceGrants(requesterSession);
+
+    expect(capturedAads[0]).toBe(`octospaces:inbox:v1:${requesterSession.userId}:2024-06`);
+    expect(capturedAads[1]).toBe(`octospaces:inbox:v1:${requesterSession.userId}:2024-05`);
+  });
+});
+
+describe('S3b regression: scanResourceGrants persistent seenReqIds', () => {
+  let requesterKeys: KeySet;
+  let requesterSession: Session;
+
+  beforeAll(async () => {
+    requesterKeys = await makeKeys();
+    requesterSession = makeSession(requesterKeys);
+  });
+
+  function makeGrant(reqId: string): ResourceGrant {
+    return { v: 1, kind: 'grant', reqId, spaceId: 'sp-test', nodeId: 'n-1', bundle: '{}' };
+  }
+
+  it('FAILS (pre-fix): skips reqIds pre-populated in caller-provided seenReqIds', async () => {
+    const externalSet = new Set(['req-already-processed']);
+    vi.mocked(pullInbox)
+      .mockResolvedValueOnce([makeInboxItem('sender1')])
+      .mockResolvedValueOnce([]);
+    vi.mocked(unsealFromRecipient).mockResolvedValue(JSON.stringify(makeGrant('req-already-processed')));
+
+    const results = await scanResourceGrants(requesterSession, { seenReqIds: externalSet });
+    expect(results).toHaveLength(0); // already in caller set — skipped
+  });
+
+  it('FAILS (pre-fix): adds new reqIds to caller-provided seenReqIds for cross-call dedup', async () => {
+    const externalSet = new Set<string>();
+    vi.mocked(pullInbox)
+      .mockResolvedValueOnce([makeInboxItem('sender1'), makeInboxItem('sender1')])
+      .mockResolvedValueOnce([]);
+    vi.mocked(unsealFromRecipient)
+      .mockResolvedValueOnce(JSON.stringify(makeGrant('req-new')))
+      .mockResolvedValueOnce(JSON.stringify(makeGrant('req-new'))); // dup in same scan
+
+    const results = await scanResourceGrants(requesterSession, { seenReqIds: externalSet });
+    expect(results).toHaveLength(1); // in-scan dedup still applies
+    expect(externalSet.has('req-new')).toBe(true); // caller set is mutated for persistence
+  });
+});
