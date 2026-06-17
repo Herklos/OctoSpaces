@@ -141,15 +141,31 @@ Props: `icon?`, `label`, `detail?`, `value`, `onValueChange`, `disabled`.
 
 ---
 
-### `Palette` optional interaction fields (0.4.5)
+---
 
-> Released as `0.4.5` — listed here for completeness.
+## 0.4.5
 
-Added optional `pressed?`, `selected?`, `selectedHover?`, `disabledFill?`, and
-`focusRing?` fields to the `Palette` type (all `string | undefined`). Existing
-consumers that do not supply these fields are unaffected (the fields are optional
-and no built-in component reads them — they are provided for host apps that use the
-`focusRingStyle` helper or build their own interaction-state components).
+### Added
+
+- **Optional palette interaction tokens.** Added optional `pressed?`, `selected?`,
+  `selectedHover?`, `disabledFill?`, and `focusRing?` fields to the `Palette` type
+  (all `string | undefined`). Existing consumers that do not supply these fields are
+  unaffected (the fields are optional and no built-in component reads them — they are
+  reserved for host apps that use the `focusRingStyle` helper or build their own
+  interaction-state components).
+
+### Changed
+
+- **`SpacesRail` memoization improvements.** `tileShared` is now wrapped in `useMemo`;
+  `TileContent`, `PlainTile`, and `DndTile` sub-components are wrapped in `React.memo`
+  to prevent re-renders when unrelated rail state changes (e.g. DM hover state).
+
+### Fixed
+
+- **Stale `@drakkar.software/octochat-sdk` reference** in `sidebar/types.ts` comment
+  updated to `@drakkar.software/octospaces-sdk`.
+- Removed stray no-op `eslint-disable-next-line @typescript-eslint/no-explicit-any`
+  comment above `DndTileProps` interface in `SpacesRail.tsx`.
 
 ---
 

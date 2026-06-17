@@ -3,8 +3,9 @@
  */
 import { StarfishClient } from '@drakkar.software/starfish-client';
 import type { BatchPullEntry, Encryptor, StarfishCapProvider } from '@drakkar.software/starfish-client';
-import { createKeyring, createKeyringEncryptor } from '@drakkar.software/starfish-keyring';
+import { addCollectionRecipient, createKeyring, createKeyringEncryptor, hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
 import type { Keyring } from '@drakkar.software/starfish-keyring';
+import { ed25519 } from '@noble/curves/ed25519.js';
 import { signRequest, stableStringify } from '@drakkar.software/starfish-protocol';
 import type { SignableMethod } from '@drakkar.software/starfish-protocol';
 
@@ -12,7 +13,7 @@ import { getSyncBase, getSyncNamespace, getSyncPrefix, getOnServerReachable } fr
 import { fetchWithTimeout } from './fetch-timeout.js';
 import { pullCache, PULL_CACHE_MAX_AGE_MS } from './pull-cache.js';
 import { cacheProfile, loadCachedProfile } from './profile-cache.js';
-import { profilePull, profilePush } from './paths.js';
+import { keyringName, profilePull, profilePush } from './paths.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
 
 export interface DeviceKeys {
@@ -124,31 +125,60 @@ export async function ownerEnsureKeyring(
   return enc as unknown as Encryptor;
 }
 
+/** "Already present in keyring epoch" is benign on re-invite — same family as node-keyring.ts. */
+export function isAlreadyPresentRecipient(err: unknown): boolean {
+  return /already (present|a recipient|exists)|duplicate/i.test(err instanceof Error ? err.message : String(err));
+}
+
+/**
+ * Add a recipient to a space's keyring — mirroring the per-node
+ * `addNodeKeyringRecipient` in node-keyring.ts. Swallows "already present".
+ */
+export async function addSpaceKeyringRecipient(
+  session: { chatClient: StarfishClient; keys: DeviceKeys },
+  spaceId: string,
+  recipient: { subKem: string; userId: string; label: string },
+): Promise<void> {
+  try {
+    await addCollectionRecipient(
+      session.chatClient,
+      keyringName(spaceId),
+      recipient,
+      { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
+      { trustedAdders: [session.keys.edPub] },
+    );
+  } catch (err) {
+    if (!isAlreadyPresentRecipient(err)) throw err;
+  }
+}
+
 /** A user's public profile: display pseudo + optional inline avatar + public identity keys. */
 export interface PublicProfile {
   pseudo: string | null;
   avatar: string | null;
   edPub: string | null;
   kemPub: string | null;
+  kemSig: string | null;
 }
 
 /** Read any user's public profile. */
 export async function readProfile(userId: string): Promise<PublicProfile> {
   try {
     const r = await fetchWithTimeout()(`${getSyncBase()}${getSyncPrefix()}${profilePull(userId)}`);
-    if (!r.ok) return { pseudo: null, avatar: null, edPub: null, kemPub: null };
+    if (!r.ok) return { pseudo: null, avatar: null, edPub: null, kemPub: null, kemSig: null };
     const body = await r.json();
-    const data = body?.data as { pseudo?: unknown; avatar?: unknown; edPub?: unknown; kemPub?: unknown } | undefined;
+    const data = body?.data as { pseudo?: unknown; avatar?: unknown; edPub?: unknown; kemPub?: unknown; kemSig?: unknown } | undefined;
     const profile: PublicProfile = {
       pseudo: typeof data?.pseudo === 'string' ? data.pseudo : null,
       avatar: typeof data?.avatar === 'string' ? data.avatar : null,
       edPub: typeof data?.edPub === 'string' ? data.edPub : null,
       kemPub: typeof data?.kemPub === 'string' ? data.kemPub : null,
+      kemSig: typeof data?.kemSig === 'string' ? data.kemSig : null,
     };
     cacheProfile(userId, profile);
     return profile;
   } catch {
-    return (await loadCachedProfile(userId)) ?? { pseudo: null, avatar: null, edPub: null, kemPub: null };
+    return (await loadCachedProfile(userId)) ?? { pseudo: null, avatar: null, edPub: null, kemPub: null, kemSig: null };
   }
 }
 
@@ -188,12 +218,13 @@ export async function readProfiles(ids: string[]): Promise<Map<string, PublicPro
     chunk.forEach((id, j) => {
       const entry = entries[j];
       if (!entry || entry.error) return;
-      const data = (entry.data ?? null) as { pseudo?: unknown; avatar?: unknown; edPub?: unknown; kemPub?: unknown } | null;
+      const data = (entry.data ?? null) as { pseudo?: unknown; avatar?: unknown; edPub?: unknown; kemPub?: unknown; kemSig?: unknown } | null;
       const profile: PublicProfile = {
         pseudo: typeof data?.pseudo === 'string' ? data.pseudo : null,
         avatar: typeof data?.avatar === 'string' ? data.avatar : null,
         edPub: typeof data?.edPub === 'string' ? data.edPub : null,
         kemPub: typeof data?.kemPub === 'string' ? data.kemPub : null,
+        kemSig: typeof data?.kemSig === 'string' ? data.kemSig : null,
       };
       cacheProfile(id, profile);
       out.set(id, profile);
@@ -208,7 +239,7 @@ export async function readProfiles(ids: string[]): Promise<Map<string, PublicPro
 export async function writeProfile(
   client: StarfishClient,
   userId: string,
-  patch: { pseudo?: string; avatar?: string | null; edPub?: string; kemPub?: string },
+  patch: { pseudo?: string; avatar?: string | null; edPub?: string; kemPub?: string; kemSig?: string },
 ): Promise<void> {
   const current = await client.pull(profilePull(userId)).catch(() => null);
   const base = (current?.data as Record<string, unknown> | undefined) ?? {};
@@ -225,11 +256,13 @@ export async function writePseudo(client: StarfishClient, userId: string, pseudo
 /**
  * Publish this identity's PUBLIC keys in its profile so a peer can start an E2EE DM.
  * One-time + idempotent. ROOT-DEVICE ONLY — `profile` is `device:root`-write.
+ * Also computes and publishes `kemSig` (Ed25519 sig of kemPub by edPriv) so paired
+ * devices can include it in their identity link without needing the private key.
  */
 export async function ensureProfileKeys(
   client: StarfishClient,
   userId: string,
-  keys: { edPub: string; kemPub: string },
+  keys: { edPub: string; kemPub: string; edPriv: string },
 ): Promise<void> {
   let confirmedAbsent = false;
   try {
@@ -244,7 +277,8 @@ export async function ensureProfileKeys(
     return;
   }
   if (!confirmedAbsent) return;
-  await writeProfile(client, userId, { edPub: keys.edPub, kemPub: keys.kemPub });
+  const kemSig = bytesToHex(ed25519.sign(hexToBytes(keys.kemPub), hexToBytes(keys.edPriv)));
+  await writeProfile(client, userId, { edPub: keys.edPub, kemPub: keys.kemPub, kemSig });
 }
 
 /**

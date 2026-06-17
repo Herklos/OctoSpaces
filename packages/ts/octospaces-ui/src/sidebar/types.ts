@@ -1,8 +1,7 @@
 /**
  * Shared types for the SpacesRail component.
  *
- * Structurally compatible with `Space` from `@drakkar.software/octochat-sdk` /
- * `@drakkar.software/octospaces-sdk` — apps can pass their domain objects directly
+ * Structurally compatible with `Space` from `@drakkar.software/octospaces-sdk` — apps can pass their domain objects directly
  * without a runtime conversion step.
  */
 

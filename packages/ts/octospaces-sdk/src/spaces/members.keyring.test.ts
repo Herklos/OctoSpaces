@@ -28,9 +28,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // they will not be initialised yet. Use vi.fn() directly in the factory,
 // then access the mock via vi.mocked(<import>) in test bodies.
 
-vi.mock('../sync/client.js', () => ({
-  ownerEnsureKeyring: vi.fn().mockResolvedValue({}),
-}));
+vi.mock('../sync/client.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../sync/client.js')>();
+  return {
+    ...original,
+    ownerEnsureKeyring: vi.fn().mockResolvedValue({}),
+    // addSpaceKeyringRecipient and isAlreadyPresentRecipient use the real implementations
+    // so that they invoke the mocked addCollectionRecipient from @drakkar.software/starfish-keyring,
+    // preserving the test invariants about ordering and error swallowing.
+  };
+});
 
 vi.mock('@drakkar.software/starfish-keyring', () => ({
   addCollectionRecipient: vi.fn().mockResolvedValue(undefined),
@@ -46,6 +53,12 @@ vi.mock('./registry.js', () => ({
   addJoinedSpaceWithCap: vi.fn().mockResolvedValue(undefined),
   addJoinedSpaceWithLinkAccess: vi.fn().mockResolvedValue(undefined),
   updateSpacesDoc: vi.fn().mockResolvedValue(undefined),
+  buildSpace: vi.fn().mockImplementation((id: string, name: string) => ({
+    id,
+    name: name.trim() || `space-${id.slice(-6)}`,
+    short: (name.trim() || `space-${id.slice(-6)}`).slice(0, 2).toUpperCase(),
+    members: 1,
+  })),
 }));
 
 vi.mock('@drakkar.software/starfish-identities', () => ({

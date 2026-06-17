@@ -39,3 +39,11 @@ Worktrees do NOT have node_modules — point to `<main-repo>/node_modules/.bin/<
 - `addDeviceToSpaceKeyring` must NOT call `ownerEnsureKeyring` (device pairing ≠ owner flow)
 - Server never seals/unseals — all collections are `none` or `delegated`
 - `_MAX_AUTHORIZED_SPACES = _MAX_CANDIDATES // 2` (2 Whistler topics per space)
+
+## Key security invariants (enforced in code)
+- `acceptResourceRequest` MUST call `inviteToNode` with `{ isolated: true }` — otherwise requesters receive space-wide caps (H1 fix)
+- `inviteToSpace` / `inviteToNode` / `scanResourceRequests` MUST verify `userId === await userIdFromEdPub(edPub)` before trusting a requester's userId (M2 fix)
+- Pairing rendezvous push MUST be hash-guarded (pull baseHash first); slot MUST be cleared after `completeDevicePairing` (H2 fix)
+- Identity links are v:2 — kemPub is signed by edPriv (`kemSig`); `verifyIdentityLinkBinding` verifies BOTH ownerId and kemSig offline (M3 fix)
+- Inbox seals use AES-GCM AAD = `octospaces:inbox:v1:${recipientUserId}`; resource-request/grant/reject must pass this context (M1 fix)
+- `_MAX_AUTHORIZED_SPACES = _MAX_CANDIDATES // 2` lives in the Infra Python backend (not in this repo) — do not hunt for it here

@@ -31,6 +31,21 @@ export interface SpaceMetaUpdate {
   image?: string;
 }
 
+const SPACE_SHORT_LENGTH = 2;
+const SPACE_FALLBACK_SUFFIX = 6;
+
+/** Build a Space object from id + name with computed `short` monogram. */
+export function buildSpace(id: string, name: string, overrides?: Partial<Space>): Space {
+  const trimmed = name.trim() || `space-${id.slice(-SPACE_FALLBACK_SUFFIX)}`;
+  return {
+    id,
+    name: trimmed,
+    short: trimmed.slice(0, SPACE_SHORT_LENGTH).toUpperCase(),
+    members: 1,
+    ...overrides,
+  };
+}
+
 const spaceMetaListeners = new Set<(spaceId: string, meta: SpaceMetaUpdate) => void>();
 
 export function onSpaceMeta(fn: (spaceId: string, meta: SpaceMetaUpdate) => void): () => void {
@@ -52,6 +67,34 @@ interface SpacesDoc {
   quickReactions: string[];
   archivedDms: ArchivedDms;
   hash: string | null;
+}
+
+type SpacesPayload = Omit<SpacesDoc, 'hash'>;
+
+const MAX_ATTEMPTS = 3;
+
+async function casUpdateSpacesField<F extends keyof SpacesPayload>(
+  client: StarfishClient,
+  userId: string,
+  field: F,
+  mutate: (cur: SpacesPayload[F], doc: SpacesDoc) => SpacesPayload[F] | null,
+): Promise<void> {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const doc = await pullSpacesDoc(client, userId);
+    const next = mutate(doc[field], doc);
+    if (next === null) return;
+    try {
+      await client.push(
+        spacesPush(userId),
+        { v: 1, spaces: doc.spaces, caps: doc.caps, mutes: doc.mutes, reads: doc.reads, pubAccess: doc.pubAccess, dms: doc.dms, quickReactions: doc.quickReactions, archivedDms: doc.archivedDms, [field]: next },
+        doc.hash,
+      );
+      return;
+    } catch (err) {
+      if (err instanceof ConflictError && attempt < MAX_ATTEMPTS - 1) continue;
+      throw err;
+    }
+  }
 }
 
 function coerceDms(raw: unknown): DmMap {
@@ -141,17 +184,16 @@ export async function updateSpacesDoc(
   userId: string,
   mutator: (cur: { spaces: Space[]; caps: CapMap; pubAccess: PubAccessMap }) => { spaces: Space[]; caps: CapMap; pubAccess: PubAccessMap },
 ): Promise<void> {
-  const MAX_ATTEMPTS = 3;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const { spaces, caps, mutes, reads, pubAccess, dms, quickReactions, archivedDms, hash } = await pullSpacesDoc(client, userId);
-    const cur = { spaces, caps, pubAccess };
+    const doc = await pullSpacesDoc(client, userId);
+    const cur = { spaces: doc.spaces, caps: doc.caps, pubAccess: doc.pubAccess };
     const next = mutator(cur);
     if (next === cur) return;
     try {
       await client.push(
         spacesPush(userId),
-        { v: 1, spaces: next.spaces, caps: next.caps, mutes, reads, pubAccess: next.pubAccess, dms, quickReactions, archivedDms },
-        hash,
+        { v: 1, spaces: next.spaces, caps: next.caps, mutes: doc.mutes, reads: doc.reads, pubAccess: next.pubAccess, dms: doc.dms, quickReactions: doc.quickReactions, archivedDms: doc.archivedDms },
+        doc.hash,
       );
       return;
     } catch (err) {
@@ -161,104 +203,44 @@ export async function updateSpacesDoc(
   }
 }
 
-export async function updateMutesDoc(
+export function updateMutesDoc(
   client: StarfishClient,
   userId: string,
   mutator: (cur: MutePrefs) => MutePrefs | null,
 ): Promise<void> {
-  const MAX_ATTEMPTS = 3;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const { spaces, caps, mutes, reads, pubAccess, dms, quickReactions, archivedDms, hash } = await pullSpacesDoc(client, userId);
-    const next = mutator(mutes);
-    if (!next) return;
-    try {
-      await client.push(spacesPush(userId), { v: 1, spaces, caps, mutes: next, reads, pubAccess, dms, quickReactions, archivedDms }, hash);
-      return;
-    } catch (err) {
-      if (err instanceof ConflictError && attempt < MAX_ATTEMPTS - 1) continue;
-      throw err;
-    }
-  }
+  return casUpdateSpacesField(client, userId, 'mutes', (cur) => mutator(cur));
 }
 
-export async function updateReadsDoc(
+export function updateReadsDoc(
   client: StarfishClient,
   userId: string,
   mutator: (cur: ReadPrefs) => ReadPrefs | null,
 ): Promise<void> {
-  const MAX_ATTEMPTS = 3;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const { spaces, caps, mutes, reads, pubAccess, dms, quickReactions, archivedDms, hash } = await pullSpacesDoc(client, userId);
-    const next = mutator(reads);
-    if (!next) return;
-    try {
-      await client.push(spacesPush(userId), { v: 1, spaces, caps, mutes, reads: next, pubAccess, dms, quickReactions, archivedDms }, hash);
-      return;
-    } catch (err) {
-      if (err instanceof ConflictError && attempt < MAX_ATTEMPTS - 1) continue;
-      throw err;
-    }
-  }
+  return casUpdateSpacesField(client, userId, 'reads', (cur) => mutator(cur));
 }
 
-export async function updateDmsDoc(
+export function updateDmsDoc(
   client: StarfishClient,
   userId: string,
   mutator: (cur: DmMap) => DmMap | null,
 ): Promise<void> {
-  const MAX_ATTEMPTS = 3;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const { spaces, caps, mutes, reads, pubAccess, dms, quickReactions, archivedDms, hash } = await pullSpacesDoc(client, userId);
-    const next = mutator(dms);
-    if (!next) return;
-    try {
-      await client.push(spacesPush(userId), { v: 1, spaces, caps, mutes, reads, pubAccess, dms: next, quickReactions, archivedDms }, hash);
-      return;
-    } catch (err) {
-      if (err instanceof ConflictError && attempt < MAX_ATTEMPTS - 1) continue;
-      throw err;
-    }
-  }
+  return casUpdateSpacesField(client, userId, 'dms', (cur) => mutator(cur));
 }
 
-export async function updateQuickReactionsDoc(
+export function updateQuickReactionsDoc(
   client: StarfishClient,
   userId: string,
   mutator: (cur: string[]) => string[] | null,
 ): Promise<void> {
-  const MAX_ATTEMPTS = 3;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const { spaces, caps, mutes, reads, pubAccess, dms, quickReactions, archivedDms, hash } = await pullSpacesDoc(client, userId);
-    const next = mutator(quickReactions);
-    if (!next) return;
-    try {
-      await client.push(spacesPush(userId), { v: 1, spaces, caps, mutes, reads, pubAccess, dms, quickReactions: next, archivedDms }, hash);
-      return;
-    } catch (err) {
-      if (err instanceof ConflictError && attempt < MAX_ATTEMPTS - 1) continue;
-      throw err;
-    }
-  }
+  return casUpdateSpacesField(client, userId, 'quickReactions', (cur) => mutator(cur));
 }
 
-export async function updateArchivedDmsDoc(
+export function updateArchivedDmsDoc(
   client: StarfishClient,
   userId: string,
   mutator: (cur: ArchivedDms) => ArchivedDms | null,
 ): Promise<void> {
-  const MAX_ATTEMPTS = 3;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const { spaces, caps, mutes, reads, pubAccess, dms, quickReactions, archivedDms, hash } = await pullSpacesDoc(client, userId);
-    const next = mutator(archivedDms);
-    if (!next) return;
-    try {
-      await client.push(spacesPush(userId), { v: 1, spaces, caps, mutes, reads, pubAccess, dms, quickReactions, archivedDms: next }, hash);
-      return;
-    } catch (err) {
-      if (err instanceof ConflictError && attempt < MAX_ATTEMPTS - 1) continue;
-      throw err;
-    }
-  }
+  return casUpdateSpacesField(client, userId, 'archivedDms', (cur) => mutator(cur));
 }
 
 export async function setDmMapping(
@@ -430,12 +412,7 @@ export async function createSpace(
   const { spaces, hash } = await readSpaces(accountClient, userId);
   const trimmed = name.trim() || 'New Space';
   const id = newSpaceId();
-  const space: Space = {
-    id,
-    name: trimmed,
-    short: trimmed.slice(0, 2).toUpperCase(),
-    members: 1,
-  };
+  const space = buildSpace(id, trimmed);
   await writeSpaceAccess(accountClient, id, userId, [], null, { name: trimmed });
   await seedSpaceObjectIndex(session, id);
   await writeSpaces(accountClient, userId, [...spaces, space], hash);

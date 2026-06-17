@@ -68,9 +68,7 @@ export async function updateObjectIndex(
   session: Session,
   spaceId: string,
   mutator: (nodes: ObjectNode[], now: number) => ObjectNode[] | null,
-  reg?: { owner: string | null; members: string[] } | null,
 ): Promise<void> {
-  void reg; // no longer needed for encryption; kept for API compat during migration
   const client = getSpaceClient(spaceId, session);
   const pullPath = objIndexPull(spaceId);
   const pushPath = objIndexPush(spaceId);

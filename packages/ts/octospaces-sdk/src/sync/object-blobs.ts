@@ -97,13 +97,15 @@ export async function uploadObjectBlob(
 }
 
 /** Fetch + decrypt an object blob back to its original bytes.
- *  Pass `enc: null` for plaintext (public) nodes. */
+ *  Pass `enc: null` for plaintext (public) nodes.
+ *  Accepts either a raw `blobId` string or an {@link ObjectBlobRef} object. */
 export async function loadObjectBlob(
   client: StarfishClient,
   enc: ByteSealer | null,
   spaceId: string,
-  blobId: string,
+  blobIdOrRef: string | ObjectBlobRef,
 ): Promise<Uint8Array> {
+  const blobId = typeof blobIdOrRef === 'string' ? blobIdOrRef : blobIdOrRef.blobId;
   const res = await client.pullBlob(objectBlobPull(spaceId, blobId));
   const stored = new Uint8Array(res.data);
   return enc ? enc.openBytes(stored, objectBlobName(spaceId, blobId)) : stored;

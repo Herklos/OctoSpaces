@@ -117,6 +117,8 @@ export {
   openEncryptor,
   buildEncryptor,
   ownerEnsureKeyring,
+  isAlreadyPresentRecipient,
+  addSpaceKeyringRecipient,
   readProfile,
   readPseudo,
   readProfiles,
@@ -205,6 +207,7 @@ export type { SpaceAccessEntry, SpaceAccessMap } from './sync/space-access-store
 
 // Registry
 export {
+  buildSpace,
   readSpaces,
   updateSpacesDoc,
   updateMutesDoc,
@@ -308,6 +311,9 @@ export { appendToInbox, postAnonymousAppend, AppendHttpError } from './sync/sign
 // Base64
 export { starfishBase64 } from './sync/base64.js';
 export { toBase64Url, fromBase64Url } from './sync/base64url.js';
+
+// Link token helpers (shared encode/decode for invite and identity link fragments)
+export { encodeLinkFragment, decodeLinkFragment } from './sync/link-token.js';
 
 // Utilities
 export { matchTitle, rankResults, fold, isWordStart } from './utils/search-match.js';

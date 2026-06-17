@@ -79,7 +79,20 @@ export async function startDevicePairing(session: Session, pin: string, opts?: S
   const blob = JSON.stringify({ v: 1, keys: deviceKeys, bundle });
   const sealed = await sealWithPassphrase(pin, new TextEncoder().encode(blob));
   const nonce = randomNonce();
-  await anonClient().push(`/push/_pairing/${nonce}`, sealed as unknown as Record<string, unknown>, null);
+  // Hash-guarded push: pull current hash first (null = slot is empty / create-only).
+  // This ensures only the FIRST write to this slot succeeds; an attacker who learns
+  // the nonce cannot silently overwrite our bundle (a subsequent push needs the
+  // post-write hash, which only the server knows).
+  const client = anonClient();
+  const existingHash = await client
+    .pull(`/pull/_pairing/${nonce}`)
+    .then((r) => r.hash)
+    .catch((): null => null);
+  await client.push(
+    `/push/_pairing/${nonce}`,
+    sealed as unknown as Record<string, unknown>,
+    existingHash,
+  );
   return `${opts?.prefix ?? PAIR_PREFIX}${nonce}.${session.keys.edPub}`;
 }
 
@@ -114,6 +127,20 @@ export async function completeDevicePairing(payload: string, pin: string): Promi
     blob.keys as Parameters<typeof installPairingBundle>[1],
     opts,
   );
+  // Best-effort one-shot clear: overwrite the rendezvous slot with an empty doc so the
+  // PIN-sealed bundle is not left readable in the public collection indefinitely.
+  // Failure here is harmless — the server's TTL on _pairing/* is the real backstop.
+  const clearClient = anonClient();
+  void clearClient
+    .pull(`/pull/_pairing/${nonce}`)
+    .then((r) =>
+      clearClient.push(
+        `/push/_pairing/${nonce}`,
+        {} as unknown as Record<string, unknown>,
+        r.hash,
+      ),
+    )
+    .catch(() => {});
   const userId = installed.credentials.userId;
   return {
     userId,

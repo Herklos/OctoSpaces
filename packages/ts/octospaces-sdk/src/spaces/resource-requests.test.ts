@@ -12,6 +12,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
+import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
+import { ed25519 } from '@noble/curves/ed25519.js';
 
 import {
   encodeIdentityLink,
@@ -24,6 +26,12 @@ import {
   unsealFromRecipient,
 } from '../sync/account-seal.js';
 import { userIdFromEdPub } from '../sync/paths.js';
+
+/** Build a valid v:2 IdentityLink for the given keys. */
+function makeIdentityLink(keys: ReturnType<typeof generateDeviceKeys>, userId: string, pseudo: string): IdentityLink {
+  const kemSig = bytesToHex(ed25519.sign(hexToBytes(keys.kemPub), hexToBytes(keys.edPriv)));
+  return { v: 2, ownerId: userId, pseudo, edPub: keys.edPub, kemPub: keys.kemPub, kemSig };
+}
 
 // Minimal Session stub — only the fields used by seal/unseal and link helpers.
 async function makeStubSession(keys: ReturnType<typeof generateDeviceKeys>) {
@@ -44,13 +52,7 @@ describe('IdentityLink — encode / decode / binding', () => {
   it('round-trips: decode(encode(token)) === token', async () => {
     const keys = generateDeviceKeys();
     const userId = await userIdFromEdPub(keys.edPub);
-    const token: IdentityLink = {
-      v: 1,
-      ownerId: userId,
-      pseudo: 'Alice',
-      edPub: keys.edPub,
-      kemPub: keys.kemPub,
-    };
+    const token = makeIdentityLink(keys, userId, 'Alice');
     const link = encodeIdentityLink('https://example.com', 'request', token);
     // Fragment is after '#'
     const frag = link.slice(link.indexOf('#'));
@@ -59,18 +61,14 @@ describe('IdentityLink — encode / decode / binding', () => {
     expect(decoded.edPub).toBe(token.edPub);
     expect(decoded.kemPub).toBe(token.kemPub);
     expect(decoded.pseudo).toBe(token.pseudo);
-    expect(decoded.v).toBe(1);
+    expect(decoded.kemSig).toBe(token.kemSig);
+    expect(decoded.v).toBe(2);
   });
 
-  it('decodeIdentityLink strips leading # from fragment', () => {
+  it('decodeIdentityLink strips leading # from fragment', async () => {
     const keys = generateDeviceKeys();
-    const token: IdentityLink = {
-      v: 1,
-      ownerId: keys.edPub.slice(0, 32), // any 32-hex string for shape test
-      pseudo: '',
-      edPub: keys.edPub,
-      kemPub: keys.kemPub,
-    };
+    const userId = await userIdFromEdPub(keys.edPub);
+    const token = makeIdentityLink(keys, userId, '');
     const link = encodeIdentityLink('https://example.com', 'request', token);
     const fragWithHash = link.slice(link.indexOf('#')); // includes '#'
     const fragNoHash = fragWithHash.slice(1);            // without '#'
@@ -80,7 +78,7 @@ describe('IdentityLink — encode / decode / binding', () => {
   it('verifyIdentityLinkBinding passes for a correct token', async () => {
     const keys = generateDeviceKeys();
     const userId = await userIdFromEdPub(keys.edPub);
-    const token: IdentityLink = { v: 1, ownerId: userId, pseudo: 'Bob', edPub: keys.edPub, kemPub: keys.kemPub };
+    const token = makeIdentityLink(keys, userId, 'Bob');
     expect(await verifyIdentityLinkBinding(token)).toBe(true);
   });
 
@@ -89,7 +87,7 @@ describe('IdentityLink — encode / decode / binding', () => {
     const userId = await userIdFromEdPub(keys.edPub);
     // Flip one character
     const tampered = userId.slice(0, -1) + (userId.endsWith('0') ? '1' : '0');
-    const token: IdentityLink = { v: 1, ownerId: tampered, pseudo: 'Eve', edPub: keys.edPub, kemPub: keys.kemPub };
+    const token = { ...makeIdentityLink(keys, userId, 'Eve'), ownerId: tampered };
     expect(await verifyIdentityLinkBinding(token)).toBe(false);
   });
 
@@ -98,7 +96,9 @@ describe('IdentityLink — encode / decode / binding', () => {
     const other = generateDeviceKeys();
     const userId = await userIdFromEdPub(keys.edPub);
     // ownerId matches keys.edPub but edPub is now other.edPub — binding breaks
-    const token: IdentityLink = { v: 1, ownerId: userId, pseudo: 'Eve', edPub: other.edPub, kemPub: other.kemPub };
+    // kemSig is for keys, but edPub is other.edPub → sig verification will also fail
+    const kemSig = bytesToHex(ed25519.sign(hexToBytes(keys.kemPub), hexToBytes(keys.edPriv)));
+    const token: IdentityLink = { v: 2, ownerId: userId, pseudo: 'Eve', edPub: other.edPub, kemPub: other.kemPub, kemSig };
     expect(await verifyIdentityLinkBinding(token)).toBe(false);
   });
 
@@ -107,7 +107,7 @@ describe('IdentityLink — encode / decode / binding', () => {
   });
 
   it('decodeIdentityLink throws on missing required fields', async () => {
-    const partial = { v: 1, ownerId: 'a'.repeat(32), edPub: 'b'.repeat(64) }; // kemPub missing
+    const partial = { v: 2, ownerId: 'a'.repeat(32), edPub: 'b'.repeat(64) }; // kemPub and kemSig missing
     const { toBase64Url } = await import('../sync/base64url.js');
     const frag = toBase64Url(JSON.stringify(partial));
     expect(() => decodeIdentityLink(frag)).toThrow();

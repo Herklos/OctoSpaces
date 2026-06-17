@@ -303,19 +303,6 @@ export function linkedDeviceScope(userId: string): ScopePreset {
   };
 }
 
-/** Extract the single space id a member cap is scoped to (from its `spaces/<id>/**`).
- *  Returns null if the cap names no space path OR more than one distinct space. */
-export function spaceIdFromCap(cap: { scope?: { paths?: string[] } }): string | null {
-  let found: string | null = null;
-  for (const p of cap.scope?.paths ?? []) {
-    const m = /^spaces\/([^/]+)\//.exec(p);
-    if (!m) continue;
-    if (found !== null && found !== m[1]) return null;
-    found = m[1]!;
-  }
-  return found;
-}
-
 export function bytesToHex(b: Uint8Array): string {
   let s = '';
   for (const x of b) s += x.toString(16).padStart(2, '0');

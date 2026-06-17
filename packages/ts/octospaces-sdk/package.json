@@ -1,6 +1,6 @@
 {
   "name": "@drakkar.software/octospaces-sdk",
-  "version": "0.12.7",
+  "version": "0.12.8",
   "description": "Shared headless spaces core — identity, registry, objects, and sync plumbing.",
   "type": "module",
   "sideEffects": false,
@@ -20,6 +20,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -51,6 +52,7 @@
     "@types/node": "^22.0.0",
     "tsup": "^8.3.0",
     "typescript": "~6.0.3",
+    "@vitest/coverage-v8": "^3.0.0",
     "vitest": "^3.0.0"
   }
 }

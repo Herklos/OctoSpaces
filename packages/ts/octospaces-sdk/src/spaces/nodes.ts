@@ -27,15 +27,13 @@
  *   - Bearer: `joinNodeByLink` — stores per-node `{kind:'link'}` entry.
  */
 import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
-import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
 import { mintMemberCap } from '@drakkar.software/starfish-sharing';
 
-import type { NodeAccess, ObjectNode, ObjectType, Space } from '../core/types.js';
-import { ownerEnsureKeyring } from '../sync/client.js';
+import type { NodeAccess, ObjectNode, ObjectType } from '../core/types.js';
+import { addSpaceKeyringRecipient, ownerEnsureKeyring } from '../sync/client.js';
 import type { Session } from '../sync/identity.js';
 import { ownerTrustedAdders } from '../sync/identity.js';
 import {
-  keyringName,
   keyringPull,
   keyringPush,
   nodeKeyringScope,
@@ -56,18 +54,12 @@ import {
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
 import { sealToSelf } from '../sync/account-seal.js';
-import { toBase64Url, fromBase64Url } from '../sync/base64url.js';
+import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
 import { addObject } from '../objects/objects.js';
 import { updateObjectIndex } from './object-index.js';
-import { addSpaceMember, readSpaces } from './registry.js';
+import { addSpaceMember, buildSpace, readSpaces } from './registry.js';
 import { randomId } from '../core/ids.js';
 import type { JoinRequest } from './members.js';
-
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-function isAlreadyPresentRecipient(err: unknown): boolean {
-  return err instanceof Error && /already present in epoch/.test(err.message);
-}
 
 // ── createNode ────────────────────────────────────────────────────────────────
 
@@ -96,7 +88,6 @@ export async function createNode(
   session: Session,
   spaceId: string,
   input: CreateNodeInput,
-  reg?: { owner: string | null; members: string[] } | null,
 ): Promise<ObjectNode> {
   const access = input.access ?? 'space';
   const enc = input.enc ?? false;
@@ -131,7 +122,7 @@ export async function createNode(
     }, now);
     createdNode = next.find((n) => n.id === nodeId) ?? node;
     return next;
-  }, reg);
+  });
 
   if (!createdNode) throw new Error('createNode: index update did not produce a node');
   return createdNode;
@@ -152,7 +143,6 @@ export async function setNodeAccess(
   spaceId: string,
   nodeId: string,
   patch: { access?: NodeAccess; enc?: boolean },
-  reg?: { owner: string | null; members: string[] } | null,
 ): Promise<void> {
   if (patch.access === 'public' && patch.enc) throw new Error('public+enc is not valid.');
 
@@ -200,7 +190,7 @@ export async function setNodeAccess(
     if (unchanged) return null;
 
     return nodes.map((n, i) => (i === idx ? next : n));
-  }, reg);
+  });
 }
 
 // ── Direct invite ─────────────────────────────────────────────────────────────
@@ -272,17 +262,7 @@ export async function inviteToNode(
       keyringPush(spaceId),
       ownerTrustedAdders(session),
     );
-    try {
-      await addCollectionRecipient(
-        session.chatClient,
-        keyringName(spaceId),
-        { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, 8) },
-        { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
-        { trustedAdders: [session.keys.edPub] },
-      );
-    } catch (err) {
-      if (!isAlreadyPresentRecipient(err)) throw err;
-    }
+    await addSpaceKeyringRecipient(session, spaceId, { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, 8) });
   }
 
   const bundle: NodeInviteBundle = {
@@ -358,11 +338,10 @@ export async function acceptNodeInvite(session: Session, bundleJson: string): Pr
   // least one usable cap (space OR per-node content).
   const assertForUs = (c: { kind?: string; sub?: string } | undefined, label: string): boolean => {
     if (!c) return false;
-    if (c.kind !== 'member') throw new Error('Invalid node invite.');
+    if (c.kind !== 'member') throw new Error(`Invalid node invite (${label}): unexpected cap kind.`);
     if (!c.sub || c.sub !== session.keys.edPub) {
-      throw new Error('This invite was issued for a different identity.');
+      throw new Error(`This invite was issued for a different identity (${label}).`);
     }
-    void label;
     return true;
   };
 
@@ -416,26 +395,26 @@ export interface NodeInviteLinkToken {
 }
 
 export function encodeNodeInviteLink(origin: string, token: NodeInviteLinkToken): string {
-  const base = origin.replace(/\/+$/, '');
-  return `${base}/join/node#${toBase64Url(JSON.stringify(token))}`;
+  return encodeLinkFragment(origin, 'join/node', token);
 }
 
 export function decodeNodeInviteLink(fragment: string): NodeInviteLinkToken {
-  const frag = fragment.startsWith('#') ? fragment.slice(1) : fragment;
-  const tok = JSON.parse(fromBase64Url(frag)) as Partial<NodeInviteLinkToken>;
-  if (!tok || !tok.spaceId || !tok.nodeId || !tok.cap || !tok.key) {
-    throw new Error('That node invite link is malformed or incomplete.');
-  }
+  const raw = decodeLinkFragment<{ spaceId: string; nodeId: string; cap: unknown; key: string } & Partial<NodeInviteLinkToken>>(
+    fragment,
+    (tok): tok is { spaceId: string; nodeId: string; cap: unknown; key: string } & Partial<NodeInviteLinkToken> =>
+      !!tok && typeof tok.spaceId === 'string' && typeof tok.nodeId === 'string' && !!tok.cap && typeof tok.key === 'string',
+    'That node invite link is malformed or incomplete.',
+  );
   return {
     v: 1,
-    spaceId: tok.spaceId,
-    nodeId: tok.nodeId,
-    nodeName: tok.nodeName ?? tok.nodeId,
-    cap: tok.cap,
-    ...(tok.streamCap !== undefined ? { streamCap: tok.streamCap } : {}),
-    ...(tok.keyringCap !== undefined ? { keyringCap: tok.keyringCap } : {}),
-    key: tok.key,
-    write: !!tok.write,
+    spaceId: raw.spaceId,
+    nodeId: raw.nodeId,
+    nodeName: raw.nodeName ?? raw.nodeId,
+    cap: raw.cap,
+    ...(raw.streamCap !== undefined ? { streamCap: raw.streamCap } : {}),
+    ...(raw.keyringCap !== undefined ? { keyringCap: raw.keyringCap } : {}),
+    key: raw.key,
+    write: !!raw.write,
   };
 }
 
@@ -484,17 +463,7 @@ export async function createNodeInviteLink(
       keyringPush(spaceId),
       ownerTrustedAdders(session),
     );
-    try {
-      await addCollectionRecipient(
-        session.chatClient,
-        keyringName(spaceId),
-        { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, 8) },
-        { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
-        { trustedAdders: [session.keys.edPub] },
-      );
-    } catch (err) {
-      if (!isAlreadyPresentRecipient(err)) throw err;
-    }
+    await addSpaceKeyringRecipient(session, spaceId, { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, 8) });
   }
 
   let keyringCap: unknown;
@@ -577,12 +546,7 @@ export async function joinNodeByLink(session: Session, token: NodeInviteLinkToke
   // Persist sealed entry into _spaces.pubAccess keyed by spaceId:nodeId.
   // Also register the node as a listable Space (dup-guarded) so it appears in
   // the host app's space rail after joining.
-  const spaceEntry: Space = {
-    id: token.nodeId,
-    name: token.nodeName,
-    short: token.nodeName.slice(0, 2).toUpperCase(),
-    members: 1,
-  };
+  const spaceEntry = buildSpace(token.nodeId, token.nodeName);
   const { updateSpacesDoc } = await import('./registry.js');
   await updateSpacesDoc(session.accountClient, session.userId, (cur) => ({
     spaces: cur.spaces.some((s) => s.id === token.nodeId) ? cur.spaces : [...cur.spaces, spaceEntry],

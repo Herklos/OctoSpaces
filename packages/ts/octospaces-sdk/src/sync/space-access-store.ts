@@ -80,7 +80,7 @@ export async function hydrateSpaceAccessStore(
 }
 
 function persist(): void {
-  if (activeKey) void kvSet(activeKey, JSON.stringify(cache));
+  if (activeKey) void kvSet(activeKey, JSON.stringify(cache)).catch(() => {});
 }
 
 export function getSpaceAccessEntry(spaceId: string): SpaceAccessEntry | null {

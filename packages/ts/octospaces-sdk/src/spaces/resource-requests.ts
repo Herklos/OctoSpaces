@@ -55,6 +55,10 @@ import { readObjectTree } from './object-index.js';
 import { randomId } from '../core/ids.js';
 import type { Session } from '../sync/identity.js';
 import type { ObjectNode } from '../core/types.js';
+import { userIdFromEdPub } from '../sync/paths.js';
+
+/** AES-GCM additional-data context binding for inbox seals. Prevents cross-inbox replay. */
+const inboxAad = (recipientId: string) => `octospaces:inbox:v1:${recipientId}`;
 
 // ── Payload types ─────────────────────────────────────────────────────────────
 
@@ -178,7 +182,7 @@ export async function submitResourceRequest(
   };
 
   // Seal the request to the owner's KEM key — only they can read it.
-  const sealed = await sealToRecipient(session, ownerLink.kemPub, JSON.stringify(request));
+  const sealed = await sealToRecipient(session, ownerLink.kemPub, JSON.stringify(request), inboxAad(ownerLink.ownerId));
   const element: InboxPayload = { sealed, ts: Date.now() };
 
   await appendToInbox(ownerLink.ownerId, inboxShard(), element as unknown as Record<string, unknown>, {
@@ -224,7 +228,7 @@ export async function scanResourceRequests(
 
       let plaintext: string;
       try {
-        plaintext = await unsealFromRecipient(session, payload.sealed);
+        plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId));
       } catch {
         continue; // not sealed to us or tampered — trial-unseal skip
       }
@@ -255,6 +259,11 @@ export async function scanResourceRequests(
       if (payload.sealed.entry.addedBy !== req.requester.edPub) {
         continue; // spoofed requester identity — skip
       }
+
+      // Verify the requester's userId is cryptographically derived from their edPub.
+      // Without this check a requester could supply a forged userId to pollute the roster
+      // (cap minting in acceptResourceRequest uses req.requester.userId as the cap subject).
+      if ((await userIdFromEdPub(req.requester.edPub)) !== req.requester.userId) continue;
 
       // Space-id allow-list (optional)
       if (spaceIds && !spaceIds.has(req.spaceId)) {
@@ -297,6 +306,7 @@ export interface AcceptResult {
  *
  * The grant-back cap (`NodeInviteBundle.nodeCap`) is a `nodeMemberScope` cap covering
  * only `spaces/{spaceId}/objects/n/{nodeId}/**` — the narrowest possible grant.
+ * The requester is isolated and never receives space-wide access.
  */
 export async function acceptResourceRequest(
   session: Session,
@@ -307,6 +317,8 @@ export async function acceptResourceRequest(
      * created node's id. Must stamp `meta.reqId` for dedup to work correctly.
      */
     create?: (session: Session, req: ResourceRequest) => Promise<{ nodeId: string }>;
+    /** Whether to grant write access to the node. Defaults to true. */
+    write?: boolean;
   },
 ): Promise<AcceptResult> {
   const { req } = pending;
@@ -325,7 +337,7 @@ export async function acceptResourceRequest(
     nodeId = node.id;
   }
 
-  // Mint the invitee's cap: spaceMemberScope (index) + nodeMemberScope (objinv content).
+  // Mint the invitee's cap: nodeMemberScope only (isolated — never space-wide access).
   const bundleJson = await inviteToNode(
     session,
     req.spaceId,
@@ -333,6 +345,7 @@ export async function acceptResourceRequest(
     JSON.stringify(req.requester),
     { enc: false },
     req.title,
+    { isolated: true, write: opts?.write ?? true },
   );
 
   // Seal the grant and deliver it to the requester's inbox.
@@ -344,7 +357,7 @@ export async function acceptResourceRequest(
     nodeId,
     bundle: bundleJson,
   };
-  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(grant));
+  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(grant), inboxAad(req.requester.userId));
   await appendToInbox(
     req.requester.userId,
     inboxShard(),
@@ -373,7 +386,7 @@ export async function rejectResourceRequest(
     reqId: req.reqId,
     ...(reason ? { reason } : {}),
   };
-  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(rejection));
+  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(rejection), inboxAad(req.requester.userId));
   await appendToInbox(
     req.requester.userId,
     inboxShard(),
@@ -393,6 +406,7 @@ export async function rejectResourceRequest(
  */
 export async function scanResourceGrants(session: Session): Promise<ResourceGrant[]> {
   const out: ResourceGrant[] = [];
+  const seenReqIds = new Set<string>(); // dedup: skip if same reqId appeared earlier in scan
   for (const shard of inboxShards()) {
     const items = await pullInbox(session.accountClient, session.userId, shard);
     for (const item of items) {
@@ -401,7 +415,7 @@ export async function scanResourceGrants(session: Session): Promise<ResourceGran
 
       let plaintext: string;
       try {
-        plaintext = await unsealFromRecipient(session, payload.sealed);
+        plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId));
       } catch {
         continue;
       }
@@ -423,6 +437,8 @@ export async function scanResourceGrants(session: Session): Promise<ResourceGran
       ) {
         continue;
       }
+      if (seenReqIds.has(g.reqId!)) continue; // skip replayed/duplicate grant
+      seenReqIds.add(g.reqId!);
       out.push(g as ResourceGrant);
     }
   }

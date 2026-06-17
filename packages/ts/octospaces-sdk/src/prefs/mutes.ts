@@ -73,7 +73,7 @@ export function createMutesStore(opts: {
   }
 
   function persist(): void {
-    if (activeKey) void kvSet(activeKey, JSON.stringify(cache));
+    if (activeKey) void kvSet(activeKey, JSON.stringify(cache)).catch(() => {});
   }
 
   function applyMute(prefs: MutePrefs, field: 'rooms' | 'spaces', id: string, muted: boolean): MutePrefs | null {

@@ -15,13 +15,20 @@ vi.mock('../sync/space-access.js', () => ({
   }),
 }));
 
-vi.mock('../sync/client.js', () => ({
-  ownerEnsureKeyring: vi.fn().mockResolvedValue({}),
-  makeClient: vi.fn().mockReturnValue({
-    pull: vi.fn().mockResolvedValue(null),
-    push: vi.fn().mockResolvedValue(undefined),
-  }),
-}));
+vi.mock('../sync/client.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../sync/client.js')>();
+  return {
+    ...original,
+    ownerEnsureKeyring: vi.fn().mockResolvedValue({}),
+    makeClient: vi.fn().mockReturnValue({
+      pull: vi.fn().mockResolvedValue(null),
+      push: vi.fn().mockResolvedValue(undefined),
+    }),
+    // addSpaceKeyringRecipient uses the real implementation so it calls the mocked
+    // addCollectionRecipient from @drakkar.software/starfish-keyring, preserving
+    // the test invariants about call args and error handling.
+  };
+});
 
 vi.mock('../sync/space-access-store.js', () => ({
   saveNodeAccessEntry: vi.fn(),
@@ -72,6 +79,12 @@ vi.mock('./registry.js', () => ({
     (_client: unknown, _userId: string, mutator: (cur: { spaces: ObjectNode[]; caps: Record<string, string>; pubAccess: Record<string, unknown> }) => unknown) =>
       mutator({ spaces: [], caps: {}, pubAccess: {} }),
   ),
+  buildSpace: vi.fn().mockImplementation((id: string, name: string) => ({
+    id,
+    name: name.trim() || `space-${id.slice(-6)}`,
+    short: (name.trim() || `space-${id.slice(-6)}`).slice(0, 2).toUpperCase(),
+    members: 1,
+  })),
 }));
 
 vi.mock('../sync/account-seal.js', () => ({

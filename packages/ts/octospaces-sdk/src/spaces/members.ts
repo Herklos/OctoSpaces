@@ -27,10 +27,10 @@ import {
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
 import { keyringName, keyringPull, keyringPush, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
-import { ownerEnsureKeyring } from '../sync/client.js';
-import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, readSpaces, updateSpacesDoc } from './registry.js';
+import { addSpaceKeyringRecipient, isAlreadyPresentRecipient, ownerEnsureKeyring } from '../sync/client.js';
+import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, buildSpace, readSpaces, updateSpacesDoc } from './registry.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
-import { toBase64Url, fromBase64Url } from '../sync/base64url.js';
+import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
 
 export interface JoinRequest {
   edPub: string;
@@ -41,10 +41,6 @@ export interface JoinRequest {
 export function makeJoinRequest(session: Session): string {
   const req: JoinRequest = { edPub: session.keys.edPub, kemPub: session.keys.kemPub, userId: session.userId };
   return JSON.stringify(req);
-}
-
-function isAlreadyPresentRecipient(err: unknown): boolean {
-  return err instanceof Error && /already present in epoch/.test(err.message);
 }
 
 function isKeyringMissing(err: unknown): boolean {
@@ -78,17 +74,7 @@ export async function inviteToSpace(
   // then add the invitee as a recipient so they can decrypt enc nodes from the start.
   // ownerEnsureKeyring is a no-op if the keyring already exists.
   await ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId));
-  try {
-    await addCollectionRecipient(
-      session.chatClient,
-      keyringName(spaceId),
-      { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, 8) },
-      { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
-      { trustedAdders: [session.keys.edPub] },
-    );
-  } catch (err) {
-    if (!isAlreadyPresentRecipient(err)) throw err;
-  }
+  await addSpaceKeyringRecipient(session, spaceId, { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, 8) });
 
   // NOTE: 'chat' is the cap collection the deployed server's space-member enricher recognises.
   const cap = await mintMemberCap(
@@ -121,8 +107,7 @@ export async function acceptSpaceInvite(session: Session, inviteJson: string): P
   }
   const spaceId = inv.spaceId;
   const capJson = JSON.stringify(cap);
-  const name = inv.spaceName?.trim() || `space-${spaceId.slice(-6)}`;
-  const space: Space = { id: spaceId, name, short: name.slice(0, 2).toUpperCase(), members: 1 };
+  const space = buildSpace(spaceId, inv.spaceName ?? '');
   await addJoinedSpaceWithCap(session.accountClient, session.userId, space, capJson);
   saveSpaceAccessEntry(spaceId, { kind: 'member', cap: capJson });
   return space;
@@ -153,25 +138,25 @@ export interface SpaceInviteLinkToken {
 }
 
 export function encodeSpaceInviteLink(origin: string, token: SpaceInviteLinkToken): string {
-  const base = origin.replace(/\/+$/, '');
-  return `${base}/join#${toBase64Url(JSON.stringify(token))}`;
+  return encodeLinkFragment(origin, 'join', token);
 }
 
 export function decodeSpaceInviteLink(fragment: string): SpaceInviteLinkToken {
-  const frag = fragment.startsWith('#') ? fragment.slice(1) : fragment;
-  const tok = JSON.parse(fromBase64Url(frag)) as Partial<SpaceInviteLinkToken>;
-  if (!tok || !tok.spaceId || !tok.cap || !tok.key) {
-    throw new Error('That space invite link is malformed or incomplete.');
-  }
+  const raw = decodeLinkFragment<{ spaceId: string; cap: unknown; key: string } & Partial<SpaceInviteLinkToken>>(
+    fragment,
+    (tok): tok is { spaceId: string; cap: unknown; key: string } & Partial<SpaceInviteLinkToken> =>
+      !!tok && typeof tok.spaceId === 'string' && !!tok.cap && typeof tok.key === 'string',
+    'That space invite link is malformed or incomplete.',
+  );
   return {
     v: 1,
-    spaceId: tok.spaceId,
-    spaceName: tok.spaceName ?? 'Space',
-    cap: tok.cap,
-    key: tok.key,
-    kemPriv: tok.kemPriv,
-    kemPub: tok.kemPub,
-    write: !!tok.write,
+    spaceId: raw.spaceId,
+    spaceName: raw.spaceName ?? 'Space',
+    cap: raw.cap,
+    key: raw.key,
+    kemPriv: raw.kemPriv,
+    kemPub: raw.kemPub,
+    write: !!raw.write,
   };
 }
 
@@ -203,17 +188,7 @@ export async function createSpaceInviteLink(
 
   // Ensure the keyring exists, then add the ephemeral KEM so link-bearers can decrypt enc content.
   await ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId));
-  try {
-    await addCollectionRecipient(
-      session.chatClient,
-      keyringName(spaceId),
-      { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, 8) },
-      { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
-      { trustedAdders: [session.keys.edPub] },
-    );
-  } catch (err) {
-    if (!isAlreadyPresentRecipient(err)) throw err;
-  }
+  await addSpaceKeyringRecipient(session, spaceId, { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, 8) });
 
   const token: SpaceInviteLinkToken = {
     v: 1, spaceId, spaceName, cap, key: ek.edPriv, kemPriv: ek.kemPriv, kemPub: ek.kemPub, write,
@@ -226,13 +201,7 @@ export async function createSpaceInviteLink(
  * Stores the link credential locally and seals it into the synced `_spaces` doc.
  */
 export async function joinSpaceByLink(session: Session, token: SpaceInviteLinkToken): Promise<Space> {
-  const name = token.spaceName.trim() || `space-${token.spaceId.slice(-6)}`;
-  const space: Space = {
-    id: token.spaceId,
-    name,
-    short: name.slice(0, 2).toUpperCase(),
-    members: 1,
-  };
+  const space = buildSpace(token.spaceId, token.spaceName);
   const accessPayload = { cap: token.cap, key: token.key, kemPriv: token.kemPriv, kemPub: token.kemPub, write: token.write };
   const sealed = await sealToSelf(session, JSON.stringify(accessPayload));
   await addJoinedSpaceWithLinkAccess(session.accountClient, session.userId, space, sealed);
@@ -286,7 +255,7 @@ export async function recoverSpaceAccess(
       const parsed = JSON.parse(raw) as { cap: unknown; key: string; kemPriv?: string; kemPub?: string; write: boolean };
       if (parsed.cap && parsed.key) linkAccess[spaceId] = parsed;
     } catch (e) {
-      console.error('[octospaces] recoverSpaceAccess: failed to unseal', spaceId, e);
+      console.error('[octospaces] recoverSpaceAccess: failed to unseal', spaceId, (e instanceof Error ? e.message : String(e)));
     }
   }
 
@@ -318,6 +287,6 @@ export async function recoverSpaceAccess(
       pubAccess: { ...cur.pubAccess, ...newPubAccess },
     }));
   } catch (e) {
-    console.error('[octospaces] recoverSpaceAccess: backfill failed', e);
+    console.error('[octospaces] recoverSpaceAccess: backfill failed', (e instanceof Error ? e.message : String(e)));
   }
 }

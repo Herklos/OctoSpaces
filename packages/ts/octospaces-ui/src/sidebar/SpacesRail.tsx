@@ -12,7 +12,7 @@
  *
  * All React Native primitives used here ship with the `react-native` peer dep.
  */
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Pressable as RNPressable,
   ScrollView,
@@ -141,7 +141,7 @@ interface TileContentProps {
   showLockCorner?: boolean;
 }
 
-function TileContent({
+const TileContent = React.memo(function TileContent({
   space,
   labelColor,
   fontFamily,
@@ -228,7 +228,7 @@ function TileContent({
       ) : null}
     </>
   );
-}
+});
 
 // ── PlainTile — space tile without DnD ────────────────────────────────────────
 
@@ -250,7 +250,7 @@ interface TileSharedProps {
   lineHeight: number;
 }
 
-function PlainTile({
+const PlainTile = React.memo(function PlainTile({
   space,
   active,
   onPress,
@@ -307,10 +307,9 @@ function PlainTile({
       />
     </Pressable>
   );
-}
+});
 
 // ── DndTile — space tile with hook-injected DnD ref + over state ──────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 
 interface DndTileProps extends TileSharedProps {
   /** Hook injection: called unconditionally at the top of this component.
@@ -318,7 +317,7 @@ interface DndTileProps extends TileSharedProps {
   dnd: NonNullable<SpacesRailProps['useTileDnd']>;
 }
 
-function DndTile({
+const DndTile = React.memo(function DndTile({
   space,
   active,
   onPress,
@@ -380,7 +379,7 @@ function DndTile({
       />
     </Pressable>
   );
-}
+});
 
 // ── SpacesRail ─────────────────────────────────────────────────────────────────
 
@@ -431,8 +430,9 @@ export function SpacesRail({
   const cornerBg = colors.sidebar;
   const cornerBorder = colors.border;
 
-  // Shared tile props (passed to every tile variant).
-  const tileShared = {
+  // Shared tile props (passed to every tile variant). Memoized so tile components
+  // that are wrapped in React.memo don't re-render when unrelated state changes.
+  const tileShared = useMemo(() => ({
     tokens,
     radiusActive,
     radiusDefault,
@@ -445,7 +445,7 @@ export function SpacesRail({
     fontFamily: monoFont,
     fontSize: footnoteSize,
     lineHeight: footnoteLineH,
-  };
+  }), [tokens, radiusActive, radiusDefault, renderIcon, renderTileImage, renderBadge, showLockCorner, cornerBg, cornerBorder, monoFont, footnoteSize, footnoteLineH]);
 
   // DM tile hover state (managed here since DM tile is inline, not a separate component).
   const [dmHovered, setDmHovered] = useState(false);
