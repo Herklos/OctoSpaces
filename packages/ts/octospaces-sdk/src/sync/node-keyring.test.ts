@@ -59,9 +59,20 @@ import type { Session } from './identity.js';
 const SP = 'sp-1';
 const NID = 'ticket-abc';
 
+// Owner session: ownerEdPub === keys.edPub → ownerTrustedAdders = [keys.edPub]
 const mockSession = {
   userId: 'alice-user-id',
+  ownerEdPub: 'alice-ed-pub', // owner = self
   keys: { edPub: 'alice-ed-pub', edPriv: 'alice-ed-priv', kemPub: 'alice-kem-pub', kemPriv: 'alice-kem-priv' },
+  chatClient: { pull: vi.fn(), push: vi.fn() },
+  accountClient: { pull: vi.fn(), push: vi.fn() },
+} as unknown as Session;
+
+// Device session: ownerEdPub ≠ keys.edPub → ownerTrustedAdders = [ownerEdPub, keys.edPub]
+const deviceSession = {
+  userId: 'alice-device-2',
+  ownerEdPub: 'alice-ed-pub', // same owner, different device
+  keys: { edPub: 'device-pub', edPriv: 'dev-priv', kemPub: 'dev-kempub', kemPriv: 'dev-kempriv' },
   chatClient: { pull: vi.fn(), push: vi.fn() },
   accountClient: { pull: vi.fn(), push: vi.fn() },
 } as unknown as Session;
@@ -210,5 +221,60 @@ describe('ensureNodeKeyringRecipient — ordering invariant', () => {
     const ensureOrder = vi.mocked(ownerEnsureKeyring).mock.invocationCallOrder[0]!;
     const addOrder = vi.mocked(addCollectionRecipient).mock.invocationCallOrder[0]!;
     expect(ensureOrder).toBeLessThan(addOrder);
+  });
+});
+
+// ── K2 regression: trustedAdders must be ownerTrustedAdders(session) ─────────
+//
+// K2 finding: all node-keyring functions default trustedAdders to
+// [session.keys.edPub] — but for a paired device (ownerEdPub ≠ keys.edPub)
+// the correct default is ownerTrustedAdders(session) = [ownerEdPub, keys.edPub].
+// Without this, a rotation by one device drops recipients added by another
+// device or the owner (accidental self-eviction).
+//
+// Fix: import ownerTrustedAdders from identity.js and use it as the default
+// in all four functions (ownerEnsureNodeKeyring, addNodeKeyringRecipient,
+// removeNodeKeyringRecipient, listNodeKeyringRecipients).
+
+describe('K2 regression: device session uses ownerTrustedAdders (owner + device)', () => {
+  beforeEach(() => {
+    vi.mocked(ownerEnsureKeyring).mockClear().mockResolvedValue({ tag: 'enc' } as never);
+    vi.mocked(addCollectionRecipient).mockClear().mockResolvedValue(undefined);
+    vi.mocked(removeRecipient).mockClear().mockResolvedValue({ newEpoch: 2 });
+    vi.mocked(listRecipients).mockClear().mockResolvedValue({ epoch: 1, recipients: [] });
+  });
+
+  it('FAILS (pre-fix): ownerEnsureNodeKeyring with device session passes [ownerEdPub, deviceEdPub]', async () => {
+    await ownerEnsureNodeKeyring(deviceSession, SP, NID);
+    const trustedAdders = vi.mocked(ownerEnsureKeyring).mock.calls[0]![4] as string[];
+    expect(trustedAdders).toContain('alice-ed-pub');   // owner key
+    expect(trustedAdders).toContain('device-pub');      // device key
+  });
+
+  it('FAILS (pre-fix): addNodeKeyringRecipient with device session passes [ownerEdPub, deviceEdPub]', async () => {
+    await addNodeKeyringRecipient(deviceSession, SP, NID, { subKem: 'r-kem' });
+    const opts = vi.mocked(addCollectionRecipient).mock.calls[0]![4] as { trustedAdders: string[] };
+    expect(opts.trustedAdders).toContain('alice-ed-pub');
+    expect(opts.trustedAdders).toContain('device-pub');
+  });
+
+  it('FAILS (pre-fix): removeNodeKeyringRecipient with device session passes [ownerEdPub, deviceEdPub]', async () => {
+    await removeNodeKeyringRecipient(deviceSession, SP, NID, ['victim-kem']);
+    const opts = vi.mocked(removeRecipient).mock.calls[0]![4] as { trustedAdders: string[] };
+    expect(opts.trustedAdders).toContain('alice-ed-pub');
+    expect(opts.trustedAdders).toContain('device-pub');
+  });
+
+  it('FAILS (pre-fix): listNodeKeyringRecipients with device session passes [ownerEdPub, deviceEdPub]', async () => {
+    await listNodeKeyringRecipients(deviceSession, SP, NID);
+    const opts = vi.mocked(listRecipients).mock.calls[0]![2] as { trustedAdders: string[] };
+    expect(opts.trustedAdders).toContain('alice-ed-pub');
+    expect(opts.trustedAdders).toContain('device-pub');
+  });
+
+  it('owner session: trustedAdders stays [ownerEdPub] (single key, unchanged behavior)', async () => {
+    await removeNodeKeyringRecipient(mockSession, SP, NID, ['victim-kem']);
+    const opts = vi.mocked(removeRecipient).mock.calls[0]![4] as { trustedAdders: string[] };
+    expect(opts.trustedAdders).toEqual(['alice-ed-pub']);
   });
 });

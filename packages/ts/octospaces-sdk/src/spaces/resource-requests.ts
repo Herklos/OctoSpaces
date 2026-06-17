@@ -56,6 +56,8 @@ import { randomId } from '../core/ids.js';
 import type { Session } from '../sync/identity.js';
 import type { ObjectNode } from '../core/types.js';
 import { userIdFromEdPub } from '../sync/paths.js';
+import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
+import { ed25519 } from '@noble/curves/ed25519.js';
 
 /** AES-GCM additional-data context binding for inbox seals. Prevents cross-inbox replay. */
 const inboxAad = (recipientId: string) => `octospaces:inbox:v1:${recipientId}`;
@@ -83,6 +85,8 @@ export interface ResourceRequest {
     userId: string;
     edPub: string;
     kemPub: string;
+    /** Ed25519 sig of kemPub by edPriv — proves kemPub ownership (K4). */
+    kemSig: string;
   };
 }
 
@@ -178,6 +182,7 @@ export async function submitResourceRequest(
       userId: session.userId,
       edPub: session.keys.edPub,
       kemPub: session.keys.kemPub,
+      kemSig: bytesToHex(ed25519.sign(hexToBytes(session.keys.kemPub), hexToBytes(session.keys.edPriv))),
     },
   };
 
@@ -250,7 +255,8 @@ export async function scanResourceRequests(
         !req.requester ||
         typeof req.requester.edPub !== 'string' ||
         typeof req.requester.kemPub !== 'string' ||
-        typeof req.requester.userId !== 'string'
+        typeof req.requester.userId !== 'string' ||
+        typeof req.requester.kemSig !== 'string'
       ) {
         continue; // not a valid resource request
       }
@@ -264,6 +270,16 @@ export async function scanResourceRequests(
       // Without this check a requester could supply a forged userId to pollute the roster
       // (cap minting in acceptResourceRequest uses req.requester.userId as the cap subject).
       if ((await userIdFromEdPub(req.requester.edPub)) !== req.requester.userId) continue;
+
+      // K4 fix: verify kemSig — Ed25519 sig of kemPub by edPriv — prevents an MITM from
+      // substituting their own kemPub so they can read E2EE content sealed for the requester.
+      try {
+        if (!ed25519.verify(hexToBytes(req.requester.kemSig), hexToBytes(req.requester.kemPub), hexToBytes(req.requester.edPub))) {
+          continue; // invalid kemSig — skip
+        }
+      } catch {
+        continue; // malformed hex — skip
+      }
 
       // Space-id allow-list (optional)
       if (spaceIds && !spaceIds.has(req.spaceId)) {

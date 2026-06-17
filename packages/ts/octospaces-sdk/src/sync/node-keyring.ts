@@ -20,6 +20,7 @@ import type { Encryptor, StarfishClient } from '@drakkar.software/starfish-clien
 
 import { openEncryptor, buildEncryptor, ownerEnsureKeyring } from './client.js';
 import type { DeviceKeys } from './client.js';
+import { ownerTrustedAdders } from './identity.js';
 import type { Session } from './identity.js';
 import { nodeKeyringName, nodeKeyringPull, nodeKeyringPush } from './paths.js';
 
@@ -42,7 +43,7 @@ export function ownerEnsureNodeKeyring(
   session: Session,
   spaceId: string,
   nodeId: string,
-  trustedAdders: string[] = [session.keys.edPub],
+  trustedAdders: string[] = ownerTrustedAdders(session),
 ): Promise<Encryptor> {
   return ownerEnsureKeyring(
     session.chatClient,
@@ -99,7 +100,7 @@ export async function addNodeKeyringRecipient(
       nodeKeyringName(spaceId, nodeId),
       recipient,
       { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
-      { trustedAdders: opts.trustedAdders ?? [session.keys.edPub] },
+      { trustedAdders: opts.trustedAdders ?? ownerTrustedAdders(session) },
     );
   } catch (e) {
     if (isAlreadyPresent(e)) return;
@@ -152,7 +153,7 @@ export async function removeNodeKeyringRecipient(
     nodeKeyringName(spaceId, nodeId),
     removeSubKems,
     { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
-    { trustedAdders: opts.trustedAdders ?? [session.keys.edPub] },
+    { trustedAdders: opts.trustedAdders ?? ownerTrustedAdders(session) },
   );
 }
 
@@ -168,6 +169,6 @@ export async function listNodeKeyringRecipients(
   opts: { trustedAdders?: string[] } = {},
 ): Promise<{ epoch: number; recipients: ListedNodeRecipient[] }> {
   return listRecipients(session.chatClient, nodeKeyringName(spaceId, nodeId), {
-    trustedAdders: opts.trustedAdders ?? [session.keys.edPub],
+    trustedAdders: opts.trustedAdders ?? ownerTrustedAdders(session),
   });
 }

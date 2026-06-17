@@ -51,8 +51,24 @@ vi.mock('@drakkar.software/starfish-sharing', () => ({
   ),
 }));
 
-vi.mock('@drakkar.software/starfish-keyring', () => ({
-  addCollectionRecipient: vi.fn().mockResolvedValue(undefined),
+vi.mock('@drakkar.software/starfish-keyring', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@drakkar.software/starfish-keyring')>();
+  return {
+    ...original,
+    addCollectionRecipient: vi.fn().mockResolvedValue(undefined),
+    // Return a safe Uint8Array so hex-invalid fixture strings ('r-ed', 'r-kem' etc.)
+    // don't throw inside the K4 kemSig try/catch and cause false validation failures.
+    hexToBytes: vi.fn().mockReturnValue(new Uint8Array(32)),
+    bytesToHex: vi.fn().mockReturnValue('ab'.repeat(32)),
+  };
+});
+
+vi.mock('@noble/curves/ed25519.js', () => ({
+  ed25519: {
+    sign: vi.fn().mockReturnValue(new Uint8Array(64).fill(0xab)),
+    verify: vi.fn().mockReturnValue(true),
+    getPublicKey: vi.fn().mockReturnValue(new Uint8Array(32)),
+  },
 }));
 
 vi.mock('@drakkar.software/starfish-identities', () => ({
@@ -68,7 +84,8 @@ vi.mock('../sync/paths.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../sync/paths.js')>();
   return {
     ...original,
-    userIdFromEdPub: vi.fn().mockResolvedValue('ephemeral-user-id'),
+    // Default returns 'requester' to match the joinReq fixtures used throughout this file.
+    userIdFromEdPub: vi.fn().mockResolvedValue('requester'),
   };
 });
 
@@ -376,7 +393,7 @@ describe('createNodeInviteLink — stream cap + isolation', () => {
 });
 
 describe('inviteToNode — stream cap + isolation', () => {
-  const joinReq = JSON.stringify({ edPub: 'r-ed', kemPub: 'r-kem', userId: 'requester' });
+  const joinReq = JSON.stringify({ edPub: 'deadbeef'.repeat(8), kemPub: 'cafebabe'.repeat(8), userId: 'requester', kemSig: 'ab'.repeat(64) });
 
   beforeEach(() => {
     vi.mocked(addSpaceMember).mockClear();
@@ -533,13 +550,13 @@ describe('inviteToNode — ownerEnsureKeyring precedes addCollectionRecipient fo
     const callOrder: string[] = [];
     vi.mocked(ownerEnsureKeyring).mockImplementation(async () => { callOrder.push('ensure'); return {} as ReturnType<typeof ownerEnsureKeyring extends (...args: unknown[]) => Promise<infer R> ? () => Promise<R> : never>; });
     vi.mocked(addCollectionRecipient).mockImplementation(async () => { callOrder.push('addRecipient'); });
-    const joinReq = JSON.stringify({ edPub: 'r-ed', kemPub: 'r-kem', userId: 'requester' });
+    const joinReq = JSON.stringify({ edPub: 'deadbeef'.repeat(8), kemPub: 'cafebabe'.repeat(8), userId: 'requester', kemSig: 'ab'.repeat(64) });
     await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: true });
     expect(callOrder).toEqual(['ensure', 'addRecipient']);
   });
 
   it('plaintext node: does NOT call ownerEnsureKeyring', async () => {
-    const joinReq = JSON.stringify({ edPub: 'r-ed', kemPub: 'r-kem', userId: 'requester' });
+    const joinReq = JSON.stringify({ edPub: 'deadbeef'.repeat(8), kemPub: 'cafebabe'.repeat(8), userId: 'requester', kemSig: 'ab'.repeat(64) });
     await inviteToNode(makeSession(), 'sp-1', 'n-42', joinReq, { enc: false });
     expect(ownerEnsureKeyring).not.toHaveBeenCalled();
   });
@@ -568,7 +585,7 @@ describe('createNodeInviteLink — ownerEnsureKeyring precedes addCollectionReci
 // ── inviteToNode write parameter ──────────────────────────────────────────────
 
 describe('inviteToNode — write parameter in opts', () => {
-  const joinReq = JSON.stringify({ edPub: 'r-ed', kemPub: 'r-kem', userId: 'requester' });
+  const joinReq = JSON.stringify({ edPub: 'deadbeef'.repeat(8), kemPub: 'cafebabe'.repeat(8), userId: 'requester', kemSig: 'ab'.repeat(64) });
 
   beforeEach(() => {
     vi.mocked(mintMemberCap).mockClear();
@@ -593,5 +610,86 @@ describe('inviteToNode — write parameter in opts', () => {
     for (const call of vi.mocked(mintMemberCap).mock.calls) {
       expect((call[4] as { ops: string[] }).ops).not.toContain('write');
     }
+  });
+});
+
+// ── I1 regression: inviteToNode must validate userId ↔ edPub ─────────────────
+//
+// I1 finding: inviteToNode (and inviteToSpace) trusted req.userId presence-only —
+// a caller could pass a forged userId that flows into addSpaceMember + the minted
+// cap subject without any derivation check. Fix: userIdFromEdPub(req.edPub) must
+// equal req.userId, mirroring the check in scanResourceRequests.
+
+import { userIdFromEdPub } from '../sync/paths.js';
+
+describe('I1 regression: inviteToNode rejects mismatched userId↔edPub', () => {
+  const session = makeSession();
+
+  beforeEach(() => {
+    vi.mocked(addSpaceMember).mockClear();
+    vi.mocked(ensureNodeKeyringRecipient).mockClear().mockResolvedValue({} as never);
+  });
+
+  it('FAILS (pre-fix): rejects a request where userId does not match userIdFromEdPub(edPub)', async () => {
+    // edPub derives to 'real-user-id', but the request claims 'forged-user-id'
+    vi.mocked(userIdFromEdPub).mockResolvedValueOnce('real-user-id');
+    const req = JSON.stringify({ edPub: 'r-ed', kemPub: 'r-kem', userId: 'forged-user-id' });
+    await expect(
+      inviteToNode(session, 'sp-1', 'n-42', req, { enc: false }),
+    ).rejects.toThrow(/userId.*does not match|join request.*invalid|invalid.*join/i);
+  });
+
+  it('accepts a request where userId matches userIdFromEdPub(edPub)', async () => {
+    vi.mocked(userIdFromEdPub).mockResolvedValueOnce('real-user-id');
+    vi.mocked(ed25519.verify).mockReturnValueOnce(true);
+    // Valid hex so hexToBytes succeeds; ed25519.verify is mocked to return true.
+    const req = JSON.stringify({ edPub: '00'.repeat(32), kemPub: 'ff'.repeat(32), userId: 'real-user-id', kemSig: 'ab'.repeat(64) });
+    await expect(
+      inviteToNode(session, 'sp-1', 'n-42', req, { enc: false }),
+    ).resolves.toBeDefined();
+  });
+});
+
+// ── K4 regression: inviteToNode must validate kemSig ─────────────────────────
+//
+// K4 finding: JoinRequest carries kemPub but no signature proving the requester
+// owns the matching edPriv. An MITM can replace kemPub with their own key so all
+// future E2EE content is sealed to them, not the intended recipient.
+//
+// Fix: makeJoinRequest signs kemPub with edPriv (Ed25519) and includes kemSig.
+// inviteToNode verifies kemSig before processing; missing or invalid sig → reject.
+
+import { ed25519 } from '@noble/curves/ed25519.js';
+
+describe('K4 regression: inviteToNode validates kemSig binding', () => {
+  const session = makeSession();
+
+  beforeEach(() => {
+    vi.mocked(userIdFromEdPub).mockResolvedValue('requester');
+    vi.mocked(ed25519.verify).mockReturnValue(true);
+  });
+
+  it('FAILS (pre-fix): rejects a request with missing kemSig', async () => {
+    const req = JSON.stringify({ edPub: 'r-ed', kemPub: 'r-kem', userId: 'requester' }); // no kemSig
+    await expect(
+      inviteToNode(session, 'sp-1', 'n-42', req, { enc: false }),
+    ).rejects.toThrow(/kemSig|kem.*sign|invalid.*join|join.*invalid/i);
+  });
+
+  it('FAILS (pre-fix): rejects a request where kemSig does not verify', async () => {
+    vi.mocked(ed25519.verify).mockReturnValueOnce(false);
+    const req = JSON.stringify({ edPub: 'r-ed', kemPub: 'r-kem', userId: 'requester', kemSig: '00'.repeat(64) });
+    await expect(
+      inviteToNode(session, 'sp-1', 'n-42', req, { enc: false }),
+    ).rejects.toThrow(/kemSig|kem.*sign|invalid.*join|join.*invalid/i);
+  });
+
+  it('accepts a request with a valid kemSig', async () => {
+    vi.mocked(ed25519.verify).mockReturnValueOnce(true);
+    // Valid 32-byte hex strings so hexToBytes succeeds and ed25519.verify (mocked) can run.
+    const req = JSON.stringify({ edPub: '00'.repeat(32), kemPub: 'ff'.repeat(32), userId: 'requester', kemSig: 'ab'.repeat(64) });
+    await expect(
+      inviteToNode(session, 'sp-1', 'n-42', req, { enc: false }),
+    ).resolves.toBeDefined();
   });
 });

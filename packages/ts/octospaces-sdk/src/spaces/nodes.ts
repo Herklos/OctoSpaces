@@ -28,6 +28,8 @@
  */
 import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
 import { mintMemberCap } from '@drakkar.software/starfish-sharing';
+import { hexToBytes } from '@drakkar.software/starfish-keyring';
+import { ed25519 } from '@noble/curves/ed25519.js';
 
 import type { NodeAccess, ObjectNode, ObjectType } from '../core/types.js';
 import { addSpaceKeyringRecipient, ownerEnsureKeyring } from '../sync/client.js';
@@ -239,6 +241,18 @@ export async function inviteToNode(
 ): Promise<string> {
   const req = JSON.parse(requestJson) as JoinRequest;
   if (!req.edPub || !req.kemPub || !req.userId) throw new Error('Invalid join request.');
+  // M2/I1 fix: reject requests whose claimed userId doesn't derive from their edPub.
+  if ((await userIdFromEdPub(req.edPub)) !== req.userId) {
+    throw new Error('Invalid join request: userId does not match edPub.');
+  }
+  // K4 fix: verify kemSig — Ed25519 sig of kemPub by edPriv — prevents KEM-key substitution.
+  let kemSigValid = false;
+  try {
+    kemSigValid = !!req.kemSig && ed25519.verify(hexToBytes(req.kemSig), hexToBytes(req.kemPub), hexToBytes(req.edPub));
+  } catch { /* malformed hex — treat as invalid */ }
+  if (!kemSigValid) {
+    throw new Error('Invalid join request: kemSig is missing or invalid.');
+  }
 
   // `isolated` withholds space membership + the space cap, so the invitee reaches ONLY
   // this node — never the index or other nodes. For an `enc` node, `isolated` ALSO selects

@@ -41,6 +41,9 @@ vi.mock('../sync/client.js', async (importOriginal) => {
 
 vi.mock('@drakkar.software/starfish-keyring', () => ({
   addCollectionRecipient: vi.fn().mockResolvedValue(undefined),
+  // Safe stubs so the K4 kemSig try/catch in members.ts succeeds for fixture strings.
+  hexToBytes: vi.fn().mockReturnValue(new Uint8Array(32)),
+  bytesToHex: vi.fn().mockReturnValue('ab'.repeat(32)),
 }));
 
 vi.mock('@drakkar.software/starfish-sharing', () => ({
@@ -70,9 +73,25 @@ vi.mock('@drakkar.software/starfish-identities', () => ({
   }),
 }));
 
+// K4: mock ed25519 so kemSig validation passes for all test fixtures.
+vi.mock('@noble/curves/ed25519.js', () => ({
+  ed25519: {
+    sign: vi.fn().mockReturnValue(new Uint8Array(64).fill(0xab)),
+    verify: vi.fn().mockReturnValue(true),
+    getPublicKey: vi.fn().mockReturnValue(new Uint8Array(32)),
+  },
+}));
+
 vi.mock('../sync/paths.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../sync/paths.js')>();
-  return { ...original, userIdFromEdPub: vi.fn().mockResolvedValue('ephemeral-user-id') };
+  return {
+    ...original,
+    // Dispatch by edPub so both inviteToSpace (bob-ed-pub → bob-user-id) and
+    // createSpaceInviteLink (eph-edpub → ephemeral-user-id) validate correctly.
+    userIdFromEdPub: vi.fn().mockImplementation((edPub: string) =>
+      Promise.resolve(edPub === 'eph-edpub' ? 'ephemeral-user-id' : 'bob-user-id'),
+    ),
+  };
 });
 
 vi.mock('../sync/space-access-store.js', () => ({
@@ -115,6 +134,7 @@ const bobRequest = JSON.stringify({
   edPub: 'bob-ed-pub',
   kemPub: 'bob-kem-pub',
   userId: 'bob-user-id',
+  kemSig: 'ab'.repeat(64), // K4: ed25519 sig of kemPub by edPriv (mocked to verify=true)
 });
 
 // ── inviteToSpace ─────────────────────────────────────────────────────────────

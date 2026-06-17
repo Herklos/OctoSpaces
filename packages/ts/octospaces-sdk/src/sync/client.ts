@@ -95,11 +95,18 @@ export async function buildEncryptor(
   }
 }
 
+const ENSURE_KEYRING_MAX_ATTEMPTS = 3;
+
 /**
  * Owner-side: create a per-node keyring if missing, return an encryptor.
  *
  * `keyringPullPath` / `keyringPushPath` are the full `/pull|push/.../_keyring`
  * paths (e.g. from `keyringPull`/`keyringPush`).
+ *
+ * K6 fix: the create-push uses a CAS retry loop. If two devices race to create
+ * the same keyring simultaneously, the second push fails with a hash-conflict
+ * (409/412). We re-pull on conflict; if the keyring now exists we open it
+ * directly (the concurrent device's create wins). A non-conflict error propagates.
  */
 export async function ownerEnsureKeyring(
   client: StarfishClient,
@@ -108,21 +115,34 @@ export async function ownerEnsureKeyring(
   keyringPushPath: string,
   trustedAdders: string[] = [keys.edPub],
 ): Promise<Encryptor> {
-  const krRes = await client.pull(keyringPullPath).catch(() => null);
-  let keyring = krRes?.data as unknown as Keyring | undefined;
-  if (!keyring || !keyring.epochs) {
-    const created = await createKeyring({ edPrivHex: keys.edPriv, edPubHex: keys.edPub }, [
-      { subKemHex: keys.kemPub },
-    ]);
-    keyring = created.keyring;
-    await client.push(keyringPushPath, keyring as unknown as Record<string, unknown>, krRes?.hash ?? null);
+  let attempt = 0;
+  while (attempt < ENSURE_KEYRING_MAX_ATTEMPTS) {
+    attempt++;
+    const krRes = await client.pull(keyringPullPath).catch(() => null);
+    let keyring = krRes?.data as unknown as Keyring | undefined;
+    if (!keyring || !keyring.epochs) {
+      const created = await createKeyring({ edPrivHex: keys.edPriv, edPubHex: keys.edPub }, [
+        { subKemHex: keys.kemPub },
+      ]);
+      keyring = created.keyring;
+      try {
+        await client.push(keyringPushPath, keyring as unknown as Record<string, unknown>, krRes?.hash ?? null);
+      } catch (pushErr) {
+        // Hash-conflict (409/412): a concurrent device created the keyring first.
+        // Re-pull on the next iteration to open the winner's keyring.
+        const msg = pushErr instanceof Error ? pushErr.message : String(pushErr);
+        if (/409|412|conflict|hash mismatch|stale/i.test(msg) && attempt < ENSURE_KEYRING_MAX_ATTEMPTS) continue;
+        throw pushErr; // network error or out of retries — propagate
+      }
+    }
+    const enc = await createKeyringEncryptor(
+      keyring,
+      { kemPubHex: keys.kemPub, kemPrivHex: keys.kemPriv },
+      { trustedAdders },
+    );
+    return enc as unknown as Encryptor;
   }
-  const enc = await createKeyringEncryptor(
-    keyring,
-    { kemPubHex: keys.kemPub, kemPrivHex: keys.kemPriv },
-    { trustedAdders },
-  );
-  return enc as unknown as Encryptor;
+  throw new Error('ownerEnsureKeyring: max retries exceeded (hash conflict loop)');
 }
 
 /** "Already present in keyring epoch" is benign on re-invite — same family as node-keyring.ts. */

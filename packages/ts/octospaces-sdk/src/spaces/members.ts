@@ -15,8 +15,9 @@
  * `enc` nodes; adding the device once unlocks the whole space's E2EE content.
  */
 import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
-import { addCollectionRecipient } from '@drakkar.software/starfish-keyring';
+import { addCollectionRecipient, hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
 import { mintMemberCap } from '@drakkar.software/starfish-sharing';
+import { ed25519 } from '@noble/curves/ed25519.js';
 
 import type { Space } from '../core/types.js';
 import type { Session } from '../sync/identity.js';
@@ -36,10 +37,13 @@ export interface JoinRequest {
   edPub: string;
   kemPub: string;
   userId: string;
+  /** Ed25519 signature of kemPub bytes by edPriv — proves kemPub ownership. */
+  kemSig: string;
 }
 
 export function makeJoinRequest(session: Session): string {
-  const req: JoinRequest = { edPub: session.keys.edPub, kemPub: session.keys.kemPub, userId: session.userId };
+  const kemSig = bytesToHex(ed25519.sign(hexToBytes(session.keys.kemPub), hexToBytes(session.keys.edPriv)));
+  const req: JoinRequest = { edPub: session.keys.edPub, kemPub: session.keys.kemPub, userId: session.userId, kemSig };
   return JSON.stringify(req);
 }
 
@@ -68,6 +72,19 @@ export async function inviteToSpace(
 ): Promise<string> {
   const req = JSON.parse(requestJson) as JoinRequest;
   if (!req.edPub || !req.kemPub || !req.userId) throw new Error('That is not a valid join request.');
+  // M2/I1 fix: reject requests whose claimed userId doesn't derive from their edPub.
+  if ((await userIdFromEdPub(req.edPub)) !== req.userId) {
+    throw new Error('That is not a valid join request: userId does not match edPub.');
+  }
+  // K4 fix: verify kemSig — Ed25519 sig of kemPub by edPriv — proves the requester
+  // actually owns the private key for edPub and created kemPub (prevents KEM-key substitution).
+  let kemSigValid = false;
+  try {
+    kemSigValid = !!req.kemSig && ed25519.verify(hexToBytes(req.kemSig), hexToBytes(req.kemPub), hexToBytes(req.edPub));
+  } catch { /* malformed hex — treat as invalid */ }
+  if (!kemSigValid) {
+    throw new Error('That is not a valid join request: kemSig is missing or invalid.');
+  }
   await addSpaceMember(session.accountClient, spaceId, session.userId, req.userId);
 
   // Ensure the space-wide keyring exists (creates it with only the owner if absent),

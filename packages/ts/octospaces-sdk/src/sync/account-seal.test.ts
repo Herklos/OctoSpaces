@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { sealToRecipient, unsealFromRecipient, sealToSelf, unsealFromSelf } from './account-seal.js';
 import type { SealedBlob } from './account-seal.js';
 
@@ -66,5 +66,82 @@ describe('account-seal', () => {
     const sealed = await sealToRecipient(senderSession, recipient.kemPub, message);
     const decrypted = await unsealFromRecipient(recipientSession, sealed);
     expect(decrypted).toBe(message);
+  });
+});
+
+// ── S1 regression: v:1 blobs MUST be opened with the matching aad ────────────
+//
+// S1 finding: open() accepts aad as optional and never asserts blob.v === 1 ⇒
+// aad required. A caller that drops the aad argument silently decrypts an
+// unbound (context-free) blob — enabling relocation/replay attacks.
+//
+// Fix: if blob.v === 1, aad is mandatory; omitting it must throw before any
+// AES-GCM operation, even if the ciphertext would otherwise decrypt.
+
+describe('S1 regression: v:1 blob requires aad on open', () => {
+  let keys: ReturnType<typeof makeKeyPair>;
+  let session: ReturnType<typeof makeSession>;
+
+  beforeAll(() => {
+    keys = makeKeyPair();
+    session = makeSession(keys);
+  });
+
+  it('sealToSelf with aad produces blob.v === 1', async () => {
+    const blob = await sealToSelf(session, 'payload', 'context-aad');
+    expect(blob.v).toBe(1);
+  });
+
+  it('sealToSelf without aad produces blob without v', async () => {
+    const blob = await sealToSelf(session, 'payload');
+    expect(blob.v).toBeUndefined();
+  });
+
+  it('FAILS (pre-fix): unsealFromSelf with v:1 blob and NO aad must throw (downgrade rejected)', async () => {
+    const blob = await sealToSelf(session, 'payload', 'my-context');
+    // blob.v === 1 but we omit aad — must be rejected without attempting decrypt
+    await expect(unsealFromSelf(session, blob /* no aad */)).rejects.toThrow(
+      /aad.*required|missing.*aad|v:1.*requires|context.*required/i,
+    );
+  });
+
+  it('unsealFromSelf with v:1 blob and CORRECT aad succeeds', async () => {
+    const blob = await sealToSelf(session, 'my-payload', 'my-context');
+    const result = await unsealFromSelf(session, blob, 'my-context');
+    expect(result).toBe('my-payload');
+  });
+
+  it('unsealFromSelf with v:1 blob and WRONG aad fails (AES-GCM auth tag)', async () => {
+    const blob = await sealToSelf(session, 'my-payload', 'correct-context');
+    await expect(unsealFromSelf(session, blob, 'wrong-context')).rejects.toThrow();
+  });
+
+  it('FAILS (pre-fix): unsealFromRecipient with v:1 blob and NO aad must throw', async () => {
+    const sender = makeKeyPair();
+    const senderSession = makeSession(sender);
+    const recipient = makeKeyPair();
+    const recipientSession = makeSession(recipient);
+    const blob = await sealToRecipient(senderSession, recipient.kemPub, 'payload', 'inbox-aad');
+    await expect(unsealFromRecipient(recipientSession, blob /* no aad */)).rejects.toThrow(
+      /aad.*required|missing.*aad|v:1.*requires|context.*required/i,
+    );
+  });
+
+  it('unsealFromRecipient with v:1 blob and CORRECT aad succeeds', async () => {
+    const sender = makeKeyPair();
+    const senderSession = makeSession(sender);
+    const recipient = makeKeyPair();
+    const recipientSession = makeSession(recipient);
+    const blob = await sealToRecipient(senderSession, recipient.kemPub, 'payload', 'inbox-aad');
+    const result = await unsealFromRecipient(recipientSession, blob, 'inbox-aad');
+    expect(result).toBe('payload');
+  });
+
+  it('legacy blob (no v field) can be opened without aad (backward compat)', async () => {
+    // Legacy blobs sealed without aad must still be decryptable — no v means no enforcement.
+    const blob = await sealToSelf(session, 'legacy-payload');
+    expect(blob.v).toBeUndefined();
+    const result = await unsealFromSelf(session, blob);
+    expect(result).toBe('legacy-payload');
   });
 });

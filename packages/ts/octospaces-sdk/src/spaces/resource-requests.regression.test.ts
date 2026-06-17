@@ -85,6 +85,7 @@ import {
   scanResourceRequests,
   scanResourceGrants,
   acceptResourceRequest,
+  submitResourceRequest,
 } from './resource-requests.js';
 import type { PendingRequest, ResourceRequest, ResourceGrant } from './resource-requests.js';
 import type { Session } from '../sync/identity.js';
@@ -244,11 +245,16 @@ describe('M2: scanResourceRequests — rejects forged userId', () => {
     ownerSession = makeSession(ownerKeys);
   });
 
+  /** Build a valid ResourceRequest with a real kemSig for the given keys. */
   function makeRequest(
     requesterEdPub: string,
     requesterUserId: string,
     reqId: string,
+    edPrivForSig?: string,
   ): ResourceRequest {
+    const kemSig = edPrivForSig
+      ? bytesToHex(ed25519.sign(hexToBytes('cafebabe'.repeat(8)), hexToBytes(edPrivForSig)))
+      : '00'.repeat(64); // placeholder — will fail kemSig check (use edPrivForSig for valid)
     return {
       v: 1,
       kind: 'create-resource',
@@ -260,6 +266,7 @@ describe('M2: scanResourceRequests — rejects forged userId', () => {
         userId: requesterUserId,
         edPub: requesterEdPub,
         kemPub: 'cafebabe'.repeat(8),
+        kemSig,
       },
     };
   }
@@ -270,7 +277,8 @@ describe('M2: scanResourceRequests — rejects forged userId', () => {
 
   it('skips items where userId does NOT match userIdFromEdPub(edPub)', async () => {
     const forgedUserId = 'ffffffffffffffffffffffffffffffff'; // not sha256(edPub)[0:32]
-    const req = makeRequest(requesterKeys.edPub, forgedUserId, 'req-forged');
+    // Valid kemSig so the check reaches the userId validation (not filtered earlier by missing kemSig).
+    const req = makeRequest(requesterKeys.edPub, forgedUserId, 'req-forged', requesterKeys.edPriv);
 
     vi.mocked(pullInbox)
       .mockResolvedValueOnce([makeInboxItem(requesterKeys.edPub)])
@@ -284,7 +292,8 @@ describe('M2: scanResourceRequests — rejects forged userId', () => {
   });
 
   it('accepts items where userId MATCHES userIdFromEdPub(edPub)', async () => {
-    const req = makeRequest(requesterKeys.edPub, requesterKeys.userId, 'req-valid');
+    // Valid kemSig so the item passes all checks.
+    const req = makeRequest(requesterKeys.edPub, requesterKeys.userId, 'req-valid', requesterKeys.edPriv);
 
     // pullInbox is called once per shard (2 shards); only current shard has the item
     vi.mocked(pullInbox)
@@ -300,7 +309,8 @@ describe('M2: scanResourceRequests — rejects forged userId', () => {
 
   it('skips items where addedBy does not match requester.edPub (sender spoof)', async () => {
     const otherKeys = await makeKeys();
-    const req = makeRequest(requesterKeys.edPub, requesterKeys.userId, 'req-spoof');
+    // Valid kemSig so the item reaches the addedBy check.
+    const req = makeRequest(requesterKeys.edPub, requesterKeys.userId, 'req-spoof', requesterKeys.edPriv);
 
     // addedBy = otherKeys.edPub but req.requester.edPub = requesterKeys.edPub
     vi.mocked(pullInbox)
@@ -324,7 +334,8 @@ describe('M2: scanResourceRequests — rejects forged userId', () => {
   });
 
   it('applies spaceIds allow-list filter when provided', async () => {
-    const req = makeRequest(requesterKeys.edPub, requesterKeys.userId, 'req-filter');
+    // Valid kemSig so the item reaches the space-id filter.
+    const req = makeRequest(requesterKeys.edPub, requesterKeys.userId, 'req-filter', requesterKeys.edPriv);
     vi.mocked(pullInbox)
       .mockResolvedValueOnce([makeInboxItem(requesterKeys.edPub)])
       .mockResolvedValueOnce([]);
@@ -438,5 +449,122 @@ describe('L1: scanResourceGrants — deduplicates by reqId', () => {
     const results = await scanResourceGrants(requesterSession);
     expect(results).toHaveLength(1);
     expect(results[0]!.reqId).toBe('req-ok');
+  });
+});
+
+// ── K4: scanResourceRequests validates kemSig binding ────────────────────────
+//
+// K4 finding: ResourceRequest.requester carries kemPub with no proof the
+// requester owns the matching edPriv. Replacing kemPub lets an MITM read all
+// E2EE content sealed for the requester (when the grant uses their kemPub).
+//
+// Fix: submitResourceRequest signs kemPub with session.keys.edPriv and includes
+// kemSig. scanResourceRequests verifies kemSig before emitting PendingRequest;
+// items with missing or invalid kemSig are silently skipped.
+
+describe('K4: scanResourceRequests — validates kemSig binding', () => {
+  let ownerKeys: KeySet;
+  let ownerSession: Session;
+  let requesterKeys: KeySet;
+
+  beforeAll(async () => {
+    ownerKeys = await makeKeys();
+    requesterKeys = await makeKeys();
+    ownerSession = makeSession(ownerKeys);
+  });
+
+  beforeEach(() => {
+    vi.mocked(readObjectTree).mockResolvedValue([]);
+  });
+
+  function makeRequestWithKemSig(kemSig?: string): ResourceRequest {
+    return {
+      v: 1,
+      kind: 'create-resource',
+      reqId: 'req-k4',
+      spaceId: 'sp-test',
+      nodeType: 'ticket',
+      title: 'K4 test',
+      requester: {
+        userId: requesterKeys.userId,
+        edPub: requesterKeys.edPub,
+        kemPub: 'cafebabe'.repeat(8),
+        ...(kemSig !== undefined ? { kemSig } : {}),
+      } as ResourceRequest['requester'],
+    };
+  }
+
+  it('FAILS (pre-fix): skips items where kemSig is missing', async () => {
+    const req = makeRequestWithKemSig(/* no kemSig */);
+    vi.mocked(pullInbox)
+      .mockResolvedValueOnce([makeInboxItem(requesterKeys.edPub)])
+      .mockResolvedValueOnce([]);
+    vi.mocked(unsealFromRecipient).mockResolvedValue(JSON.stringify(req));
+    vi.mocked(userIdFromEdPub).mockResolvedValue(requesterKeys.userId);
+
+    const results = await scanResourceRequests(ownerSession);
+    expect(results).toHaveLength(0);
+  });
+
+  it('FAILS (pre-fix): skips items where kemSig is invalid (wrong signature)', async () => {
+    const req = makeRequestWithKemSig('00'.repeat(64)); // all-zero sig is invalid
+    vi.mocked(pullInbox)
+      .mockResolvedValueOnce([makeInboxItem(requesterKeys.edPub)])
+      .mockResolvedValueOnce([]);
+    vi.mocked(unsealFromRecipient).mockResolvedValue(JSON.stringify(req));
+    vi.mocked(userIdFromEdPub).mockResolvedValue(requesterKeys.userId);
+
+    const results = await scanResourceRequests(ownerSession);
+    expect(results).toHaveLength(0);
+  });
+
+  it('FAILS (pre-fix): submitResourceRequest includes kemSig in the sealed request', async () => {
+    vi.mocked(appendToInbox as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    // sealToRecipient captures the plaintext — inspect it
+    let capturedPlaintext = '';
+    vi.mocked(sealToRecipient).mockImplementation(async (_s, _k, pt, _aad) => {
+      capturedPlaintext = pt;
+      return { entry: { addedBy: requesterKeys.edPub }, ct: 'ct' } as Awaited<ReturnType<typeof sealToRecipient>>;
+    });
+
+    const { verifyIdentityLinkBinding, verifyIdentityLinkKeys } = await import('./identity-link.js');
+    vi.mocked(verifyIdentityLinkBinding).mockResolvedValue(true);
+    vi.mocked(verifyIdentityLinkKeys).mockResolvedValue();
+
+    const requesterSession = makeSession(requesterKeys);
+    await submitResourceRequest(requesterSession, {
+      ownerId: ownerKeys.userId,
+      edPub: ownerKeys.edPub,
+      kemPub: 'cafebabe'.repeat(8),
+      kemSig: 'ab'.repeat(64),
+      v: 2,
+    } as never, {
+      spaceId: 'sp-test',
+      nodeType: 'ticket',
+      title: 'K4 submit test',
+    });
+
+    const parsed = JSON.parse(capturedPlaintext) as ResourceRequest;
+    expect(parsed.requester).toHaveProperty('kemSig');
+    expect(typeof parsed.requester.kemSig).toBe('string');
+    expect(parsed.requester.kemSig).toHaveLength(128); // 64-byte sig as hex
+  });
+
+  it('accepts items where kemSig is valid', async () => {
+    // Compute a REAL kemSig: ed25519.sign(kemPub_bytes, edPriv_bytes)
+    const kemPubBytes = hexToBytes('cafebabe'.repeat(8));
+    const edPrivBytes = hexToBytes(requesterKeys.edPriv);
+    const validKemSig = bytesToHex(ed25519.sign(kemPubBytes, edPrivBytes));
+
+    const req = makeRequestWithKemSig(validKemSig);
+    vi.mocked(pullInbox)
+      .mockResolvedValueOnce([makeInboxItem(requesterKeys.edPub)])
+      .mockResolvedValueOnce([]);
+    vi.mocked(unsealFromRecipient).mockResolvedValue(JSON.stringify(req));
+    vi.mocked(userIdFromEdPub).mockResolvedValue(requesterKeys.userId);
+
+    const results = await scanResourceRequests(ownerSession);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.req.reqId).toBe('req-k4');
   });
 });
