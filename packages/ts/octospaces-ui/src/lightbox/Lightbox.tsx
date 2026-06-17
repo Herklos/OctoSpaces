@@ -29,6 +29,7 @@ import type { ReactNode } from 'react';
 import { Modal, Platform, Pressable, View } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
+import { useTokens } from '../theme/tokens.js';
 
 export interface LightboxProps {
   visible: boolean;
@@ -66,6 +67,7 @@ export function Lightbox({
   renderActions,
 }: LightboxProps) {
   const theme = useOctoSpacesTheme();
+  const t = useTokens();
 
   // Web has no hardware back button; close on Escape to match the native affordance.
   useEffect(() => {
@@ -78,11 +80,10 @@ export function Lightbox({
   }, [visible, onClose]);
 
   // Spacing token lookups use numeric keys (OctoChat) with named-key fallbacks
-  // (OctoVault) so the overlay is correctly inset in either host. The `?? n`
-  // values match the underlying spacing scale (xl=24, xxl=32, lg=16).
-  const pad = (theme.spacing['6'] as number) ?? 24;
-  const insetV = (theme.spacing['8'] as number) ?? 32;
-  const insetH = (theme.spacing['4'] as number) ?? 16;
+  // (OctoVault) so the overlay is correctly inset in either host.
+  const pad = t.sp('6');
+  const insetV = t.sp('8');
+  const insetH = t.sp('4');
 
   return (
     <Modal

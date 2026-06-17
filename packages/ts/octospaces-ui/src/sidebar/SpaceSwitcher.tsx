@@ -64,6 +64,7 @@ import { Pressable as RNPressable, StyleSheet, Text, View } from 'react-native';
 import type { PressableProps, TextStyle, View as RNView } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
+import { useTokens } from '../theme/tokens.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -223,7 +224,8 @@ export function SpaceSwitcher({
   emptyLabel = 'Spaces',
 }: SpaceSwitcherProps) {
   const theme = useOctoSpacesTheme();
-  const { colors, type: typeScale, fonts, spacing: sp, radii } = theme;
+  const t = useTokens();
+  const { colors, type: typeScale, fonts } = theme;
 
   const [open, setOpen] = useState(false);
   const [triggerHovered, setTriggerHovered] = useState(false);
@@ -239,11 +241,11 @@ export function SpaceSwitcher({
   const handleSeeAll   = () => { close(); onSeeAll?.(); };
 
   // ── spacing lookups ──────────────────────────────────────────────────────
-  const sp1  = (sp['1'] as number | undefined) ?? 4;
-  const sp2  = (sp['2'] as number | undefined) ?? 8;
-  const sp3  = (sp['3'] as number | undefined) ?? 12;
-  const sp4  = (sp['4'] as number | undefined) ?? 16;
-  const radMd = (radii['md'] as number | undefined) ?? 6;
+  const sp1  = t.sp('1');
+  const sp2  = t.sp('2');
+  const sp3  = t.sp('3');
+  const sp4  = t.sp('4');
+  const radMd = t.rad('md');
 
   const bodyFont  = fonts['body'] ?? undefined;
   const bodySize  = typeScale['callout']?.size ?? 13;

@@ -30,6 +30,7 @@ import { ScrollView, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
+import { useTokens } from '../theme/tokens.js';
 
 export interface SidebarProps {
   /** Header slot — render a {@link SidebarHeader} or custom content above the list. */
@@ -68,9 +69,10 @@ export function Sidebar({
   background,
 }: SidebarProps) {
   const theme = useOctoSpacesTheme();
-  const { colors, layout } = theme;
+  const t = useTokens();
+  const { colors } = theme;
 
-  const panelWidth = width ?? (layout['sidebarWidth'] as number | undefined) ?? 248;
+  const panelWidth = width ?? t.lay('sidebarWidth');
   const bg = background ?? colors.sidebarPanel;
 
   return (

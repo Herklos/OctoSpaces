@@ -22,6 +22,7 @@ import {
 import type { PressableProps, View as RNView } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
+import { useTokens } from '../theme/tokens.js';
 import { railTileState } from './tile-state.js';
 import type { RailTileTokens } from './tile-state.js';
 import type { RailIconName, RailSpace, RailSpecialTile } from './types.js';
@@ -493,19 +494,20 @@ export function SpacesRail({
   useTileDnd,
 }: SpacesRailProps) {
   const theme = useOctoSpacesTheme();
-  const { colors, spacing, radii, type: typeScale, fonts, layout } = theme;
+  const t = useTokens();
+  const { colors, type: typeScale, fonts } = theme;
 
   const tokens = resolveRailTokens(theme);
 
   // Layout constants with fallbacks for hosts that haven't set them.
-  const railWidth = (layout['railWidth'] as number | undefined) ?? 64;
-  const spaceV = (spacing['2'] as number | undefined) ?? 8;
-  const spaceXs = (spacing['1'] as number | undefined) ?? 4;
-  const spaceS = (spacing['2'] as number | undefined) ?? 8;
-  const spaceMd = (spacing['3'] as number | undefined) ?? 12;
+  const railWidth = t.lay('railWidth');
+  const spaceV = t.sp('2');
+  const spaceXs = t.sp('1');
+  const spaceS = t.sp('2');
+  const spaceMd = t.sp('3');
 
-  const radiusActive = (radii['lg'] as number | undefined) ?? 12;
-  const radiusDefault = (radii['xl'] as number | undefined) ?? 16;
+  const radiusActive = t.rad('lg');
+  const radiusDefault = t.rad('xl');
 
   const footnoteSize = typeScale['footnote']?.size ?? 12;
   const footnoteLineH = typeScale['footnote']?.lineHeight ?? 18;
@@ -561,10 +563,10 @@ export function SpacesRail({
         showsVerticalScrollIndicator={false}
       >
         {/* Special tiles (Notes, DMs, …) pinned above the space tiles */}
-        {specialTiles?.map((t) => (
+        {specialTiles?.map((tile) => (
           <SpecialTile
-            key={t.key}
-            tile={t}
+            key={tile.key}
+            tile={tile}
             tokens={tokens}
             radiusActive={radiusActive}
             radiusDefault={radiusDefault}

@@ -13,6 +13,7 @@ import { Text, View } from 'react-native';
 import type { TextStyle } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
+import { useTokens } from '../theme/tokens.js';
 
 export type BadgeTone = 'accent' | 'danger' | 'neutral';
 export type BadgeSize = 'sm' | 'md';
@@ -32,6 +33,7 @@ export interface BadgeProps {
 
 export function Badge({ count = 0, clamp = true, dot = false, tone = 'accent', size = 'sm' }: BadgeProps) {
   const theme = useOctoSpacesTheme();
+  const t = useTokens();
   const { colors } = theme;
 
   if (!dot && count <= 0) return null;
@@ -45,8 +47,8 @@ export function Badge({ count = 0, clamp = true, dot = false, tone = 'accent', s
 
   const fg = tone === 'neutral' ? colors.textInverse : colors.textOnPrimary;
 
-  const sp1 = (theme.spacing['1'] as number | undefined) ?? 4;
-  const radFull = (theme.radii['full'] as number | undefined) ?? 9999;
+  const sp1 = t.sp('1');
+  const radFull = t.rad('full');
 
   if (dot) {
     const dotSize = size === 'md' ? 10 : 8;

@@ -21,6 +21,7 @@ import React, { useCallback, useEffect, useImperativeHandle, useRef, useState } 
 import { ActivityIndicator, Pressable, Text, TextInput, View, type TextStyle } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
+import { useTokens } from '../theme/tokens.js';
 import { DiscoverList } from './DiscoverList.js';
 import { filterDiscoverEntries, sortDiscoverEntries } from './filter.js';
 import type { DiscoverEntry } from './types.js';
@@ -87,6 +88,7 @@ export function DiscoverScreen({
   reloadRef,
 }: DiscoverScreenProps) {
   const theme = useOctoSpacesTheme();
+  const t = useTokens();
   const [state, setState] = useState<State>({ status: 'idle' });
   const [query, setQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -141,10 +143,10 @@ export function DiscoverScreen({
     : emptyMessage;
 
   // ── Palette shortcuts ─────────────────────────────────────────────────────
-  const sp2 = (theme.spacing['2'] as number) ?? 8;
-  const sp3 = (theme.spacing['3'] as number) ?? 12;
-  const sp4 = (theme.spacing['4'] as number) ?? 16;
-  const radMd = (theme.radii['md'] as number) ?? 8;
+  const sp2 = t.sp('2');
+  const sp3 = t.sp('3');
+  const sp4 = t.sp('4');
+  const radMd = t.rad('md');
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>

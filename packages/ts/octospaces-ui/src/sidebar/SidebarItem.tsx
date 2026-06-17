@@ -23,6 +23,7 @@ import { Pressable as RNPressable, StyleSheet, Text, View } from 'react-native';
 import type { PressableProps, TextStyle, View as RNView } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
+import { useTokens } from '../theme/tokens.js';
 
 type HoverProps = { onMouseEnter?: () => void; onMouseLeave?: () => void };
 const Pressable = RNPressable as React.ForwardRefExoticComponent<
@@ -59,14 +60,15 @@ export function SidebarItem({
   indent = 0,
 }: SidebarItemProps) {
   const theme = useOctoSpacesTheme();
-  const { colors, type: typeScale, fonts, spacing, radii } = theme;
+  const t = useTokens();
+  const { colors, type: typeScale, fonts } = theme;
 
   const [hovered, setHovered] = useState(false);
 
-  const sp1 = (spacing['1'] as number | undefined) ?? 4;
-  const sp2 = (spacing['2'] as number | undefined) ?? 8;
-  const sp3 = (spacing['3'] as number | undefined) ?? 12;
-  const radSm = (radii['sm'] as number | undefined) ?? 4;
+  const sp1 = t.sp('1');
+  const sp2 = t.sp('2');
+  const sp3 = t.sp('3');
+  const radSm = t.rad('sm');
   const indentPx = indent * 16;
 
   const bg = active

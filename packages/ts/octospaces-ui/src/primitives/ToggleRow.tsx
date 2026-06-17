@@ -18,6 +18,7 @@ import { Text, View } from 'react-native';
 import type { TextStyle } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
+import { useTokens } from '../theme/tokens.js';
 import { Toggle } from './Toggle.js';
 
 export interface ToggleRowProps {
@@ -35,10 +36,11 @@ export interface ToggleRowProps {
 
 export function ToggleRow({ icon, label, detail, value, onValueChange, disabled }: ToggleRowProps) {
   const theme = useOctoSpacesTheme();
-  const { colors, spacing, type: typeScale, fonts, opacity } = theme;
+  const t = useTokens();
+  const { colors, type: typeScale, fonts } = theme;
 
-  const sp2 = (spacing['2'] as number | undefined) ?? 8;
-  const sp3 = (spacing['3'] as number | undefined) ?? 12;
+  const sp2 = t.sp('2');
+  const sp3 = t.sp('3');
 
   return (
     <View
@@ -47,7 +49,7 @@ export function ToggleRow({ icon, label, detail, value, onValueChange, disabled 
         alignItems: 'center',
         gap: sp3,
         paddingVertical: sp2 / 2,
-        opacity: disabled ? (opacity.disabled as number | undefined) ?? 0.45 : 1,
+        opacity: disabled ? t.opa('disabled') : 1,
       }}
     >
       {icon != null ? (

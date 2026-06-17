@@ -11,6 +11,7 @@ import React, { useCallback } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
+import { useTokens } from '../theme/tokens.js';
 import type { DiscoverEntry } from './types.js';
 
 export interface DiscoverRowProps {
@@ -23,6 +24,7 @@ export interface DiscoverRowProps {
 
 export function DiscoverRow({ entry, renderIcon, onOpen }: DiscoverRowProps) {
   const theme = useOctoSpacesTheme();
+  const t = useTokens();
 
   const handlePress = useCallback(() => {
     onOpen(entry);
@@ -37,12 +39,12 @@ export function DiscoverRow({ entry, renderIcon, onOpen }: DiscoverRowProps) {
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: (theme.spacing['3'] as number) ?? 12,
-        paddingHorizontal: (theme.spacing['4'] as number) ?? 16,
+        paddingVertical: t.sp('3'),
+        paddingHorizontal: t.sp('4'),
         backgroundColor: pressed
           ? (theme.colors.surface ?? '#f5f5f5')
           : 'transparent',
-        borderRadius: (theme.radii['sm'] as number) ?? 6,
+        borderRadius: t.rad('sm'),
       })}
       accessibilityRole="button"
       accessibilityLabel={entry.title || 'Untitled'}
@@ -53,7 +55,7 @@ export function DiscoverRow({ entry, renderIcon, onOpen }: DiscoverRowProps) {
           style={{
             width: 28,
             height: 28,
-            marginRight: (theme.spacing['2'] as number) ?? 8,
+            marginRight: t.sp('2'),
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,

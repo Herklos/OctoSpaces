@@ -23,6 +23,7 @@ import { Pressable as RNPressable } from 'react-native';
 import type { PressableProps, View as RNView } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
+import { useTokens } from '../theme/tokens.js';
 
 // React Native Web supports onMouseEnter/onMouseLeave.
 type HoverProps = { onMouseEnter?: () => void; onMouseLeave?: () => void };
@@ -49,7 +50,8 @@ export function SidebarActionButton({
   size = 32,
 }: SidebarActionButtonProps) {
   const theme = useOctoSpacesTheme();
-  const { colors, radii } = theme;
+  const t = useTokens();
+  const { colors } = theme;
 
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -60,7 +62,7 @@ export function SidebarActionButton({
       ? (colors.primarySubtle ?? 'rgba(0,0,0,0.05)')
       : 'transparent';
 
-  const radius = (radii['sm'] as number | undefined) ?? 4;
+  const radius = t.rad('sm');
 
   return (
     <Pressable
