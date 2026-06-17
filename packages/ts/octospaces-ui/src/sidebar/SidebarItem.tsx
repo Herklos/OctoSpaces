@@ -19,16 +19,13 @@
  * ```
  */
 import React, { useState } from 'react';
-import { Pressable as RNPressable, StyleSheet, Text, View } from 'react-native';
-import type { PressableProps, TextStyle, View as RNView } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import type { TextStyle } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
 import { useTokens } from '../theme/tokens.js';
-
-type HoverProps = { onMouseEnter?: () => void; onMouseLeave?: () => void };
-const Pressable = RNPressable as React.ForwardRefExoticComponent<
-  PressableProps & HoverProps & React.RefAttributes<RNView>
->;
+import { HoverablePressable as Pressable } from '../primitives/hoverable-pressable.js';
+import { interactionBg } from './interaction-bg.js';
 
 export interface SidebarItemProps {
   label: string;
@@ -73,9 +70,7 @@ export function SidebarItem({
 
   const bg = active
     ? colors.sidebarActive
-    : hovered
-      ? (colors.primarySubtle ?? 'rgba(0,0,0,0.04)')
-      : 'transparent';
+    : interactionBg({ hovered }, { hovered: colors.primarySubtle });
 
   const textColor = active ? colors.primary : colors.text;
 

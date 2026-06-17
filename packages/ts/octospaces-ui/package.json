@@ -24,11 +24,17 @@
     "react-native": ">=0.75"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.1.0",
     "@types/node": "^22.0.0",
     "@types/react": "^18.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "jsdom": "^25.0.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "react-native-web": "^0.20.0",
     "tsup": "^8.3.0",
     "typescript": "~6.0.3",
-    "@vitest/coverage-v8": "^3.0.0",
     "vitest": "^3.0.0"
   }
 }

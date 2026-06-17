@@ -19,17 +19,11 @@
  * ```
  */
 import React, { useState } from 'react';
-import { Pressable as RNPressable } from 'react-native';
-import type { PressableProps, View as RNView } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
 import { useTokens } from '../theme/tokens.js';
-
-// React Native Web supports onMouseEnter/onMouseLeave.
-type HoverProps = { onMouseEnter?: () => void; onMouseLeave?: () => void };
-const Pressable = RNPressable as React.ForwardRefExoticComponent<
-  PressableProps & HoverProps & React.RefAttributes<RNView>
->;
+import { HoverablePressable as Pressable } from '../primitives/hoverable-pressable.js';
+import { interactionBg } from './interaction-bg.js';
 
 export interface SidebarActionButtonProps {
   /** Icon element to render — the host provides the icon component, size, and color. */
@@ -56,11 +50,7 @@ export function SidebarActionButton({
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
-  const bg = pressed
-    ? (colors.primaryMuted ?? 'rgba(0,0,0,0.10)')
-    : hovered
-      ? (colors.primarySubtle ?? 'rgba(0,0,0,0.05)')
-      : 'transparent';
+  const bg = interactionBg({ pressed, hovered }, { pressed: colors.primaryMuted, hovered: colors.primarySubtle });
 
   const radius = t.rad('sm');
 

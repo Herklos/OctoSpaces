@@ -60,11 +60,13 @@
  * ```
  */
 import React, { useRef, useState } from 'react';
-import { Pressable as RNPressable, StyleSheet, Text, View } from 'react-native';
-import type { PressableProps, TextStyle, View as RNView } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import type { TextStyle, View as RNView } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
 import { useTokens } from '../theme/tokens.js';
+import { HoverablePressable as Pressable } from '../primitives/hoverable-pressable.js';
+import { interactionBg } from './interaction-bg.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -190,13 +192,6 @@ export interface SpaceSwitcherProps {
    */
   emptyLabel?: string;
 }
-
-// ── Hover-aware Pressable (RN-Web) ────────────────────────────────────────────
-
-type HoverProps = { onMouseEnter?: () => void; onMouseLeave?: () => void };
-const Pressable = RNPressable as React.ForwardRefExoticComponent<
-  PressableProps & HoverProps & React.RefAttributes<RNView>
->;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -414,11 +409,10 @@ export function SpaceSwitcher({
         style={({ pressed }) => [
           baseStyle,
           {
-            backgroundColor: pressed
-              ? (colors.primarySubtle ?? 'rgba(0,0,0,0.08)')
-              : triggerHovered
-                ? (colors.primarySubtle ?? 'rgba(0,0,0,0.05)')
-                : 'transparent',
+            backgroundColor: interactionBg(
+              { pressed, hovered: triggerHovered },
+              { pressed: colors.primarySubtle, hovered: colors.primarySubtle },
+            ),
           },
         ]}
       >
@@ -494,6 +488,93 @@ function SectionLabel({ label, color, size, lineHeight, font, paddingH, paddingV
   );
 }
 
+// Shared dropdown-row shell for SpaceRow and ActionRow — identical Pressable +
+// label layout; the variations are the leading/trailing slots and label styling.
+interface MenuRowStyleTokens {
+  colors: ReturnType<typeof useOctoSpacesTheme>['colors'];
+  bodyFont: string | undefined;
+  bodySize: number;
+  bodyLine: number;
+  sp2: number;
+  sp3: number;
+  sp4: number;
+  radMd: number;
+}
+
+interface MenuRowProps extends MenuRowStyleTokens {
+  accessibilityLabel: string;
+  accessibilityState?: { selected?: boolean };
+  onPress: () => void;
+  leading?: React.ReactNode;
+  label: string;
+  labelColor: string;
+  labelWeight: TextStyle['fontWeight'];
+  trailing?: React.ReactNode;
+}
+
+function MenuRow({
+  accessibilityLabel,
+  accessibilityState,
+  onPress,
+  leading,
+  label,
+  labelColor,
+  labelWeight,
+  trailing,
+  colors,
+  bodyFont,
+  bodySize,
+  bodyLine,
+  sp2,
+  sp3,
+  sp4,
+  radMd,
+}: MenuRowProps) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <Pressable
+      accessibilityRole="menuitem"
+      accessibilityLabel={accessibilityLabel}
+      {...(accessibilityState ? { accessibilityState } : {})}
+      onPress={onPress}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={({ pressed }) => ({
+        flexDirection: 'row' as const,
+        alignItems: 'center' as const,
+        gap: sp3,
+        paddingHorizontal: sp4,
+        paddingVertical: sp2,
+        borderRadius: radMd,
+        backgroundColor: interactionBg(
+          { pressed, hovered },
+          { pressed: colors.primarySubtle, hovered: colors.primarySubtle },
+        ),
+      })}
+    >
+      {leading}
+      <Text
+        numberOfLines={1}
+        style={
+          {
+            flex: 1,
+            minWidth: 0,
+            fontSize: bodySize,
+            lineHeight: bodyLine,
+            fontWeight: labelWeight,
+            color: labelColor,
+            fontFamily: bodyFont,
+          } as TextStyle
+        }
+      >
+        {label}
+      </Text>
+      {trailing}
+    </Pressable>
+  );
+}
+
 interface SpaceRowProps {
   space: SwitcherSpace;
   active: boolean;
@@ -527,51 +608,32 @@ function SpaceRow({
   sp4,
   radMd,
 }: SpaceRowProps) {
-  const [hovered, setHovered] = useState(false);
   const unread = space.unread ?? 0;
 
   return (
-    <Pressable
-      accessibilityRole="menuitem"
+    <MenuRow
       accessibilityLabel={active ? `${space.name} (current)` : `Switch to ${space.name}`}
       accessibilityState={{ selected: active }}
       onPress={onPress}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={({ pressed }) => ({
-        flexDirection: 'row' as const,
-        alignItems: 'center' as const,
-        gap: sp3,
-        paddingHorizontal: sp4,
-        paddingVertical: sp2,
-        borderRadius: radMd,
-        backgroundColor: pressed
-          ? (colors.primarySubtle ?? 'rgba(0,0,0,0.08)')
-          : hovered
-            ? (colors.primarySubtle ?? 'rgba(0,0,0,0.04)')
-            : 'transparent',
-      })}
-    >
-      {renderAvatar ? renderAvatar(space, 24) : null}
-      <Text
-        numberOfLines={1}
-        style={
-          {
-            flex: 1,
-            minWidth: 0,
-            fontSize: bodySize,
-            lineHeight: bodyLine,
-            fontWeight: active ? '600' : '400',
-            color: active ? colors.primary : colors.text,
-            fontFamily: bodyFont,
-          } as TextStyle
-        }
-      >
-        {space.name}
-      </Text>
-      {unread > 0 && renderBadge ? renderBadge(unread) : null}
-      {active && renderIcon ? renderIcon('check', 15, colors.primary) : null}
-    </Pressable>
+      leading={renderAvatar ? renderAvatar(space, 24) : null}
+      label={space.name}
+      labelColor={active ? colors.primary : colors.text}
+      labelWeight={active ? '600' : '400'}
+      trailing={
+        <>
+          {unread > 0 && renderBadge ? renderBadge(unread) : null}
+          {active && renderIcon ? renderIcon('check', 15, colors.primary) : null}
+        </>
+      }
+      colors={colors}
+      bodyFont={bodyFont}
+      bodySize={bodySize}
+      bodyLine={bodyLine}
+      sp2={sp2}
+      sp3={sp3}
+      sp4={sp4}
+      radMd={radMd}
+    />
   );
 }
 
@@ -604,50 +666,28 @@ function ActionRow({
   sp4,
   radMd,
 }: ActionRowProps) {
-  const [hovered, setHovered] = useState(false);
-
   return (
-    <Pressable
-      accessibilityRole="menuitem"
+    <MenuRow
       accessibilityLabel={label}
       onPress={onPress}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={({ pressed }) => ({
-        flexDirection: 'row' as const,
-        alignItems: 'center' as const,
-        gap: sp3,
-        paddingHorizontal: sp4,
-        paddingVertical: sp2,
-        borderRadius: radMd,
-        backgroundColor: pressed
-          ? (colors.primarySubtle ?? 'rgba(0,0,0,0.08)')
-          : hovered
-            ? (colors.primarySubtle ?? 'rgba(0,0,0,0.04)')
-            : 'transparent',
-      })}
-    >
-      {renderIcon ? (
-        <View style={{ width: 24, alignItems: 'center', justifyContent: 'center' }}>
-          {renderIcon(iconName, 15, colors.textSecondary)}
-        </View>
-      ) : null}
-      <Text
-        numberOfLines={1}
-        style={
-          {
-            flex: 1,
-            minWidth: 0,
-            fontSize: bodySize,
-            lineHeight: bodyLine,
-            fontWeight: '400',
-            color: colors.text,
-            fontFamily: bodyFont,
-          } as TextStyle
-        }
-      >
-        {label}
-      </Text>
-    </Pressable>
+      leading={
+        renderIcon ? (
+          <View style={{ width: 24, alignItems: 'center', justifyContent: 'center' }}>
+            {renderIcon(iconName, 15, colors.textSecondary)}
+          </View>
+        ) : null
+      }
+      label={label}
+      labelColor={colors.text}
+      labelWeight="400"
+      colors={colors}
+      bodyFont={bodyFont}
+      bodySize={bodySize}
+      bodyLine={bodyLine}
+      sp2={sp2}
+      sp3={sp3}
+      sp4={sp4}
+      radMd={radMd}
+    />
   );
 }

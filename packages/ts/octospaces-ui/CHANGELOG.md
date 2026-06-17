@@ -27,6 +27,28 @@
   `useMemo` keyed on `[allEntries, query]`, with a stable empty-array reference for the
   non-ready states.
 
+### Internal — sidebar deduplication
+
+- **`HoverablePressable`** — the web-hover `Pressable` re-cast that was copy-pasted in
+  `SpacesRail`, `SidebarItem`, `SidebarActionButton`, and `SpaceSwitcher` is now a single
+  shared module (`primitives/hoverable-pressable.ts`).
+- **`interactionBg()`** — the `pressed ? … : hovered ? … : transparent` background ladder
+  (duplicated across 5 sidebar/menu surfaces with drifting rgba fallbacks: hover 0.04-vs-0.05,
+  pressed 0.08-vs-0.10) is centralised in `sidebar/interaction-bg.ts` with canonical
+  fallbacks (pressed `rgba(0,0,0,0.08)`, hover `rgba(0,0,0,0.05)`). Host theme colors still
+  take precedence, so themed apps are visually unchanged; only the no-theme fallback is normalised.
+- **`CornerBadge`** — the bottom-corner lock/mute overlay `View` (3× in `SpacesRail`) is now
+  one internal component parameterised by `side`.
+- **`MenuRow`** — `SpaceRow` and `ActionRow` in `SpaceSwitcher` now share one row shell
+  (Pressable + label layout); each supplies only its leading/trailing slots and label styling.
+
+### Tests — React Native render harness
+
+- Added a `react-native-web` + jsdom render harness as a second vitest project (`components`,
+  matching `*.test.tsx`); pure-logic suites stay in the fast `logic` (node) project. New
+  render suites: `Badge`, `SpacesRail` (accessibility label sourcing), `SpaceSwitcher`
+  (dropdown rows). New unit suites: `useTokens().type()`, `interactionBg()`. 182 tests total.
+
 ## 0.7.1
 
 ### Fixes

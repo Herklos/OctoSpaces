@@ -2,9 +2,34 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    environment: 'node',
-    globals: false,
-    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+    // Two projects: pure-logic suites run in a fast node env; component-render
+    // suites (`*.test.tsx`) run in jsdom with `react-native` aliased to
+    // `react-native-web` so RN primitives render to the DOM and can be queried
+    // with @testing-library/react.
+    projects: [
+      {
+        test: {
+          name: 'logic',
+          environment: 'node',
+          globals: false,
+          include: ['src/**/*.test.ts'],
+        },
+      },
+      {
+        define: { __DEV__: 'true' },
+        esbuild: { jsx: 'automatic' },
+        resolve: {
+          alias: { 'react-native': 'react-native-web' },
+        },
+        test: {
+          name: 'components',
+          environment: 'jsdom',
+          globals: false,
+          include: ['src/**/*.test.tsx'],
+          setupFiles: ['./vitest.setup.ts'],
+        },
+      },
+    ],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts', 'src/**/*.tsx'],
@@ -12,6 +37,7 @@ export default defineConfig({
         'src/**/*.test.ts',
         'src/**/*.test.tsx',
         'src/index.ts',
+        'src/test/**',
       ],
       thresholds: {
         // Conservative floor — most visual components lack tests.

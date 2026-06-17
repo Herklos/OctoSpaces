@@ -14,29 +14,18 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
-  Pressable as RNPressable,
   ScrollView,
   Text,
   View,
 } from 'react-native';
-import type { PressableProps, View as RNView } from 'react-native';
+import type { View as RNView } from 'react-native';
 
 import { useOctoSpacesTheme } from '../theme/provider.js';
 import { useTokens } from '../theme/tokens.js';
+import { HoverablePressable as Pressable } from '../primitives/hoverable-pressable.js';
 import { railTileState } from './tile-state.js';
 import type { RailTileTokens } from './tile-state.js';
 import type { RailIconName, RailSpace, RailSpecialTile } from './types.js';
-
-// ── Pressable with web hover events ───────────────────────────────────────────
-
-// React Native Web supports onMouseEnter/onMouseLeave for hover detection.
-// The peer dep is >=0.75 which includes these events in the ViewProps contract.
-// Cast to ForwardRefExoticComponent so `ref` is a valid JSX prop (Pressable
-// already uses forwardRef internally; this just makes TypeScript aware of it).
-type HoverProps = { onMouseEnter?: () => void; onMouseLeave?: () => void };
-const Pressable = RNPressable as React.ForwardRefExoticComponent<
-  PressableProps & HoverProps & React.RefAttributes<RNView>
->;
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -122,6 +111,41 @@ const CORNER_SIZE = 16;
 const BADGE_OFFSET = -5;
 const CORNER_OFFSET = -3;
 
+// ── Corner badge (bottom-left/right circular icon overlay) ─────────────────────
+
+/** A small bordered circle pinned to a tile's bottom corner (E2EE lock / mute). */
+function CornerBadge({
+  side,
+  bg,
+  borderColor,
+  children,
+}: {
+  side: 'left' | 'right';
+  bg: string;
+  borderColor: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        bottom: CORNER_OFFSET,
+        ...(side === 'left' ? { left: CORNER_OFFSET } : { right: CORNER_OFFSET }),
+        width: CORNER_SIZE,
+        height: CORNER_SIZE,
+        borderRadius: CORNER_SIZE / 2,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: bg,
+        borderColor,
+      }}
+    >
+      {children}
+    </View>
+  );
+}
+
 // ── Tile content (non-hook render helper) ─────────────────────────────────────
 
 interface TileContentProps {
@@ -174,43 +198,15 @@ const TileContent = React.memo(function TileContent({
       )}
       {/* E2EE lock corner (bottom-right) */}
       {showLockCorner && renderIcon ? (
-        <View
-          style={{
-            position: 'absolute',
-            bottom: CORNER_OFFSET,
-            right: CORNER_OFFSET,
-            width: CORNER_SIZE,
-            height: CORNER_SIZE,
-            borderRadius: CORNER_SIZE / 2,
-            borderWidth: 1,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: cornerBg,
-            borderColor: cornerBorder,
-          }}
-        >
+        <CornerBadge side="right" bg={cornerBg} borderColor={cornerBorder}>
           {renderIcon('lock', 9, cornerIconColor)}
-        </View>
+        </CornerBadge>
       ) : null}
       {/* Mute corner (bottom-left) */}
       {space.muted && renderIcon ? (
-        <View
-          style={{
-            position: 'absolute',
-            bottom: CORNER_OFFSET,
-            left: CORNER_OFFSET,
-            width: CORNER_SIZE,
-            height: CORNER_SIZE,
-            borderRadius: CORNER_SIZE / 2,
-            borderWidth: 1,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: cornerBg,
-            borderColor: cornerBorder,
-          }}
-        >
+        <CornerBadge side="left" bg={cornerBg} borderColor={cornerBorder}>
           {renderIcon('mute', 9, cornerIconColor)}
-        </View>
+        </CornerBadge>
       ) : null}
       {/* Unread badge (top-right) */}
       {space.unread ? (
@@ -441,23 +437,9 @@ const SpecialTile = React.memo(function SpecialTile({
       </Pressable>
       {/* Lock corner (bottom-right) */}
       {showLockCorner && renderIcon ? (
-        <View
-          style={{
-            position: 'absolute',
-            bottom: CORNER_OFFSET,
-            right: CORNER_OFFSET,
-            width: CORNER_SIZE,
-            height: CORNER_SIZE,
-            borderRadius: CORNER_SIZE / 2,
-            borderWidth: 1,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: cornerBg,
-            borderColor: cornerBorder,
-          }}
-        >
+        <CornerBadge side="right" bg={cornerBg} borderColor={cornerBorder}>
           {renderIcon('lock', 9, tokens.textTertiary)}
-        </View>
+        </CornerBadge>
       ) : null}
       {/* Unread badge (top-right) */}
       {tile.unread ? (

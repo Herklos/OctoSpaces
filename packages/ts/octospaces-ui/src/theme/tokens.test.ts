@@ -29,6 +29,7 @@ function makeTheme(overrides: {
   radii?: Record<string, number>;
   layout?: Record<string, number>;
   opacity?: Record<string, number>;
+  type?: Theme['type'];
 }): Theme {
   return {
     scheme: 'light',
@@ -37,7 +38,7 @@ function makeTheme(overrides: {
     radii: overrides.radii ?? {},
     layout: overrides.layout ?? {},
     opacity: overrides.opacity ?? {},
-    type: {},
+    type: overrides.type ?? {},
     fonts: {},
     motion: {},
     shadows: {},
@@ -158,5 +159,67 @@ describe('useTokens — opacity', () => {
     vi.mocked(useOctoSpacesTheme).mockReturnValue(makeTheme({ opacity: { disabled: 0.3 } }));
     const t = useTokens();
     expect(t.opa('disabled')).toBe(0.3);
+  });
+});
+
+describe('useTokens — type (typography)', () => {
+  it('returns the host TypeScale when provided', () => {
+    vi.mocked(useOctoSpacesTheme).mockReturnValue(
+      makeTheme({ type: { body: { size: 16, lineHeight: 24, weight: '500' } } }),
+    );
+    const t = useTokens();
+    expect(t.type('body')).toEqual({ size: 16, lineHeight: 24, weight: '500' });
+  });
+
+  it('returns canonical body = {15, 22, 400} when the theme omits it (fixes 14-vs-15 / 20-vs-22 drift)', () => {
+    vi.mocked(useOctoSpacesTheme).mockReturnValue(makeTheme({ type: {} }));
+    const t = useTokens();
+    expect(t.type('body')).toEqual({ size: 15, lineHeight: 22, weight: '400' });
+  });
+
+  it('returns canonical defaults for the common variants', () => {
+    vi.mocked(useOctoSpacesTheme).mockReturnValue(makeTheme({ type: {} }));
+    const t = useTokens();
+    expect(t.type('title2')).toEqual({ size: 22, lineHeight: 28, weight: '700' });
+    expect(t.type('heading')).toEqual({ size: 15, lineHeight: 20, weight: '600' });
+    expect(t.type('caption')).toEqual({ size: 12, lineHeight: 18, weight: '400' });
+    expect(t.type('micro')).toEqual({ size: 10, lineHeight: 13, weight: '400' });
+  });
+
+  it('falls back to the neutral default for an unknown variant', () => {
+    vi.mocked(useOctoSpacesTheme).mockReturnValue(makeTheme({ type: {} }));
+    const t = useTokens();
+    expect(t.type('banana')).toEqual({ size: 14, lineHeight: 20, weight: '400' });
+  });
+
+  it('merges per field: host size wins, canonical fills the missing lineHeight', () => {
+    vi.mocked(useOctoSpacesTheme).mockReturnValue(
+      makeTheme({ type: { body: { size: 18 } as Theme['type'][string] } }),
+    );
+    const t = useTokens();
+    const body = t.type('body');
+    expect(body.size).toBe(18); // host
+    expect(body.lineHeight).toBe(22); // canonical body fill
+  });
+
+  it('explicit fallback overrides the canonical per field', () => {
+    vi.mocked(useOctoSpacesTheme).mockReturnValue(makeTheme({ type: {} }));
+    const t = useTokens();
+    expect(t.type('body', { size: 99 }).size).toBe(99);
+    expect(t.type('body', { size: 99 }).lineHeight).toBe(22); // untouched canonical
+  });
+
+  it('passes through letterSpacing from the host entry', () => {
+    vi.mocked(useOctoSpacesTheme).mockReturnValue(
+      makeTheme({ type: { body: { size: 15, lineHeight: 22, letterSpacing: 0.4 } } }),
+    );
+    const t = useTokens();
+    expect(t.type('body').letterSpacing).toBe(0.4);
+  });
+
+  it('omits letterSpacing when neither host nor fallback supplies it', () => {
+    vi.mocked(useOctoSpacesTheme).mockReturnValue(makeTheme({ type: {} }));
+    const t = useTokens();
+    expect(t.type('body').letterSpacing).toBeUndefined();
   });
 });
