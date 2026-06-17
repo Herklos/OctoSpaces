@@ -115,6 +115,27 @@ app.use("*", async (c, next) => {
 // Authenticated SSE proxy — must be mounted before the sync router's catch-all.
 app.route("/", createEventsRoute({ enricher: spaceEnricher, nonceCache, revocationStore }));
 
+// K1: owner-submitted revocation lists (signed by the issuer's root Ed25519 key).
+// No cap auth required — the RevocationList signature IS the authentication (acceptList verifies it).
+app.post("/revocations", async (c) => {
+  let list: unknown;
+  try {
+    list = await c.req.json();
+  } catch {
+    return c.json({ ok: false, reason: "invalid JSON" }, 400);
+  }
+  if (typeof list !== "object" || list === null) {
+    return c.json({ ok: false, reason: "body must be a RevocationList object" }, 400);
+  }
+  const result = revocationStore.acceptList(list as Parameters<typeof revocationStore.acceptList>[0]);
+  if (!result.ok) {
+    // generation-conflict or signature-invalid — 409 so callers can distinguish from 400.
+    const status = result.reason === "too-many-issuers" ? 507 : 409;
+    return c.json(result, status);
+  }
+  return c.json(result, 200);
+});
+
 app.route("/", syncRouter as unknown as Hono);
 
 createGracefulShutdown({

@@ -36,6 +36,19 @@ vi.mock('@drakkar.software/starfish-keyring', () => ({
   listRecipients: vi.fn().mockResolvedValue({ epoch: 1, recipients: [] }),
 }));
 
+vi.mock('@drakkar.software/starfish-protocol', () => ({
+  buildRevocationList: vi.fn().mockReturnValue({ tag: 'rev-list' }),
+}));
+
+vi.mock('./fetch-timeout.js', () => ({
+  fetchWithTimeout: vi.fn().mockReturnValue(vi.fn().mockResolvedValue({ ok: true, status: 200 })),
+}));
+
+vi.mock('../core/config.js', () => ({
+  getSyncBase: vi.fn().mockReturnValue('https://sync.example.com'),
+  getSyncPrefix: vi.fn().mockReturnValue('/v1'),
+}));
+
 // ── Imports (after mocks) ──────────────────────────────────────────────────────
 import {
   ownerEnsureNodeKeyring,
@@ -45,6 +58,7 @@ import {
   ensureNodeKeyringRecipient,
   removeNodeKeyringRecipient,
   listNodeKeyringRecipients,
+  revokeNodeAccess,
 } from './node-keyring.js';
 import {
   nodeKeyringName,
@@ -57,6 +71,10 @@ import {
 } from './paths.js';
 import { openEncryptor, buildEncryptor, ownerEnsureKeyring } from './client.js';
 import { addCollectionRecipient, removeRecipient, listRecipients } from '@drakkar.software/starfish-keyring';
+import { buildRevocationList } from '@drakkar.software/starfish-protocol';
+import type { RevokedSubject } from '@drakkar.software/starfish-protocol';
+import { fetchWithTimeout } from './fetch-timeout.js';
+import { getSyncBase, getSyncPrefix } from '../core/config.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
 import type { Session } from './identity.js';
 
@@ -280,5 +298,110 @@ describe('K2 regression: device session uses ownerTrustedAdders (owner + device)
     await removeNodeKeyringRecipient(mockSession, SP, NID, ['victim-kem']);
     const opts = vi.mocked(removeRecipient).mock.calls[0]![4] as { trustedAdders: string[] };
     expect(opts.trustedAdders).toEqual(['alice-ed-pub']);
+  });
+});
+
+// ── K1 regression: revokeNodeAccess — full eviction (rotate + revoke) ─────────
+//
+// K1 finding: removeNodeKeyringRecipient only rotates the epoch (forward secrecy)
+// — it never revokes the removed party's cap. The removed requester keeps a valid
+// cap and can still read/write the node stream. revokeNodeAccess fixes this by
+// composing keyring rotation (removeNodeKeyringRecipient) with a signed
+// RevocationList submission — invalidating every cap for the evicted subjects
+// server-side so authenticated requests are rejected.
+
+describe('K1 regression: revokeNodeAccess composes rotation + cap revocation', () => {
+  const revokedSubjects: RevokedSubject[] = [
+    { sub: 'bob-ed-pub', exp: 9999999999 },
+  ];
+
+  beforeEach(() => {
+    vi.mocked(removeRecipient).mockClear().mockResolvedValue({ newEpoch: 3 });
+    vi.mocked(buildRevocationList).mockClear().mockReturnValue({ tag: 'rev-list' } as never);
+    vi.mocked(fetchWithTimeout).mockClear().mockReturnValue(
+      vi.fn().mockResolvedValue({ ok: true, status: 200 }) as never,
+    );
+  });
+
+  it('always rotates the keyring (removeNodeKeyringRecipient step)', async () => {
+    await revokeNodeAccess(mockSession, SP, NID, ['bob-kem']);
+    expect(removeRecipient).toHaveBeenCalledWith(
+      mockSession.chatClient,
+      nodeKeyringName(SP, NID),
+      ['bob-kem'],
+      { edPriv: 'alice-ed-priv', edPub: 'alice-ed-pub', kemPriv: 'alice-kem-priv' },
+      { trustedAdders: ['alice-ed-pub'] },
+    );
+  });
+
+  it('returns { revoked: false } and skips buildRevocationList when no revokedSubjects', async () => {
+    const res = await revokeNodeAccess(mockSession, SP, NID, ['bob-kem']);
+    expect(res).toEqual({ newEpoch: 3, revoked: false });
+    expect(buildRevocationList).not.toHaveBeenCalled();
+  });
+
+  it('returns { revoked: false } when revokedSubjects is empty array', async () => {
+    const res = await revokeNodeAccess(mockSession, SP, NID, ['bob-kem'], { revokedSubjects: [] });
+    expect(res).toEqual({ newEpoch: 3, revoked: false });
+    expect(buildRevocationList).not.toHaveBeenCalled();
+  });
+
+  it('calls buildRevocationList with issuer keys + subjects when revokedSubjects provided', async () => {
+    const submit = vi.fn().mockResolvedValue(undefined);
+    await revokeNodeAccess(mockSession, SP, NID, ['bob-kem'], { revokedSubjects, submitRevocation: submit });
+    expect(buildRevocationList).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issEdPubHex: 'alice-ed-pub',
+        issEdPrivHex: 'alice-ed-priv',
+        revokedSubjects,
+      }),
+    );
+  });
+
+  it('passes explicit generation to buildRevocationList', async () => {
+    const submit = vi.fn().mockResolvedValue(undefined);
+    await revokeNodeAccess(mockSession, SP, NID, ['bob-kem'], {
+      revokedSubjects,
+      generation: 42,
+      submitRevocation: submit,
+    });
+    expect(buildRevocationList).toHaveBeenCalledWith(
+      expect.objectContaining({ generation: 42 }),
+    );
+  });
+
+  it('calls the custom submitRevocation with the built list', async () => {
+    const fakeList = { tag: 'fake-list' };
+    vi.mocked(buildRevocationList).mockReturnValueOnce(fakeList as never);
+    const submit = vi.fn().mockResolvedValue(undefined);
+    const res = await revokeNodeAccess(mockSession, SP, NID, ['bob-kem'], { revokedSubjects, submitRevocation: submit });
+    expect(submit).toHaveBeenCalledWith(fakeList);
+    expect(res).toEqual({ newEpoch: 3, revoked: true });
+  });
+
+  it('default submitRevocation POSTs to ${getSyncBase()}${getSyncPrefix()}/revocations', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200 });
+    vi.mocked(fetchWithTimeout).mockReturnValueOnce(mockFetch as never);
+    const fakeList = { issEdPub: 'alice-ed-pub', generation: 1, revoked: [], revokedSubjects };
+    vi.mocked(buildRevocationList).mockReturnValueOnce(fakeList as never);
+
+    await revokeNodeAccess(mockSession, SP, NID, ['bob-kem'], { revokedSubjects });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://sync.example.com/v1/revocations',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fakeList),
+      }),
+    );
+  });
+
+  it('default submitRevocation throws when server returns non-ok status', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: false, status: 409 });
+    vi.mocked(fetchWithTimeout).mockReturnValueOnce(mockFetch as never);
+    await expect(
+      revokeNodeAccess(mockSession, SP, NID, ['bob-kem'], { revokedSubjects }),
+    ).rejects.toThrow(/HTTP 409/);
   });
 });

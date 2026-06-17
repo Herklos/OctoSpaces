@@ -17,12 +17,16 @@
  */
 import { addCollectionRecipient, removeRecipient, listRecipients } from '@drakkar.software/starfish-keyring';
 import type { Encryptor, StarfishClient } from '@drakkar.software/starfish-client';
+import { buildRevocationList } from '@drakkar.software/starfish-protocol';
+import type { RevocationList, RevokedSubject } from '@drakkar.software/starfish-protocol';
 
 import { openEncryptor, buildEncryptor, ownerEnsureKeyring, isAlreadyPresentRecipient } from './client.js';
 import type { DeviceKeys } from './client.js';
 import { ownerTrustedAdders } from './identity.js';
 import type { Session } from './identity.js';
 import { nodeKeyringName, nodeKeyringPull, nodeKeyringPush } from './paths.js';
+import { getSyncBase, getSyncPrefix } from '../core/config.js';
+import { fetchWithTimeout } from './fetch-timeout.js';
 
 /** A keyring recipient, referenced by their X25519 KEM pubkey (hex). */
 export interface NodeKeyringRecipient {
@@ -169,4 +173,79 @@ export async function listNodeKeyringRecipients(
   return listRecipients(session.chatClient, nodeKeyringName(spaceId, nodeId), {
     trustedAdders: opts.trustedAdders ?? ownerTrustedAdders(session),
   });
+}
+
+// ── Full revocation (K1) ──────────────────────────────────────────────────────
+
+/**
+ * POST a signed {@link RevocationList} to the server's `/revocations` endpoint.
+ * Default transport for `revokeNodeAccess`; override via `opts.submitRevocation`.
+ */
+async function defaultSubmitRevocation(list: RevocationList): Promise<void> {
+  const url = `${getSyncBase()}${getSyncPrefix()}/revocations`;
+  const res = await fetchWithTimeout()(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(list),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to submit revocation list: HTTP ${res.status}`);
+  }
+}
+
+/**
+ * True eviction of one or more node-keyring recipients.
+ *
+ * Composes two cryptographic steps:
+ *   1. **Keyring rotation** (forward secrecy) — rotates to a new epoch so the
+ *      removed parties cannot decrypt future messages. Delegates to
+ *      `removeNodeKeyringRecipient`.
+ *   2. **Cap revocation** (access cut-off) — builds a signed {@link RevocationList}
+ *      (subject-level, invalidates every cap for the subject regardless of nonce)
+ *      and submits it to the server via `submitRevocation`. The server's
+ *      `isRevoked` check then rejects authenticated requests from the revoked
+ *      subjects.
+ *
+ * Cap revocation only runs when `opts.revokedSubjects` is non-empty.  The caller
+ * is responsible for mapping `subKem` → `{ sub: edPub, exp }` (cap subject +
+ * expiry), which they had at invite time.
+ *
+ * `opts.generation` MUST be strictly greater than any prior generation submitted
+ * by this issuer (`session.keys.edPub`). The server rejects out-of-order lists.
+ * Callers should persist the last-used generation and increment it. If omitted,
+ * the current unix-second timestamp is used (sufficient when revocations are
+ * spaced more than 1 second apart; use an explicit counter for burst scenarios).
+ */
+export async function revokeNodeAccess(
+  session: Session,
+  spaceId: string,
+  nodeId: string,
+  removeSubKems: string[],
+  opts: {
+    trustedAdders?: string[];
+    revokedSubjects?: RevokedSubject[];
+    generation?: number;
+    submitRevocation?: (list: RevocationList) => Promise<void>;
+  } = {},
+): Promise<{ newEpoch: number; revoked: boolean }> {
+  // Step 1: rotate the keyring (forward secrecy).
+  const { newEpoch } = await removeNodeKeyringRecipient(session, spaceId, nodeId, removeSubKems, {
+    trustedAdders: opts.trustedAdders,
+  });
+
+  // Step 2: revoke the cap(s) so the server stops honouring authenticated requests.
+  if (!opts.revokedSubjects || opts.revokedSubjects.length === 0) {
+    return { newEpoch, revoked: false };
+  }
+  const generation = opts.generation ?? Math.floor(Date.now() / 1000);
+  const list = buildRevocationList({
+    issEdPubHex: session.keys.edPub,
+    issEdPrivHex: session.keys.edPriv,
+    generation,
+    revoked: [],
+    revokedSubjects: opts.revokedSubjects,
+  });
+  const submit = opts.submitRevocation ?? defaultSubmitRevocation;
+  await submit(list);
+  return { newEpoch, revoked: true };
 }
