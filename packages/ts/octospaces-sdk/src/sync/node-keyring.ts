@@ -18,7 +18,7 @@
 import { addCollectionRecipient, removeRecipient, listRecipients } from '@drakkar.software/starfish-keyring';
 import type { Encryptor, StarfishClient } from '@drakkar.software/starfish-client';
 
-import { openEncryptor, buildEncryptor, ownerEnsureKeyring } from './client.js';
+import { openEncryptor, buildEncryptor, ownerEnsureKeyring, isAlreadyPresentRecipient } from './client.js';
 import type { DeviceKeys } from './client.js';
 import { ownerTrustedAdders } from './identity.js';
 import type { Session } from './identity.js';
@@ -31,9 +31,7 @@ export interface NodeKeyringRecipient {
   label?: string;
 }
 
-/** "Already a recipient" is benign on re-invite — same regex family as members.ts. */
-const isAlreadyPresent = (e: unknown): boolean =>
-  /already (present|a recipient|exists)|duplicate/i.test(e instanceof Error ? e.message : String(e));
+// Use the shared isAlreadyPresentRecipient from client.ts (same regex, single source of truth).
 
 /**
  * Owner/creator side: create the node's keyring if missing, return an encryptor.
@@ -103,7 +101,7 @@ export async function addNodeKeyringRecipient(
       { trustedAdders: opts.trustedAdders ?? ownerTrustedAdders(session) },
     );
   } catch (e) {
-    if (isAlreadyPresent(e)) return;
+    if (isAlreadyPresentRecipient(e)) return;
     throw e;
   }
 }
