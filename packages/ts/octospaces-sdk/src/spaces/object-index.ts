@@ -8,12 +8,11 @@
  *
  * Encryption lives at the node content level, not here.
  */
-import { ConflictError } from '@drakkar.software/starfish-client';
-
 import type { ObjectNode } from '../core/types.js';
 import type { Session } from '../sync/identity.js';
 import { objIndexPull, objIndexPush } from '../sync/paths.js';
 import { getSpaceClient } from '../sync/space-access.js';
+import { casMutateWithRetry } from '../sync/cas-retry.js';
 
 /** Extract the `objects` array from a raw index doc body, or `[]` when absent/invalid. */
 function readIndexObjects(raw: unknown): ObjectNode[] {
@@ -30,6 +29,11 @@ function serializeForIndex(node: ObjectNode): ObjectNode {
   return node;
 }
 
+/** The index doc body sent on push (invite nodes stripped). */
+function buildIndexPayload(nodes: ObjectNode[]): { v: 2; objects: ObjectNode[]; updatedAt: number } {
+  return { v: 2, objects: nodes.map(serializeForIndex), updatedAt: Date.now() };
+}
+
 /**
  * Write the create-time seed into a space's index doc.
  * Idempotent: a no-op if the index doc already exists.
@@ -43,11 +47,7 @@ export async function pushIndexSeed(
   const res = await client.pull(objIndexPull(spaceId)).catch(() => null);
   const existing = res?.data as Record<string, unknown> | undefined;
   if (Array.isArray(existing?.objects)) return;
-  await client.push(
-    objIndexPush(spaceId),
-    { v: 2, objects: nodes.map(serializeForIndex), updatedAt: Date.now() },
-    res?.hash ?? null,
-  );
+  await client.push(objIndexPush(spaceId), buildIndexPayload(nodes), res?.hash ?? null);
 }
 
 /**
@@ -76,26 +76,17 @@ export async function updateObjectIndex(
   mutator: (nodes: ObjectNode[], now: number) => ObjectNode[] | null,
 ): Promise<void> {
   const client = getSpaceClient(spaceId, session);
-  const pullPath = objIndexPull(spaceId);
-  const pushPath = objIndexPush(spaceId);
-  const MAX_ATTEMPTS = 3;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const res = await client.pull(pullPath).catch(() => null);
-    const cur = readIndexObjects(res?.data);
-    const next = mutator(cur, Date.now());
-    if (!next) return;
-    try {
-      await client.push(
-        pushPath,
-        { v: 2, objects: next.map(serializeForIndex), updatedAt: Date.now() },
-        res?.hash ?? null,
-      );
-      return;
-    } catch (err) {
-      if (err instanceof ConflictError && attempt < MAX_ATTEMPTS - 1) continue;
-      throw err;
-    }
-  }
+  await casMutateWithRetry({
+    load: async () => {
+      const res = await client.pull(objIndexPull(spaceId)).catch(() => null);
+      return { ctx: readIndexObjects(res?.data), hash: res?.hash ?? null };
+    },
+    build: (cur) => {
+      const next = mutator(cur, Date.now());
+      return next === null ? null : buildIndexPayload(next);
+    },
+    push: (payload, hash) => client.push(objIndexPush(spaceId), payload, hash),
+  });
 }
 
 /**

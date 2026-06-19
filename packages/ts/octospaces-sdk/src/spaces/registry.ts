@@ -6,7 +6,7 @@
  * owner-only access record. Spaces are neutral containers — visibility and encryption
  * are per-node properties (see `ObjectNode.access` / `ObjectNode.enc`).
  */
-import { ConflictError, StarfishHttpError } from '@drakkar.software/starfish-client';
+import { StarfishHttpError } from '@drakkar.software/starfish-client';
 import type { StarfishClient } from '@drakkar.software/starfish-client';
 
 import type { ArchivedDms, CapMap, DmMap, MutePrefs, PubAccessMap, ReadPrefs, Space } from '../core/types.js';
@@ -14,6 +14,7 @@ import type { SealedBlob } from '../sync/account-seal.js';
 import { randomId } from '../core/ids.js';
 import type { Session } from '../sync/identity.js';
 import { seedSpaceObjectIndex } from './object-index.js';
+import { casMutateWithRetry } from '../sync/cas-retry.js';
 import { spaceAccessPull, spaceAccessPush, spacesPull, spacesPush } from '../sync/paths.js';
 
 /** Owner-set, SHARED space identity, persisted in the `_access` registry doc
@@ -71,8 +72,6 @@ interface SpacesDoc {
 
 type SpacesPayload = Omit<SpacesDoc, 'hash'>;
 
-const MAX_ATTEMPTS = 3;
-
 /** The `_spaces` doc body sent on push — every field except the CAS `hash`. */
 function toPayload(doc: SpacesDoc): SpacesPayload {
   return {
@@ -97,18 +96,17 @@ async function runCas(
   userId: string,
   build: (doc: SpacesDoc) => SpacesPayload | null,
 ): Promise<void> {
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const doc = await pullSpacesDoc(client, userId);
-    const next = build(doc);
-    if (next === null) return;
-    try {
-      await client.push(spacesPush(userId), { v: 1, ...next }, doc.hash);
-      return;
-    } catch (err) {
-      if (err instanceof ConflictError && attempt < MAX_ATTEMPTS - 1) continue;
-      throw err;
-    }
-  }
+  return casMutateWithRetry({
+    load: async () => {
+      const doc = await pullSpacesDoc(client, userId);
+      return { ctx: doc, hash: doc.hash };
+    },
+    build: (doc) => {
+      const next = build(doc);
+      return next === null ? null : { v: 1 as const, ...next };
+    },
+    push: (payload, hash) => client.push(spacesPush(userId), payload, hash),
+  });
 }
 
 function casUpdateSpacesField<F extends keyof SpacesPayload>(

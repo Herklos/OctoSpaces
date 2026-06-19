@@ -330,8 +330,7 @@ export type { InboxElement } from './sync/inbox.js';
 export { appendToInbox, postAnonymousAppend, AppendHttpError } from './sync/signed-append.js';
 
 // Base64
-export { starfishBase64 } from './sync/base64.js';
-export { toBase64Url, fromBase64Url } from './sync/base64url.js';
+export { starfishBase64, toBase64Url, fromBase64Url } from './sync/base64.js';
 
 // Link token helpers (shared encode/decode for invite and identity link fragments)
 export { encodeLinkFragment, decodeLinkFragment } from './sync/link-token.js';

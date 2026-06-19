@@ -3,7 +3,7 @@
  * Centralises the origin-trim + base64url fragment pack/unpack used by
  * members.ts, nodes.ts, and identity-link.ts.
  */
-import { toBase64Url, fromBase64Url } from './base64url.js';
+import { toBase64Url, fromBase64Url } from './base64.js';
 
 export function encodeLinkFragment(origin: string, path: string, token: unknown): string {
   const base = origin.replace(/\/+$/, '');

@@ -4,7 +4,7 @@ import {
   encodeSpaceInviteLink,
   acceptSpaceInvite,
 } from './members.js';
-import { toBase64Url } from '../sync/base64url.js';
+import { toBase64Url } from '../sync/base64.js';
 import type { SpaceInviteLinkToken } from './members.js';
 
 const baseToken: SpaceInviteLinkToken = {

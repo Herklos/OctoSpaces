@@ -262,7 +262,7 @@ describe('createSpaceInviteLink — keyring ordering and error handling', () => 
 
     expect(link).toContain('#');
     const fragment = link.split('#')[1]!;
-    const { fromBase64Url } = await import('../sync/base64url.js');
+    const { fromBase64Url } = await import('../sync/base64.js');
     const decoded = JSON.parse(fromBase64Url(fragment)) as { key: string };
     expect(decoded.key).toBe('eph-edpriv'); // generateDeviceKeys mock returns edPriv: 'eph-edpriv'
     expect(token.key).toBe('eph-edpriv');

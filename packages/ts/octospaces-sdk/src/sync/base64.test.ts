@@ -6,8 +6,7 @@
  * native btoa/atob paths when both are available.
  */
 import { describe, it, expect } from 'vitest';
-import { starfishBase64 } from './base64.js';
-import { toBase64Url, fromBase64Url } from './base64url.js';
+import { starfishBase64, toBase64Url, fromBase64Url } from './base64.js';
 
 // ── Helper: import the unexported pure functions via re-exporting trick ────────
 // We test parity by using the public provider (which picks native if available)

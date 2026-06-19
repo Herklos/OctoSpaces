@@ -108,7 +108,7 @@ describe('IdentityLink — encode / decode / binding', () => {
 
   it('decodeIdentityLink throws on missing required fields', async () => {
     const partial = { v: 2, ownerId: 'a'.repeat(32), edPub: 'b'.repeat(64) }; // kemPub and kemSig missing
-    const { toBase64Url } = await import('../sync/base64url.js');
+    const { toBase64Url } = await import('../sync/base64.js');
     const frag = toBase64Url(JSON.stringify(partial));
     expect(() => decodeIdentityLink(frag)).toThrow();
   });

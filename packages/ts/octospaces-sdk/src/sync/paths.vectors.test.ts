@@ -23,7 +23,7 @@ import {
   userIdFromEdPub,
 } from './paths.js';
 import { roomSlug } from '../core/ids.js';
-import { toBase64Url, fromBase64Url } from './base64url.js';
+import { toBase64Url, fromBase64Url } from './base64.js';
 
 import pathsVectors from '../../../../../tests/test-vectors/paths-scopes.json';
 import userIdVectors from '../../../../../tests/test-vectors/user-id.json';

@@ -15,7 +15,7 @@ import {
   verifyIdentityLinkKeys,
 } from './identity-link.js';
 import type { IdentityLink } from './identity-link.js';
-import { toBase64Url } from '../sync/base64url.js';
+import { toBase64Url } from '../sync/base64.js';
 import { userIdFromEdPub } from '../sync/paths.js';
 
 // ── Mock readProfile (used by verifyIdentityLinkKeys) ─────────────────────────

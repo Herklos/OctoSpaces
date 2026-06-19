@@ -1,5 +1,32 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.13.4 (2026-06-19)
+
+Fourth internal simplification pass — **no public API or behaviour change** (the
+exported surface in `src/index.ts` is byte-identical to 0.13.3; all 654 tests pass
+unchanged; no wire artifact — cap scope, AAD, path, KV key — changed). The safe,
+wire-neutral structural cuts of an aggressive multi-round reduction campaign (target:
+halve the SDK's logic over the next few rounds). Heavier merges (preference-store
+unification, space/node duality consolidation, public-surface slimming) are staged for
+the following rounds.
+
+### Changed
+
+- **base64 modules merged 3 → 1** — `sync/base64url.ts` and `sync/b64-primitives.ts`
+  are folded into `sync/base64.ts`, which now exposes all three tiers (binary-string
+  primitives, the chunked `starfishBase64` provider, and `toBase64Url`/`fromBase64Url`).
+  Every exported symbol and its bytes are unchanged; only the import paths moved.
+- **New `sync/cas-retry.ts`** — the identical pull → build → push → `ConflictError`-retry
+  loop (`MAX_ATTEMPTS = 3`) that `spaces/registry.ts` (`runCas`) and
+  `spaces/object-index.ts` (`updateObjectIndex`) each hand-rolled now shares one
+  `casMutateWithRetry({ load, build, push })`. Push payloads (`{v:1,…}` / `{v:2,objects,
+  updatedAt}`) and conflict semantics are unchanged.
+- **`spaces/object-index.ts`** — the duplicated index push body is one `buildIndexPayload()`
+  helper (used by both `pushIndexSeed` and `updateObjectIndex`).
+- **`sync/client.ts`** — `emptyProfile()` folded into `coerceProfile(null)` (single source
+  of the profile shape, still a fresh object per call) and the inline ed/kem key check
+  extracted to `hasProfileKeys()`.
+
 ## 0.13.3 (2026-06-19)
 
 Third internal simplification pass — **no public API or behaviour change** (the

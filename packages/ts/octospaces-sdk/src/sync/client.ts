@@ -15,7 +15,7 @@ import { pullCache, PULL_CACHE_MAX_AGE_MS } from './pull-cache.js';
 import { cacheProfile, loadCachedProfile } from './profile-cache.js';
 import { keyringName, keyringPull, keyringPush, profilePull, profilePush } from './paths.js';
 import { computeOwnerTrustedAdders } from './trusted-adders.js';
-import { b64FromBinaryString } from './b64-primitives.js';
+import { b64FromBinaryString } from './base64.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
 
 export interface DeviceKeys {
@@ -244,9 +244,9 @@ export interface PublicProfile {
   kemSig: string | null;
 }
 
-const emptyProfile = (): PublicProfile => ({ pseudo: null, avatar: null, edPub: null, kemPub: null, kemSig: null });
-
-/** Coerce a raw profile doc body into a typed {@link PublicProfile} (string fields or null). */
+/** Coerce a raw profile doc body into a typed {@link PublicProfile} (string fields or
+ *  null). `coerceProfile(null)` yields a fresh all-null "empty profile" — the single
+ *  source of both the parsed and the empty shape. */
 function coerceProfile(data: Record<string, unknown> | null): PublicProfile {
   return {
     pseudo: typeof data?.pseudo === 'string' ? data.pseudo : null,
@@ -255,6 +255,11 @@ function coerceProfile(data: Record<string, unknown> | null): PublicProfile {
     kemPub: typeof data?.kemPub === 'string' ? data.kemPub : null,
     kemSig: typeof data?.kemSig === 'string' ? data.kemSig : null,
   };
+}
+
+/** True when a raw profile doc already carries published ed+kem keys. */
+function hasProfileKeys(data: Record<string, unknown> | null): boolean {
+  return typeof data?.edPub === 'string' && typeof data?.kemPub === 'string';
 }
 
 /** Raw `fetch` of a user's profile doc — the shared scaffolding behind the three
@@ -271,12 +276,12 @@ async function fetchProfileData(userId: string): Promise<{ status: number; ok: b
 export async function readProfile(userId: string): Promise<PublicProfile> {
   try {
     const info = await fetchProfileData(userId);
-    if (!info.ok) return emptyProfile();
+    if (!info.ok) return coerceProfile(null);
     const profile = coerceProfile(info.data);
     cacheProfile(userId, profile);
     return profile;
   } catch {
-    return (await loadCachedProfile(userId)) ?? emptyProfile();
+    return (await loadCachedProfile(userId)) ?? coerceProfile(null);
   }
 }
 
@@ -358,7 +363,7 @@ export async function ensureProfileKeys(
   let confirmedAbsent = false;
   try {
     const info = await fetchProfileData(userId);
-    if (info.ok) confirmedAbsent = !(typeof info.data?.edPub === 'string' && typeof info.data?.kemPub === 'string');
+    if (info.ok) confirmedAbsent = !hasProfileKeys(info.data);
     else if (info.status === 404) confirmedAbsent = true;
     else return;
   } catch {
