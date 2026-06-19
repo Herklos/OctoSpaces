@@ -16,22 +16,26 @@
 import type { CapMap, PubAccessMap } from '../core/types.js';
 import { kvGet, kvSet } from '../core/adapters.js';
 
+/** Link-based access credential: the ephemeral cap + keys a link bearer stores to
+ *  reach a space. Shared by the access-store entry, the hydrate input, and
+ *  `linkAccessFromStore` / `recoverSpaceAccess` so the shape stays in one place. */
+export interface LinkAccessPayload {
+  cap: unknown;
+  key: string;
+  /**
+   * The ephemeral X25519 KEM private key (hex) used to decrypt the space keyring.
+   * Present in tokens created by `createSpaceInviteLink` ≥0.8.6.
+   * Absent in legacy tokens — fall back to `session.keys` when missing.
+   */
+  kemPriv?: string;
+  /** The ephemeral X25519 KEM public key (hex) — the keyring recipient identifier. */
+  kemPub?: string;
+  write: boolean;
+}
+
 export type SpaceAccessEntry =
   | { kind: 'member'; cap: string }
-  | {
-      kind: 'link';
-      cap: unknown;
-      key: string;
-      /**
-       * The ephemeral X25519 KEM private key (hex) used to decrypt the space keyring.
-       * Present in tokens created by `createSpaceInviteLink` ≥0.8.6.
-       * Absent in legacy tokens — fall back to `session.keys` when missing.
-       */
-      kemPriv?: string;
-      /** The ephemeral X25519 KEM public key (hex) — the keyring recipient identifier. */
-      kemPub?: string;
-      write: boolean;
-    };
+  | ({ kind: 'link' } & LinkAccessPayload);
 
 export type SpaceAccessMap = Record<string, SpaceAccessEntry>;
 
@@ -51,7 +55,7 @@ let activeKey: string | null = null;
 export async function hydrateSpaceAccessStore(
   userId: string,
   serverCaps: CapMap,
-  serverLinkAccess: Record<string, { cap: unknown; key: string; kemPriv?: string; kemPub?: string; write: boolean }>,
+  serverLinkAccess: Record<string, LinkAccessPayload>,
 ): Promise<void> {
   const key = keyFor(userId);
   // First call for this account: load the kv cache and reset in-memory state.
@@ -179,8 +183,8 @@ export function memberCapsFromStore(): CapMap {
 }
 
 /** Build the `PubAccessMap` slice (link entries already sealed by the caller). */
-export function linkAccessFromStore(): Record<string, { cap: unknown; key: string; kemPriv?: string; kemPub?: string; write: boolean }> {
-  const out: Record<string, { cap: unknown; key: string; kemPriv?: string; kemPub?: string; write: boolean }> = {};
+export function linkAccessFromStore(): Record<string, LinkAccessPayload> {
+  const out: Record<string, LinkAccessPayload> = {};
   for (const [id, e] of Object.entries(cache)) {
     if (e.kind === 'link') out[id] = { cap: e.cap, key: e.key, kemPriv: e.kemPriv, kemPub: e.kemPub, write: e.write };
   }

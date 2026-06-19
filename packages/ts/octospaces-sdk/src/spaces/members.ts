@@ -34,6 +34,7 @@ import {
   localSpaceAccessEntries,
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
+import type { LinkAccessPayload } from '../sync/space-access-store.js';
 import { keyringName, recipientFor, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
 import { verifyKemSig } from './request-verify.js';
 import { addSpaceKeyringRecipient, ensureSpaceKeyringRecipient, isKeyringMissing } from '../sync/client.js';
@@ -314,11 +315,11 @@ export async function recoverSpaceAccess(
   server: { caps: Record<string, string>; pubAccess: Record<string, import('../sync/account-seal.js').SealedBlob> },
 ): Promise<void> {
   // Unseal link access blobs
-  const linkAccess: Record<string, { cap: unknown; key: string; kemPriv?: string; kemPub?: string; write: boolean }> = {};
+  const linkAccess: Record<string, LinkAccessPayload> = {};
   for (const [spaceId, sealed] of Object.entries(server.pubAccess)) {
     try {
       const raw = await unsealFromSelf(session, sealed);
-      const parsed = JSON.parse(raw) as { cap: unknown; key: string; kemPriv?: string; kemPub?: string; write: boolean };
+      const parsed = JSON.parse(raw) as LinkAccessPayload;
       if (parsed.cap && parsed.key) linkAccess[spaceId] = parsed;
     } catch (e) {
       console.error('[octospaces] recoverSpaceAccess: failed to unseal', spaceId, (e instanceof Error ? e.message : String(e)));

@@ -15,6 +15,12 @@ import type { Session } from '../sync/identity.js';
 import { objIndexPull, objIndexPush } from '../sync/paths.js';
 import { getSpaceClient } from '../sync/space-access.js';
 
+/** Extract the `objects` array from a raw index doc body, or `[]` when absent/invalid. */
+function readIndexObjects(raw: unknown): ObjectNode[] {
+  const objects = (raw as { objects?: unknown })?.objects;
+  return Array.isArray(objects) ? (objects as ObjectNode[]) : [];
+}
+
 /** Strip title/emoji from invite nodes before writing to the index. */
 function serializeForIndex(node: ObjectNode): ObjectNode {
   if (node.access === 'invite') {
@@ -75,10 +81,7 @@ export async function updateObjectIndex(
   const MAX_ATTEMPTS = 3;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const res = await client.pull(pullPath).catch(() => null);
-    const raw = res?.data as Record<string, unknown> | undefined;
-    const cur: ObjectNode[] = Array.isArray((raw as { objects?: unknown })?.objects)
-      ? (raw as { objects: ObjectNode[] }).objects
-      : [];
+    const cur = readIndexObjects(res?.data);
     const next = mutator(cur, Date.now());
     if (!next) return;
     try {
@@ -105,8 +108,5 @@ export async function readObjectTree(
 ): Promise<ObjectNode[]> {
   const client = getSpaceClient(spaceId, session);
   const res = await client.pull(objIndexPull(spaceId)).catch(() => null);
-  const raw = res?.data as Record<string, unknown> | undefined;
-  return Array.isArray((raw as { objects?: unknown })?.objects)
-    ? (raw as { objects: ObjectNode[] }).objects
-    : [];
+  return readIndexObjects(res?.data);
 }
