@@ -28,8 +28,6 @@
  */
 import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
 import { mintMemberCap, evictMember } from '@drakkar.software/starfish-sharing';
-import { hexToBytes } from '@drakkar.software/starfish-keyring';
-import { ed25519 } from '@noble/curves/ed25519.js';
 import type { CapCert } from '@drakkar.software/starfish-protocol';
 import type { RevocationEntry, RevocationList } from '@drakkar.software/starfish-protocol';
 
@@ -42,10 +40,11 @@ import {
   nodeKeyringScope,
   nodeMemberScope,
   nodeStreamScope,
-  RECIPIENT_LABEL_LEN,
+  recipientFor,
   spaceMemberScope,
   userIdFromEdPub,
 } from '../sync/paths.js';
+import { verifyKemSig } from './request-verify.js';
 import { ensureNodeKeyringRecipient } from '../sync/node-keyring.js';
 import {
   saveNodeAccessEntry,
@@ -324,11 +323,7 @@ export async function inviteToNode(
     throw new Error('Invalid join request: userId does not match edPub.');
   }
   // Verify kemSig — Ed25519 sig of kemPub by edPriv — prevents KEM-key substitution.
-  let kemSigValid = false;
-  try {
-    kemSigValid = !!req.kemSig && ed25519.verify(hexToBytes(req.kemSig), hexToBytes(req.kemPub), hexToBytes(req.edPub));
-  } catch { /* malformed hex — treat as invalid */ }
-  if (!kemSigValid) {
+  if (!verifyKemSig(req.edPub, req.kemPub, req.kemSig)) {
     throw new Error('Invalid join request: kemSig is missing or invalid.');
   }
 
@@ -346,7 +341,7 @@ export async function inviteToNode(
   if (node.enc && !perNodeKeyring) {
     // LEGACY space-wide keyring path (non-isolated enc): add the invitee as a recipient of
     // the space keyring (grants decryption of ALL enc nodes in the space). Ensure-first.
-    await ensureSpaceKeyringRecipient(session, spaceId, { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, RECIPIENT_LABEL_LEN) });
+    await ensureSpaceKeyringRecipient(session, spaceId, recipientFor(req.kemPub, req.userId));
   }
 
   const bundle: NodeInviteBundle = {
@@ -361,11 +356,7 @@ export async function inviteToNode(
     // PER-NODE keyring: ensure it exists then add the requester's KEM as a recipient
     // (ensure-before-add invariant), and mint a READ-only keyring cap so the isolated
     // requester can fetch+decrypt without ever touching the space key.
-    await ensureNodeKeyringRecipient(session, spaceId, nodeId, {
-      subKem: req.kemPub,
-      userId: req.userId,
-      label: req.userId.slice(0, RECIPIENT_LABEL_LEN),
-    });
+    await ensureNodeKeyringRecipient(session, spaceId, nodeId, recipientFor(req.kemPub, req.userId));
     bundle.keyringCap = await mintMemberCap(
       session.keys.edPriv,
       session.keys.edPub,
@@ -645,18 +636,14 @@ export async function createNodeInviteLink(
   if (node.enc && !perNodeKeyring) {
     // LEGACY space-wide keyring path (non-isolated enc): add the ephemeral KEM to the space
     // keyring. Ensure-first (invariant: ownerEnsureSpaceKeyring precedes addCollectionRecipient).
-    await ensureSpaceKeyringRecipient(session, spaceId, { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, RECIPIENT_LABEL_LEN) });
+    await ensureSpaceKeyringRecipient(session, spaceId, recipientFor(ek.kemPub, ephemeralUserId));
   }
 
   let keyringCap: unknown;
   if (perNodeKeyring) {
     // PER-NODE keyring: ensure + add the ephemeral KEM as a recipient (ensure-before-add),
     // then mint a READ-only keyring cap for the link bearer.
-    await ensureNodeKeyringRecipient(session, spaceId, nodeId, {
-      subKem: ek.kemPub,
-      userId: ephemeralUserId,
-      label: ephemeralUserId.slice(0, RECIPIENT_LABEL_LEN),
-    });
+    await ensureNodeKeyringRecipient(session, spaceId, nodeId, recipientFor(ek.kemPub, ephemeralUserId));
     keyringCap = await mintMemberCap(
       session.keys.edPriv,
       session.keys.edPub,

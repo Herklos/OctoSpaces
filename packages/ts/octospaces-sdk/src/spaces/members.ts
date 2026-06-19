@@ -34,7 +34,8 @@ import {
   localSpaceAccessEntries,
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
-import { keyringName, RECIPIENT_LABEL_LEN, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
+import { keyringName, recipientFor, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
+import { verifyKemSig } from './request-verify.js';
 import { addSpaceKeyringRecipient, ensureSpaceKeyringRecipient, isKeyringMissing } from '../sync/client.js';
 import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, buildSpace, readSpaces, updateSpacesDoc, removeSpaceMember } from './registry.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
@@ -126,18 +127,14 @@ export async function inviteToSpace(
   }
   // Verify kemSig — Ed25519 sig of kemPub by edPriv — proves the requester
   // actually owns the private key for edPub and created kemPub (prevents KEM-key substitution).
-  let kemSigValid = false;
-  try {
-    kemSigValid = !!req.kemSig && ed25519.verify(hexToBytes(req.kemSig), hexToBytes(req.kemPub), hexToBytes(req.edPub));
-  } catch { /* malformed hex — treat as invalid */ }
-  if (!kemSigValid) {
+  if (!verifyKemSig(req.edPub, req.kemPub, req.kemSig)) {
     throw new Error('That is not a valid join request: kemSig is missing or invalid.');
   }
   await addSpaceMember(session.accountClient, spaceId, session.userId, req.userId);
 
   // Ensure the space-wide keyring exists (creates it with only the owner if absent),
   // then add the invitee as a recipient so they can decrypt enc nodes from the start.
-  await ensureSpaceKeyringRecipient(session, spaceId, { subKem: req.kemPub, userId: req.userId, label: req.userId.slice(0, RECIPIENT_LABEL_LEN) });
+  await ensureSpaceKeyringRecipient(session, spaceId, recipientFor(req.kemPub, req.userId));
 
   // NOTE: 'chat' is the cap collection the deployed server's space-member enricher recognises.
   const cap = await mintMemberCap(
@@ -260,7 +257,7 @@ export async function createSpaceInviteLink(
   await addSpaceMember(session.accountClient, spaceId, session.userId, ephemeralUserId);
 
   // Ensure the keyring exists, then add the ephemeral KEM so link-bearers can decrypt enc content.
-  await ensureSpaceKeyringRecipient(session, spaceId, { subKem: ek.kemPub, userId: ephemeralUserId, label: ephemeralUserId.slice(0, RECIPIENT_LABEL_LEN) });
+  await ensureSpaceKeyringRecipient(session, spaceId, recipientFor(ek.kemPub, ephemeralUserId));
 
   const token: SpaceInviteLinkToken = {
     v: 1, spaceId, spaceName, cap, key: ek.edPriv, kemPriv: ek.kemPriv, kemPub: ek.kemPub, write,
@@ -300,11 +297,7 @@ export async function addDeviceToSpaceKeyring(
   // Swallow isKeyringMissing separately — owner may not have created E2EE yet for this space.
   // INVARIANT: must NOT call ownerEnsureKeyring here (device pairing ≠ owner flow).
   try {
-    await addSpaceKeyringRecipient(session, spaceId, {
-      subKem: device.kemPub,
-      userId: device.userId,
-      label: device.userId.slice(0, RECIPIENT_LABEL_LEN),
-    });
+    await addSpaceKeyringRecipient(session, spaceId, recipientFor(device.kemPub, device.userId));
   } catch (err) {
     if (!isKeyringMissing(err)) throw err;
   }

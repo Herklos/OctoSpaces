@@ -51,6 +51,7 @@ import { createKeyedStore } from '../sync/keyed-store.js';
 import { verifyIdentityLinkBinding, verifyIdentityLinkKeys } from './identity-link.js';
 import type { IdentityLink } from './identity-link.js';
 import { createNode, inviteToNode, acceptNodeInvite } from './nodes.js';
+import { verifyKemSig } from './request-verify.js';
 import { readObjectTree } from './object-index.js';
 import { randomId } from '../core/ids.js';
 import type { Session } from '../sync/identity.js';
@@ -70,6 +71,52 @@ import { ed25519 } from '@noble/curves/ed25519.js';
  */
 const inboxAad = (recipientId: string, shard: string, kind?: string) =>
   kind ? `octospaces:inbox:v1:${recipientId}:${shard}:${kind}` : `octospaces:inbox:v1:${recipientId}:${shard}`;
+
+/**
+ * Trial-unseal an inbox element for `session.userId`: try the kind-bound AAD
+ * (SDK ≥0.13 seals) first, falling back to the legacy shard-only AAD. Returns the
+ * plaintext, or `null` when the element isn't sealed to us / is tampered.
+ */
+async function tryUnsealInbox(
+  session: Session,
+  sealed: SealedBlob,
+  shard: string,
+  mkind: string | undefined,
+  defaultKind: string,
+): Promise<string | null> {
+  try {
+    const aad = inboxAad(session.userId, shard, mkind ?? defaultKind);
+    try {
+      return await unsealFromRecipient(session, sealed, aad);
+    } catch {
+      return await unsealFromRecipient(session, sealed, inboxAad(session.userId, shard));
+    }
+  } catch {
+    return null; // not sealed to us or tampered — trial-unseal skip
+  }
+}
+
+/**
+ * Seal `obj` to a recipient and append it to their current-shard inbox, binding
+ * the kind into the AAD (`inboxAad`). Shared by submit/accept/reject — the seal
+ * AAD and the append target use the SAME freshly-computed shard.
+ */
+async function sealAppend(
+  session: Session,
+  recipientUserId: string,
+  recipientKemPub: string,
+  kind: string,
+  obj: unknown,
+): Promise<void> {
+  const shard = inboxShard();
+  const sealed = await sealToRecipient(session, recipientKemPub, JSON.stringify(obj), inboxAad(recipientUserId, shard, kind));
+  await appendToInbox(
+    recipientUserId,
+    shard,
+    { sealed, ts: Date.now(), mkind: kind } as unknown as Record<string, unknown>,
+    { edPubHex: session.keys.edPub, edPrivHex: session.keys.edPriv },
+  );
+}
 
 // ── Owner-store: reqId → owner edPub (sender-authenticity for scanResourceGrants) ────────────
 //
@@ -236,15 +283,7 @@ export async function submitResourceRequest(
   saveReqIdOwner(reqId, ownerLink.edPub);
 
   // Seal the request to the owner's KEM key — only they can read it.
-  const shard = inboxShard();
-  const mkind = 'request';
-  const sealed = await sealToRecipient(session, ownerLink.kemPub, JSON.stringify(request), inboxAad(ownerLink.ownerId, shard, mkind));
-  const element: InboxPayload = { sealed, ts: Date.now(), mkind };
-
-  await appendToInbox(ownerLink.ownerId, shard, element as unknown as Record<string, unknown>, {
-    edPubHex: session.keys.edPub,
-    edPrivHex: session.keys.edPriv,
-  });
+  await sealAppend(session, ownerLink.ownerId, ownerLink.kemPub, 'request', request);
 
   return { reqId };
 }
@@ -282,18 +321,8 @@ export async function scanResourceRequests(
       const payload = item?.data as Partial<InboxPayload> | undefined;
       if (!payload?.sealed) continue;
 
-      let plaintext: string;
-      try {
-        // Try kind-bound AAD first (SDK ≥0.13 seals); fall back to legacy shard-only AAD.
-        const aad = inboxAad(session.userId, shard, payload.mkind ?? 'request');
-        try {
-          plaintext = await unsealFromRecipient(session, payload.sealed, aad);
-        } catch {
-          plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId, shard));
-        }
-      } catch {
-        continue; // not sealed to us or tampered — trial-unseal skip
-      }
+      const plaintext = await tryUnsealInbox(session, payload.sealed, shard, payload.mkind, 'request');
+      if (plaintext === null) continue;
 
       let req: Partial<ResourceRequest>;
       try {
@@ -330,12 +359,8 @@ export async function scanResourceRequests(
 
       // Verify kemSig — Ed25519 sig of kemPub by edPriv — prevents an MITM from
       // substituting their own kemPub so they can read E2EE content sealed for the requester.
-      try {
-        if (!ed25519.verify(hexToBytes(req.requester.kemSig), hexToBytes(req.requester.kemPub), hexToBytes(req.requester.edPub))) {
-          continue; // invalid kemSig — skip
-        }
-      } catch {
-        continue; // malformed hex — skip
+      if (!verifyKemSig(req.requester.edPub, req.requester.kemPub, req.requester.kemSig)) {
+        continue; // missing/invalid kemSig or malformed hex — skip
       }
 
       // Space-id allow-list (optional)
@@ -430,15 +455,7 @@ export async function acceptResourceRequest(
     nodeId,
     bundle: bundleJson,
   };
-  const grantShard = inboxShard();
-  const grantKind = 'grant';
-  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(grant), inboxAad(req.requester.userId, grantShard, grantKind));
-  await appendToInbox(
-    req.requester.userId,
-    grantShard,
-    { sealed, ts: Date.now(), mkind: grantKind } as unknown as Record<string, unknown>,
-    { edPubHex: session.keys.edPub, edPrivHex: session.keys.edPriv },
-  );
+  await sealAppend(session, req.requester.userId, req.requester.kemPub, 'grant', grant);
 
   return { spaceId: req.spaceId, nodeId };
 }
@@ -461,15 +478,7 @@ export async function rejectResourceRequest(
     reqId: req.reqId,
     ...(reason ? { reason } : {}),
   };
-  const rejectShard = inboxShard();
-  const rejectKind = 'reject';
-  const sealed = await sealToRecipient(session, req.requester.kemPub, JSON.stringify(rejection), inboxAad(req.requester.userId, rejectShard, rejectKind));
-  await appendToInbox(
-    req.requester.userId,
-    rejectShard,
-    { sealed, ts: Date.now(), mkind: rejectKind } as unknown as Record<string, unknown>,
-    { edPubHex: session.keys.edPub, edPrivHex: session.keys.edPriv },
-  );
+  await sealAppend(session, req.requester.userId, req.requester.kemPub, 'reject', rejection);
 }
 
 // ── REQUESTER: scan grants ────────────────────────────────────────────────────
@@ -498,18 +507,8 @@ export async function scanResourceGrants(
       const payload = item?.data as Partial<InboxPayload> | undefined;
       if (!payload?.sealed) continue;
 
-      let plaintext: string;
-      try {
-        // Try kind-bound AAD first (SDK ≥0.13); fall back to legacy shard-only AAD.
-        const aad = inboxAad(session.userId, shard, payload.mkind ?? 'grant');
-        try {
-          plaintext = await unsealFromRecipient(session, payload.sealed, aad);
-        } catch {
-          plaintext = await unsealFromRecipient(session, payload.sealed, inboxAad(session.userId, shard));
-        }
-      } catch {
-        continue;
-      }
+      const plaintext = await tryUnsealInbox(session, payload.sealed, shard, payload.mkind, 'grant');
+      if (plaintext === null) continue;
 
       let msg: Partial<ResourceGrant | ResourceReject>;
       try {

@@ -324,6 +324,13 @@ export const KEM_SIG_HEX_RE = /^[0-9a-f]{128}$/i;
 export const USER_ID_HEX_LENGTH = 32;
 /** Short label length (hex chars) used for human-readable keyring recipient labels. */
 export const RECIPIENT_LABEL_LEN = 8;
+
+/** Build a keyring-recipient descriptor with the standard short label from a userId. */
+export const recipientFor = (subKem: string, userId: string) => ({
+  subKem,
+  userId,
+  label: userId.slice(0, RECIPIENT_LABEL_LEN),
+});
 /** OctoSpaces userId regex: first {@link USER_ID_HEX_LENGTH} hex chars of sha256(edPub). */
 export const USER_ID_HEX_RE = new RegExp(`^[0-9a-f]{${USER_ID_HEX_LENGTH}}$`, 'i');
 
