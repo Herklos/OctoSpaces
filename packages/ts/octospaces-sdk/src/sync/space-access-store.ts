@@ -13,7 +13,7 @@
  * user's synced `_spaces` doc (durable source of truth; merged over local on hydrate).
  * Keyed PER-USER so multiple accounts on one device never see each other's entries.
  */
-import type { CapMap, PubAccessMap } from '../core/types.js';
+import type { CapMap } from '../core/types.js';
 import { kvGet, kvSet } from '../core/adapters.js';
 
 /** Link-based access credential: the ephemeral cap + keys a link bearer stores to

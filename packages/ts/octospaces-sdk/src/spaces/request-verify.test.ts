@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
+import { bytesToHex } from '@drakkar.software/starfish-keyring';
 import { verifyKemSig } from './request-verify.js';
 
 function identity() {
