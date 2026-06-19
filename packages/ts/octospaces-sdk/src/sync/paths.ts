@@ -21,6 +21,17 @@ import type { ScopePreset } from '@drakkar.software/starfish-identities';
 const pull = (rest: string) => `/pull/${rest}`;
 const push = (rest: string) => `/push/${rest}`;
 
+/**
+ * Derive the `/pull` + `/push` path helpers from a collection's `…Name` helper,
+ * for the common case where both are just the storage name under the respective
+ * verb prefix. Generic over the name helper's argument tuple so each derived
+ * helper keeps the same call signature.
+ */
+const pullPush = <A extends unknown[]>(name: (...args: A) => string) => ({
+  pull: (...args: A) => pull(name(...args)),
+  push: (...args: A) => push(name(...args)),
+});
+
 /** A room id is `sp-<rand>-<name>`; the space is its first two `-` segments. */
 export const spaceIdFromRoomId = (roomId: string) => roomId.split('-').slice(0, 2).join('-');
 
@@ -59,8 +70,7 @@ export const spaceAccessPush = (spaceId: string) => push(`spaces/${spaceId}/_acc
 // the real title from the node's content doc. Keep in sync with the objindex
 // collection in apps/server AND Infra collections.py.
 export const objIndexName = (spaceId: string) => `spaces/${spaceId}/objects/_index`;
-export const objIndexPull = (spaceId: string) => pull(objIndexName(spaceId));
-export const objIndexPush = (spaceId: string) => push(objIndexName(spaceId));
+export const { pull: objIndexPull, push: objIndexPush } = pullPush(objIndexName);
 
 // ── Space-tier & general object content (space:member gated) ─────────────────
 //
@@ -72,37 +82,31 @@ export const objIndexPush = (spaceId: string) => push(objIndexName(spaceId));
 // Keep in sync with the objlog/objsnap/objdoc/objblob collections in
 // apps/server AND Infra collections.py.
 export const objLogName = (spaceId: string, objectId: string) => `spaces/${spaceId}/objects/logs/${objectId}`;
-export const objLogPull = (spaceId: string, objectId: string) => pull(objLogName(spaceId, objectId));
-export const objLogPush = (spaceId: string, objectId: string) => push(objLogName(spaceId, objectId));
+export const { pull: objLogPull, push: objLogPush } = pullPush(objLogName);
 
 export const objDocName = (spaceId: string, objectId: string) => `spaces/${spaceId}/objects/docs/${objectId}`;
-export const objDocPull = (spaceId: string, objectId: string) => pull(objDocName(spaceId, objectId));
-export const objDocPush = (spaceId: string, objectId: string) => push(objDocName(spaceId, objectId));
+export const { pull: objDocPull, push: objDocPush } = pullPush(objDocName);
 
 /** Storage path of one sealed object blob — also the AAD bound into its seal. */
 export const objectBlobName = (spaceId: string, blobId: string) => `spaces/${spaceId}/objects/blobs/${blobId}`;
-export const objectBlobPull = (spaceId: string, blobId: string) => pull(objectBlobName(spaceId, blobId));
-export const objectBlobPush = (spaceId: string, blobId: string) => push(objectBlobName(spaceId, blobId));
+export const { pull: objectBlobPull, push: objectBlobPush } = pullPush(objectBlobName);
 
 // ── Public node content (world-readable) ─────────────────────────────────────
 // For `access:'public'` nodes, content is stored here so anonymous readers can
 // fetch it without being a space member. Keep in sync with objpub in server config.
 export const objPubName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/pub/${nodeId}`;
-export const objPubPull = (spaceId: string, nodeId: string) => pull(objPubName(spaceId, nodeId));
-export const objPubPush = (spaceId: string, nodeId: string) => push(objPubName(spaceId, nodeId));
+export const { pull: objPubPull, push: objPubPush } = pullPush(objPubName);
 
 // ── Invite-only plaintext content (cap-gated) ────────────────────────────────
 // For `access:'invite' + enc:false` nodes, content is stored here. The `objinv`
 // collection is intentionally excluded from spaceMemberScope — only a per-node cap
 // (nodeMemberScope) can reach it. Keep in sync with objinv in server config.
 export const objInvName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/n/${nodeId}/content`;
-export const objInvPull = (spaceId: string, nodeId: string) => pull(objInvName(spaceId, nodeId));
-export const objInvPush = (spaceId: string, nodeId: string) => push(objInvName(spaceId, nodeId));
+export const { pull: objInvPull, push: objInvPush } = pullPush(objInvName);
 
 // ── Per-space custom type registry ────────────────────────────────────────────
 export const typesIndexName = (spaceId: string) => `spaces/${spaceId}/types/_index`;
-export const typesIndexPull = (spaceId: string) => pull(typesIndexName(spaceId));
-export const typesIndexPush = (spaceId: string) => push(typesIndexName(spaceId));
+export const { pull: typesIndexPull, push: typesIndexPush } = pullPush(typesIndexName);
 
 // ── Global object directory (server-maintained projection) ───────────────────
 // Pull `_index/objects/{shard}` to discover world-readable public nodes.
@@ -121,16 +125,14 @@ export const spaceDirPull = (shard: string = 'public') => pull(spaceDirName(shar
 // Path sits under objects/pub/{nodeId}/log — sibling of the objpub merge-doc.
 // Public-read + member-write. Keep in sync with objpublog in server collections.
 export const objPubLogName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/pub/${nodeId}/log`;
-export const objPubLogPull = (spaceId: string, nodeId: string) => pull(objPubLogName(spaceId, nodeId));
-export const objPubLogPush = (spaceId: string, nodeId: string) => push(objPubLogName(spaceId, nodeId));
+export const { pull: objPubLogPull, push: objPubLogPush } = pullPush(objPubLogName);
 
 // ── Invite-only append-log (cap-gated) ───────────────────────────────────────
 // For access:'invite'+enc:false nodes with an append-log content kind. Gated by per-node
 // cap via the sharing plugin — NOT space:member. Excluded from spaceMemberScope.
 // Keep in sync with objinvlog in server collections.
 export const objInvLogName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/n/${nodeId}/log`;
-export const objInvLogPull = (spaceId: string, nodeId: string) => pull(objInvLogName(spaceId, nodeId));
-export const objInvLogPush = (spaceId: string, nodeId: string) => push(objInvLogName(spaceId, nodeId));
+export const { pull: objInvLogPull, push: objInvLogPush } = pullPush(objInvLogName);
 
 // ── Room-scoped stream path shortcuts (roomId encodes spaceId) ────────────────
 // Convenience wrappers for callers that have a roomId and want to route to the
@@ -152,8 +154,7 @@ export const streamInvRoomPush = (roomId: string) => objInvLogPush(spaceIdFromRo
 // Excluded from spaceMemberScope; covered by ownerScope / spaceOwnerScope.
 // Keep in sync with objowner in server collections.
 export const objOwnerName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/owner/${nodeId}`;
-export const objOwnerPull = (spaceId: string, nodeId: string) => pull(objOwnerName(spaceId, nodeId));
-export const objOwnerPush = (spaceId: string, nodeId: string) => push(objOwnerName(spaceId, nodeId));
+export const { pull: objOwnerPull, push: objOwnerPush } = pullPush(objOwnerName);
 
 // ── Identity inbox (public-write, cap-read) ───────────────────────────────────
 // Per-identity DM drop-box. Anyone appends; only the recipient reads via cap:read:inbox.
@@ -181,6 +182,10 @@ export const OBJECT_COLLECTIONS: string[] = [
 const OWNER_COLLECTIONS: string[] = [...OBJECT_COLLECTIONS, 'objowner', 'objinvlog'];
 
 // ── Cap scopes ────────────────────────────────────────────────────────────────
+
+/** Read/list, plus write when `canWrite`. The standard member op-set. */
+const rwOps = (canWrite: boolean): ('read' | 'write' | 'list')[] =>
+  canWrite ? ['read', 'list', 'write'] : ['read', 'list'];
 
 /** Full owner/device access to every space the identity owns (all tiers). */
 export function ownerScope(): ScopePreset {
@@ -211,9 +216,8 @@ export function spaceOwnerScope(spaceId: string): ScopePreset {
  * future nodes.
  */
 export function spaceMemberScope(spaceId: string, canWrite: boolean): ScopePreset {
-  const ops: ('read' | 'write' | 'list')[] = canWrite ? ['read', 'list', 'write'] : ['read', 'list'];
   return {
-    ops,
+    ops: rwOps(canWrite),
     collections: OBJECT_COLLECTIONS,
     paths: [`spaces/${spaceId}/**`],
   };
@@ -225,9 +229,8 @@ export function spaceMemberScope(spaceId: string, canWrite: boolean): ScopePrese
  * member scope. Use `spaceMemberScope` when the bearer also needs to decrypt enc content.
  */
 export function nodeMemberScope(spaceId: string, nodeId: string, canWrite: boolean): ScopePreset {
-  const ops: ('read' | 'write' | 'list')[] = canWrite ? ['read', 'list', 'write'] : ['read', 'list'];
   return {
-    ops,
+    ops: rwOps(canWrite),
     collections: ['objinv'],
     paths: [`spaces/${spaceId}/objects/n/${nodeId}/**`],
   };
@@ -242,9 +245,8 @@ export function nodeMemberScope(spaceId: string, nodeId: string, canWrite: boole
  * collection it is reaching.
  */
 export function nodeStreamScope(spaceId: string, nodeId: string, canWrite: boolean): ScopePreset {
-  const ops: ('read' | 'write' | 'list')[] = canWrite ? ['read', 'list', 'write'] : ['read', 'list'];
   return {
-    ops,
+    ops: rwOps(canWrite),
     collections: ['objinvlog'],
     paths: [`spaces/${spaceId}/objects/n/${nodeId}/**`],
   };
@@ -310,10 +312,12 @@ export function bytesToHex(b: Uint8Array): string {
   return s;
 }
 
+/** A 32-byte key as 64 hex chars — shared by Ed25519 + X25519 KEM public keys. */
+const HEX64 = /^[0-9a-f]{64}$/i;
 /** Ed25519 public key: 32 bytes = 64 lowercase hex chars. */
-export const ED_PUB_HEX_RE = /^[0-9a-f]{64}$/i;
+export const ED_PUB_HEX_RE = HEX64;
 /** X25519 KEM public key: 32 bytes = 64 lowercase hex chars. */
-export const KEM_PUB_HEX_RE = /^[0-9a-f]{64}$/i;
+export const KEM_PUB_HEX_RE = HEX64;
 /** Ed25519 signature: 64 bytes = 128 lowercase hex chars. */
 export const KEM_SIG_HEX_RE = /^[0-9a-f]{128}$/i;
 /** Length (in hex chars) of an OctoSpaces userId (first 16 bytes of sha256(edPub)). */

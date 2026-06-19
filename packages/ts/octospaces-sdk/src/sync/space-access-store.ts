@@ -106,63 +106,63 @@ export function removeSpaceAccessEntry(spaceId: string): void {
   persist();
 }
 
-// ── Per-node access entries (keyed by `${spaceId}:${nodeId}`) ────────────────
+// ── Per-node access entries (keyed by `${spaceId}:${nodeId}` + tier suffix) ───
+//
+// A `member` cap covers exactly one collection, so a node's content (`objinv`),
+// append-log STREAM (`objinvlog`) and E2EE KEYRING (`nodekeyring`) each need their
+// OWN cap. They are stored under sibling keys (base / `:stream` / `:keyring`) so all
+// three ride the SAME sync/serialization machinery as every other entry — no
+// entry-shape change. All accessors delegate to the space-tier primitives above.
+
+const nodeKey = (spaceId: string, nodeId: string, suffix: '' | ':stream' | ':keyring' = '') =>
+  `${spaceId}:${nodeId}${suffix}`;
 
 /** Look up a per-node invite access entry. Returns null if not invited or unknown. */
 export function getNodeAccessEntry(spaceId: string, nodeId: string): SpaceAccessEntry | null {
-  return cache[`${spaceId}:${nodeId}`] ?? null;
+  return getSpaceAccessEntry(nodeKey(spaceId, nodeId));
 }
 
 /** Persist an invite access entry for one node. */
 export function saveNodeAccessEntry(spaceId: string, nodeId: string, entry: SpaceAccessEntry): void {
-  saveSpaceAccessEntry(`${spaceId}:${nodeId}`, entry);
+  saveSpaceAccessEntry(nodeKey(spaceId, nodeId), entry);
 }
 
 /** Forget a node's invite access entry (e.g. on leaving the node). Also removes the
  *  sibling stream + keyring entries so they don't orphan and grant lingering access. */
 export function removeNodeAccessEntry(spaceId: string, nodeId: string): void {
-  removeSpaceAccessEntry(`${spaceId}:${nodeId}`);
-  removeSpaceAccessEntry(`${spaceId}:${nodeId}:stream`);
-  removeSpaceAccessEntry(`${spaceId}:${nodeId}:keyring`);
+  removeSpaceAccessEntry(nodeKey(spaceId, nodeId));
+  removeSpaceAccessEntry(nodeKey(spaceId, nodeId, ':stream'));
+  removeSpaceAccessEntry(nodeKey(spaceId, nodeId, ':keyring'));
 }
-
-// A `member` cap covers exactly one collection, so a node's append-log STREAM
-// (`objinvlog`) needs its OWN cap separate from the content cap (`objinv`). It is
-// stored under a distinct `${spaceId}:${nodeId}:stream` key so it rides the SAME
-// sync/serialization machinery as every other entry — no entry-shape change.
 
 /** Look up a per-node STREAM (objinvlog) access entry. Null if absent. */
 export function getNodeStreamAccessEntry(spaceId: string, nodeId: string): SpaceAccessEntry | null {
-  return cache[`${spaceId}:${nodeId}:stream`] ?? null;
+  return getSpaceAccessEntry(nodeKey(spaceId, nodeId, ':stream'));
 }
 
 /** Persist a per-node STREAM (objinvlog) access entry. */
 export function saveNodeStreamAccessEntry(spaceId: string, nodeId: string, entry: SpaceAccessEntry): void {
-  saveSpaceAccessEntry(`${spaceId}:${nodeId}:stream`, entry);
+  saveSpaceAccessEntry(nodeKey(spaceId, nodeId, ':stream'), entry);
 }
 
 /** Forget a node's STREAM access entry. */
 export function removeNodeStreamAccessEntry(spaceId: string, nodeId: string): void {
-  removeSpaceAccessEntry(`${spaceId}:${nodeId}:stream`);
+  removeSpaceAccessEntry(nodeKey(spaceId, nodeId, ':stream'));
 }
-
-// A per-node E2EE keyring (`nodekeyring`) is a third collection, so an isolated
-// requester needs a SEPARATE read-only cap for it (single-collection member caps).
-// Stored under `${spaceId}:${nodeId}:keyring`, riding the same sync machinery.
 
 /** Look up a per-node KEYRING (nodekeyring) access entry. Null if absent. */
 export function getNodeKeyringAccessEntry(spaceId: string, nodeId: string): SpaceAccessEntry | null {
-  return cache[`${spaceId}:${nodeId}:keyring`] ?? null;
+  return getSpaceAccessEntry(nodeKey(spaceId, nodeId, ':keyring'));
 }
 
 /** Persist a per-node KEYRING (nodekeyring) access entry. */
 export function saveNodeKeyringAccessEntry(spaceId: string, nodeId: string, entry: SpaceAccessEntry): void {
-  saveSpaceAccessEntry(`${spaceId}:${nodeId}:keyring`, entry);
+  saveSpaceAccessEntry(nodeKey(spaceId, nodeId, ':keyring'), entry);
 }
 
 /** Forget a node's KEYRING access entry. */
 export function removeNodeKeyringAccessEntry(spaceId: string, nodeId: string): void {
-  removeSpaceAccessEntry(`${spaceId}:${nodeId}:keyring`);
+  removeSpaceAccessEntry(nodeKey(spaceId, nodeId, ':keyring'));
 }
 
 /** A snapshot of the in-memory cache — used by `recoverSpaceAccess` to find entries
