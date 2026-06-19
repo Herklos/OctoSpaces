@@ -1,5 +1,20 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.13.3 (2026-06-19)
+
+Third internal simplification pass — **no public API or behaviour change** (the
+exported surface in `src/index.ts` is byte-identical to 0.13.2; all 654 tests pass
+unchanged). The package was already simplified hard in 0.13.1/0.13.2, so this pass
+is a small structural top-up.
+
+### Changed
+
+- **`sync/space-access-store.ts`** — the nine near-identical per-node access-entry
+  accessors (`get`/`save`/`remove` across the content / `:stream` / `:keyring` tiers)
+  now share one `nodeEntryApi(suffix)` generator instead of nine hand-written
+  declarations. Every exported name and call signature is unchanged (`removeNodeAccessEntry`
+  keeps its explicit three-sibling fan-out).
+
 ## 0.13.2 (2026-06-19)
 
 Second internal simplification pass — **no public API or behaviour change** (the

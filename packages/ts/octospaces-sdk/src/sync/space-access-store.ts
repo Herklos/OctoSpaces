@@ -121,53 +121,47 @@ export function removeSpaceAccessEntry(spaceId: string): void {
 const nodeKey = (spaceId: string, nodeId: string, suffix: '' | ':stream' | ':keyring' = '') =>
   `${spaceId}:${nodeId}${suffix}`;
 
-/** Look up a per-node invite access entry. Returns null if not invited or unknown. */
-export function getNodeAccessEntry(spaceId: string, nodeId: string): SpaceAccessEntry | null {
-  return getSpaceAccessEntry(nodeKey(spaceId, nodeId));
-}
+/** get/save/remove for ONE node tier, all delegating to the space-tier primitives at
+ *  the suffixed key. The three tiers (content / `:stream` / `:keyring`) are identical
+ *  but for their suffix, so they share this generator. */
+const nodeEntryApi = (suffix: '' | ':stream' | ':keyring') => ({
+  get: (spaceId: string, nodeId: string): SpaceAccessEntry | null =>
+    getSpaceAccessEntry(nodeKey(spaceId, nodeId, suffix)),
+  save: (spaceId: string, nodeId: string, entry: SpaceAccessEntry): void =>
+    saveSpaceAccessEntry(nodeKey(spaceId, nodeId, suffix), entry),
+  remove: (spaceId: string, nodeId: string): void =>
+    removeSpaceAccessEntry(nodeKey(spaceId, nodeId, suffix)),
+});
+const nodeContent = nodeEntryApi('');
+const nodeStream = nodeEntryApi(':stream');
+const nodeKeyring = nodeEntryApi(':keyring');
 
+/** Look up a per-node invite access entry. Returns null if not invited or unknown. */
+export const getNodeAccessEntry = nodeContent.get;
 /** Persist an invite access entry for one node. */
-export function saveNodeAccessEntry(spaceId: string, nodeId: string, entry: SpaceAccessEntry): void {
-  saveSpaceAccessEntry(nodeKey(spaceId, nodeId), entry);
-}
+export const saveNodeAccessEntry = nodeContent.save;
 
 /** Forget a node's invite access entry (e.g. on leaving the node). Also removes the
  *  sibling stream + keyring entries so they don't orphan and grant lingering access. */
 export function removeNodeAccessEntry(spaceId: string, nodeId: string): void {
-  removeSpaceAccessEntry(nodeKey(spaceId, nodeId));
-  removeSpaceAccessEntry(nodeKey(spaceId, nodeId, ':stream'));
-  removeSpaceAccessEntry(nodeKey(spaceId, nodeId, ':keyring'));
+  nodeContent.remove(spaceId, nodeId);
+  nodeStream.remove(spaceId, nodeId);
+  nodeKeyring.remove(spaceId, nodeId);
 }
 
 /** Look up a per-node STREAM (objinvlog) access entry. Null if absent. */
-export function getNodeStreamAccessEntry(spaceId: string, nodeId: string): SpaceAccessEntry | null {
-  return getSpaceAccessEntry(nodeKey(spaceId, nodeId, ':stream'));
-}
-
+export const getNodeStreamAccessEntry = nodeStream.get;
 /** Persist a per-node STREAM (objinvlog) access entry. */
-export function saveNodeStreamAccessEntry(spaceId: string, nodeId: string, entry: SpaceAccessEntry): void {
-  saveSpaceAccessEntry(nodeKey(spaceId, nodeId, ':stream'), entry);
-}
-
+export const saveNodeStreamAccessEntry = nodeStream.save;
 /** Forget a node's STREAM access entry. */
-export function removeNodeStreamAccessEntry(spaceId: string, nodeId: string): void {
-  removeSpaceAccessEntry(nodeKey(spaceId, nodeId, ':stream'));
-}
+export const removeNodeStreamAccessEntry = nodeStream.remove;
 
 /** Look up a per-node KEYRING (nodekeyring) access entry. Null if absent. */
-export function getNodeKeyringAccessEntry(spaceId: string, nodeId: string): SpaceAccessEntry | null {
-  return getSpaceAccessEntry(nodeKey(spaceId, nodeId, ':keyring'));
-}
-
+export const getNodeKeyringAccessEntry = nodeKeyring.get;
 /** Persist a per-node KEYRING (nodekeyring) access entry. */
-export function saveNodeKeyringAccessEntry(spaceId: string, nodeId: string, entry: SpaceAccessEntry): void {
-  saveSpaceAccessEntry(nodeKey(spaceId, nodeId, ':keyring'), entry);
-}
-
+export const saveNodeKeyringAccessEntry = nodeKeyring.save;
 /** Forget a node's KEYRING access entry. */
-export function removeNodeKeyringAccessEntry(spaceId: string, nodeId: string): void {
-  removeSpaceAccessEntry(nodeKey(spaceId, nodeId, ':keyring'));
-}
+export const removeNodeKeyringAccessEntry = nodeKeyring.remove;
 
 /** A snapshot of the in-memory cache — used by `recoverSpaceAccess` to find entries
  *  not yet on the server. */
