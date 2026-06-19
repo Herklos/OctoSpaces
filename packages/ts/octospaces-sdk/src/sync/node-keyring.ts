@@ -24,6 +24,7 @@ import { openEncryptor, buildEncryptor, ownerEnsureKeyring, addKeyringRecipientC
 import type { DeviceKeys } from './client.js';
 import { ownerTrustedAdders } from './identity.js';
 import type { Session } from './identity.js';
+import { adderOf } from '../spaces/invite-helpers.js';
 import { nodeKeyringName, nodeKeyringPull, nodeKeyringPush } from './paths.js';
 import { getSyncBase, getSyncPrefix } from '../core/config.js';
 import { fetchWithTimeout } from './fetch-timeout.js';
@@ -149,7 +150,7 @@ export async function removeNodeKeyringRecipient(
     session.chatClient,
     nodeKeyringName(spaceId, nodeId),
     removeSubKems,
-    { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
+    adderOf(session),
     { trustedAdders: opts.trustedAdders ?? ownerTrustedAdders(session) },
   );
 }

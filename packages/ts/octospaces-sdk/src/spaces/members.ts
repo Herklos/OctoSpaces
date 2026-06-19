@@ -20,23 +20,20 @@
  * for each space the paired device should decrypt. ONE keyring per space encrypts all
  * `enc` nodes; adding the device once unlocks the whole space's E2EE content.
  */
-import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
 import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
-import { mintMemberCap, evictMember } from '@drakkar.software/starfish-sharing';
 import { ed25519 } from '@noble/curves/ed25519.js';
-import type { CapCert, RevocationEntry, RevocationList } from '@drakkar.software/starfish-protocol';
+import type { RevocationEntry, RevocationList } from '@drakkar.software/starfish-protocol';
 
 import type { Space } from '../core/types.js';
 import type { Session } from '../sync/identity.js';
-import { ownerTrustedAdders } from '../sync/identity.js';
 import {
   hydrateSpaceAccessStore,
   localSpaceAccessEntries,
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
 import type { LinkAccessPayload } from '../sync/space-access-store.js';
-import { keyringName, recipientFor, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
-import { verifyKemSig } from './request-verify.js';
+import { keyringName, recipientFor, spaceMemberScope } from '../sync/paths.js';
+import { assertCapForMe, capNonce, ephemeralSubject, evictKeyringMember, mintCap, parseJoinRequest } from './invite-helpers.js';
 import { addSpaceKeyringRecipient, ensureSpaceKeyringRecipient, isKeyringMissing } from '../sync/client.js';
 import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, buildSpace, readSpaces, updateSpacesDoc, removeSpaceMember } from './registry.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
@@ -120,36 +117,19 @@ export async function inviteToSpace(
   canWrite = true,
   spaceName?: string,
 ): Promise<string> {
-  const req = JSON.parse(requestJson) as JoinRequest;
-  if (!req.edPub || !req.kemPub || !req.userId) throw new Error('That is not a valid join request.');
-  // Reject requests whose claimed userId doesn't derive from their edPub.
-  if ((await userIdFromEdPub(req.edPub)) !== req.userId) {
-    throw new Error('That is not a valid join request: userId does not match edPub.');
-  }
-  // Verify kemSig — Ed25519 sig of kemPub by edPriv — proves the requester
-  // actually owns the private key for edPub and created kemPub (prevents KEM-key substitution).
-  if (!verifyKemSig(req.edPub, req.kemPub, req.kemSig)) {
-    throw new Error('That is not a valid join request: kemSig is missing or invalid.');
-  }
+  // Parse + verify (shape, userId←edPub, kemSig) before trusting any field.
+  const req = await parseJoinRequest(requestJson, 'That is not a valid join request');
   await addSpaceMember(session.accountClient, spaceId, session.userId, req.userId);
 
   // Ensure the space-wide keyring exists (creates it with only the owner if absent),
   // then add the invitee as a recipient so they can decrypt enc nodes from the start.
   await ensureSpaceKeyringRecipient(session, spaceId, recipientFor(req.kemPub, req.userId));
 
-  // NOTE: 'chat' is the cap collection the deployed server's space-member enricher recognises.
-  const cap = await mintMemberCap(
-    session.keys.edPriv,
-    session.keys.edPub,
-    { edPubHex: req.edPub, kemPubHex: req.kemPub, userIdHex: req.userId },
-    'chat',
-    spaceMemberScope(spaceId, canWrite),
-  );
+  // 'chat' is the cap collection the deployed server's space-member enricher recognises.
+  const cap = await mintCap(session, { edPubHex: req.edPub, kemPubHex: req.kemPub, userIdHex: req.userId }, 'chat', spaceMemberScope(spaceId, canWrite));
   // Retain the cap nonce so `revokeSpaceAccess` can revoke it later.
-  const capCert = cap as CapCert | undefined;
-  if (capCert?.nonce) {
-    saveSpaceInviteEntry(spaceId, req.userId, { edPub: req.edPub, kemPub: req.kemPub, cap: { nonce: capCert.nonce, exp: capCert.exp } });
-  }
+  const nonce = capNonce(cap);
+  if (nonce) saveSpaceInviteEntry(spaceId, req.userId, { edPub: req.edPub, kemPub: req.kemPub, cap: nonce });
   let name = spaceName?.trim();
   if (!name) {
     const { spaces } = await readSpaces(session.accountClient, session.userId);
@@ -167,10 +147,7 @@ export async function acceptSpaceInvite(session: Session, inviteJson: string): P
   const inv = JSON.parse(inviteJson) as Partial<SpaceInvite>;
   const cap = inv.cap as { kind?: string; sub?: string } | undefined;
   if (!cap || !inv.spaceId) throw new Error('That is not a valid space invite.');
-  if (cap.kind !== 'member') throw new Error('That is not a valid space invite.');
-  if (!cap.sub || cap.sub !== session.keys.edPub) {
-    throw new Error('This invite was issued for a different identity.');
-  }
+  assertCapForMe(cap, session.keys.edPub, 'That is not a valid space invite.', 'This invite was issued for a different identity.');
   const spaceId = inv.spaceId;
   const capJson = JSON.stringify(cap);
   const space = buildSpace(spaceId, inv.spaceName ?? '');
@@ -240,20 +217,11 @@ export async function createSpaceInviteLink(
   write: boolean,
   origin: string,
 ): Promise<{ token: SpaceInviteLinkToken; link: string }> {
-  const ek = generateDeviceKeys();
-  const ephemeralUserId = await userIdFromEdPub(ek.edPub);
-  const cap = await mintMemberCap(
-    session.keys.edPriv,
-    session.keys.edPub,
-    { edPubHex: ek.edPub, kemPubHex: ek.kemPub, userIdHex: ephemeralUserId },
-    'chat',
-    spaceMemberScope(spaceId, write),
-  );
+  const { ek, userId: ephemeralUserId, subject } = await ephemeralSubject();
+  const cap = await mintCap(session, subject, 'chat', spaceMemberScope(spaceId, write));
   // Retain the cap nonce so `revokeSpaceAccess` can revoke the link's ephemeral cap later.
-  const capCert = cap as CapCert | undefined;
-  if (capCert?.nonce) {
-    saveSpaceInviteEntry(spaceId, ephemeralUserId, { edPub: ek.edPub, kemPub: ek.kemPub, cap: { nonce: capCert.nonce, exp: capCert.exp } });
-  }
+  const nonce = capNonce(cap);
+  if (nonce) saveSpaceInviteEntry(spaceId, ephemeralUserId, { edPub: ek.edPub, kemPub: ek.kemPub, cap: nonce });
   // Add the ephemeral userId to the roster so the server grants `space:member`
   await addSpaceMember(session.accountClient, spaceId, session.userId, ephemeralUserId);
 
@@ -401,33 +369,13 @@ export async function revokeSpaceAccess(
     );
   }
 
-  const priorRevoked: RevocationEntry[] = [...(opts.priorRevoked ?? [])];
-
   // Evict from the space keyring (rotate + revoke cap in one operation).
-  await evictMember(
+  await evictKeyringMember(
     session.chatClient,
-    {
-      keyringCollection: keyringName(spaceId),
-      membersCollection: keyringName(spaceId),
-      member: {
-        sub: invite.edPub,
-        nonce: invite.cap.nonce,
-        exp: invite.cap.exp,
-        subKem: invite.kemPub,
-      },
-      adder: {
-        edPriv: session.keys.edPriv,
-        edPub: session.keys.edPub,
-        kemPriv: session.keys.kemPriv,
-      },
-      trustedAdders: ownerTrustedAdders(session),
-      issEdPubHex: session.keys.edPub,
-      issEdPrivHex: session.keys.edPriv,
-      generation: opts.generation,
-      ...(priorRevoked.length > 0 ? { priorRevoked } : {}),
-      submitRevocation: opts.submitRevocation,
-    },
-    { rotate: true, revoke: true },
+    session,
+    keyringName(spaceId),
+    { sub: invite.edPub, nonce: invite.cap.nonce, exp: invite.cap.exp, subKem: invite.kemPub },
+    { generation: opts.generation, priorRevoked: opts.priorRevoked, submitRevocation: opts.submitRevocation },
   );
 
   // Remove from the server roster (caps + keyring eviction do the cryptographic work;

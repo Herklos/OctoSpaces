@@ -26,15 +26,12 @@
  *   - `invite+plaintext` node: ephemeral keypair, narrow per-node cap (nodeMemberScope).
  *   - Bearer: `joinNodeByLink` — stores per-node `{kind:'link'}` entry.
  */
-import { generateDeviceKeys } from '@drakkar.software/starfish-identities';
-import { mintMemberCap, evictMember } from '@drakkar.software/starfish-sharing';
-import type { CapCert } from '@drakkar.software/starfish-protocol';
 import type { RevocationEntry, RevocationList } from '@drakkar.software/starfish-protocol';
 
 import type { NodeAccess, ObjectNode, ObjectType } from '../core/types.js';
 import { ensureSpaceKeyringRecipient, ownerEnsureSpaceKeyring } from '../sync/client.js';
 import type { Session } from '../sync/identity.js';
-import { ownerTrustedAdders } from '../sync/identity.js';
+import { assertCapForMe, capNonce, ephemeralSubject, evictKeyringMember, mintCap, parseJoinRequest } from './invite-helpers.js';
 import {
   nodeKeyringName,
   nodeKeyringScope,
@@ -42,9 +39,7 @@ import {
   nodeStreamScope,
   recipientFor,
   spaceMemberScope,
-  userIdFromEdPub,
 } from '../sync/paths.js';
-import { verifyKemSig } from './request-verify.js';
 import { ensureNodeKeyringRecipient } from '../sync/node-keyring.js';
 import {
   saveNodeAccessEntry,
@@ -59,7 +54,6 @@ import { addObject } from '../objects/objects.js';
 import { updateObjectIndex } from './object-index.js';
 import { addSpaceMember, buildSpace } from './registry.js';
 import { randomId } from '../core/ids.js';
-import type { JoinRequest } from './members.js';
 
 // ── owner-side node invite store (nonces for revocation) ─────────────────────
 //
@@ -185,9 +179,8 @@ export async function createNode(
   // Mint the owner's per-node stream cap (objinvlog) so the owner can read this node's
   // invite-log. ownerScope (paths: ['spaces/**']) is not honoured by the sharing plugin
   // for the objinvlog collection — a per-node cap is required.
-  const ownerStreamCap = await mintMemberCap(
-    session.keys.edPriv,
-    session.keys.edPub,
+  const ownerStreamCap = await mintCap(
+    session,
     { edPubHex: session.keys.edPub, kemPubHex: session.keys.kemPub, userIdHex: session.userId },
     'objinvlog',
     nodeStreamScope(spaceId, nodeId, true),
@@ -316,16 +309,8 @@ export async function inviteToNode(
   nodeName?: string,
   opts: { isolated?: boolean; write?: boolean } = {},
 ): Promise<string> {
-  const req = JSON.parse(requestJson) as JoinRequest;
-  if (!req.edPub || !req.kemPub || !req.userId) throw new Error('Invalid join request.');
-  // Reject requests whose claimed userId doesn't derive from their edPub.
-  if ((await userIdFromEdPub(req.edPub)) !== req.userId) {
-    throw new Error('Invalid join request: userId does not match edPub.');
-  }
-  // Verify kemSig — Ed25519 sig of kemPub by edPriv — prevents KEM-key substitution.
-  if (!verifyKemSig(req.edPub, req.kemPub, req.kemSig)) {
-    throw new Error('Invalid join request: kemSig is missing or invalid.');
-  }
+  // Parse + verify (shape, userId←edPub, kemSig) before trusting any field.
+  const req = await parseJoinRequest(requestJson, 'Invalid join request');
 
   // `isolated` withholds space membership + the space cap, so the invitee reaches ONLY
   // this node — never the index or other nodes. For an `enc` node, `isolated` ALSO selects
@@ -357,25 +342,13 @@ export async function inviteToNode(
     // (ensure-before-add invariant), and mint a READ-only keyring cap so the isolated
     // requester can fetch+decrypt without ever touching the space key.
     await ensureNodeKeyringRecipient(session, spaceId, nodeId, recipientFor(req.kemPub, req.userId));
-    bundle.keyringCap = await mintMemberCap(
-      session.keys.edPriv,
-      session.keys.edPub,
-      subject,
-      'nodekeyring',
-      nodeKeyringScope(spaceId, nodeId),
-    );
+    bundle.keyringCap = await mintCap(session, subject, 'nodekeyring', nodeKeyringScope(spaceId, nodeId));
   }
 
   if (!isolated) {
     // Ensure space membership (for index access) + mint the space-level cap.
     await addSpaceMember(session.accountClient, spaceId, session.userId, req.userId);
-    bundle.cap = await mintMemberCap(
-      session.keys.edPriv,
-      session.keys.edPub,
-      subject,
-      'chat',
-      spaceMemberScope(spaceId, canWrite),
-    );
+    bundle.cap = await mintCap(session, subject, 'chat', spaceMemberScope(spaceId, canWrite));
   }
 
   if (!node.enc || perNodeKeyring) {
@@ -383,37 +356,21 @@ export async function inviteToNode(
     // A member cap covers exactly one collection, so each needs its own. For
     // per-node-keyring enc nodes the bytes are sealed client-side (collections stay
     // `encryption:'none'`), so the same content/stream caps apply.
-    bundle.nodeCap = await mintMemberCap(
-      session.keys.edPriv,
-      session.keys.edPub,
-      subject,
-      'objinv',
-      nodeMemberScope(spaceId, nodeId, canWrite),
-    );
-    bundle.streamCap = await mintMemberCap(
-      session.keys.edPriv,
-      session.keys.edPub,
-      subject,
-      'objinvlog',
-      nodeStreamScope(spaceId, nodeId, canWrite),
-    );
+    bundle.nodeCap = await mintCap(session, subject, 'objinv', nodeMemberScope(spaceId, nodeId, canWrite));
+    bundle.streamCap = await mintCap(session, subject, 'objinvlog', nodeStreamScope(spaceId, nodeId, canWrite));
   }
 
-  // Retain cap nonces for future revocation (per-node-keyring invites only).
-  // The owner needs all three nonces to submit a complete RevocationList covering
-  // every cap the invitee holds (keyring + content + stream).
+  // Retain cap nonces for future revocation (per-node-keyring invites only). The owner
+  // needs all three nonces to submit a complete RevocationList covering every cap the
+  // invitee holds (keyring + content + stream).
   if (perNodeKeyring) {
-    const keyringCert = bundle.keyringCap as CapCert | undefined;
-    const nodeCert = bundle.nodeCap as CapCert | undefined;
-    const streamCert = bundle.streamCap as CapCert | undefined;
+    const keyring = capNonce(bundle.keyringCap);
+    const nodeCap = capNonce(bundle.nodeCap);
+    const stream = capNonce(bundle.streamCap);
     saveNodeInviteEntry(spaceId, nodeId, req.userId, {
       edPub: req.edPub,
       kemPub: req.kemPub,
-      caps: {
-        ...(keyringCert?.nonce ? { keyring: { nonce: keyringCert.nonce, exp: keyringCert.exp } } : {}),
-        ...(nodeCert?.nonce ? { node: { nonce: nodeCert.nonce, exp: nodeCert.exp } } : {}),
-        ...(streamCert?.nonce ? { stream: { nonce: streamCert.nonce, exp: streamCert.exp } } : {}),
-      },
+      caps: { ...(keyring && { keyring }), ...(nodeCap && { node: nodeCap }), ...(stream && { stream }) },
     });
   }
 
@@ -440,14 +397,8 @@ export async function acceptNodeInvite(session: Session, bundleJson: string): Pr
   // Validate every cap that IS present was issued for this identity. `isolated`
   // invites omit the space cap, so it's optional; but the bundle must carry at
   // least one usable cap (space OR per-node content).
-  const assertForUs = (c: { kind?: string; sub?: string } | undefined, label: string): boolean => {
-    if (!c) return false;
-    if (c.kind !== 'member') throw new Error(`Invalid node invite (${label}): unexpected cap kind.`);
-    if (!c.sub || c.sub !== session.keys.edPub) {
-      throw new Error(`This invite was issued for a different identity (${label}).`);
-    }
-    return true;
-  };
+  const assertForUs = (c: { kind?: string; sub?: string } | undefined, label: string): boolean =>
+    assertCapForMe(c, session.keys.edPub, `Invalid node invite (${label}): unexpected cap kind.`, `This invite was issued for a different identity (${label}).`);
 
   const hasSpaceCap = assertForUs(bundle.cap as { kind?: string; sub?: string } | undefined, 'cap');
   const hasNodeCap = assertForUs(bundle.nodeCap as { kind?: string; sub?: string } | undefined, 'nodeCap');
@@ -526,30 +477,12 @@ export async function revokeNodeAccess(
     priorRevoked.push({ sub: invite.edPub, nonce: invite.caps.stream.nonce, exp: invite.caps.stream.exp });
   }
 
-  return evictMember(
+  return evictKeyringMember(
     session.chatClient,
-    {
-      keyringCollection: nodeKeyringName(spaceId, nodeId),
-      membersCollection: nodeKeyringName(spaceId, nodeId),
-      member: {
-        sub: invite.edPub,
-        nonce: invite.caps.keyring.nonce,
-        exp: invite.caps.keyring.exp,
-        subKem: invite.kemPub,
-      },
-      adder: {
-        edPriv: session.keys.edPriv,
-        edPub: session.keys.edPub,
-        kemPriv: session.keys.kemPriv,
-      },
-      trustedAdders: ownerTrustedAdders(session),
-      issEdPubHex: session.keys.edPub,
-      issEdPrivHex: session.keys.edPriv,
-      generation: opts.generation,
-      ...(priorRevoked.length > 0 ? { priorRevoked } : {}),
-      submitRevocation: opts.submitRevocation,
-    },
-    { rotate: true, revoke: true },
+    session,
+    nodeKeyringName(spaceId, nodeId),
+    { sub: invite.edPub, nonce: invite.caps.keyring.nonce, exp: invite.caps.keyring.exp, subKem: invite.kemPub },
+    { generation: opts.generation, priorRevoked, submitRevocation: opts.submitRevocation },
   );
 }
 
@@ -619,9 +552,7 @@ export async function createNodeInviteLink(
   origin: string,
   opts: { isolated?: boolean } = {},
 ): Promise<{ token: NodeInviteLinkToken; link: string }> {
-  const ek = generateDeviceKeys();
-  const ephemeralUserId = await userIdFromEdPub(ek.edPub);
-  const subject = { edPubHex: ek.edPub, kemPubHex: ek.kemPub, userIdHex: ephemeralUserId };
+  const { ek, userId: ephemeralUserId, subject } = await ephemeralSubject();
 
   // `isolated` withholds space membership so the link bearer reaches ONLY this node. For an
   // `enc` node, `isolated` ALSO selects the PER-NODE keyring (E2EE-ticket model) instead of
@@ -644,38 +575,20 @@ export async function createNodeInviteLink(
     // PER-NODE keyring: ensure + add the ephemeral KEM as a recipient (ensure-before-add),
     // then mint a READ-only keyring cap for the link bearer.
     await ensureNodeKeyringRecipient(session, spaceId, nodeId, recipientFor(ek.kemPub, ephemeralUserId));
-    keyringCap = await mintMemberCap(
-      session.keys.edPriv,
-      session.keys.edPub,
-      subject,
-      'nodekeyring',
-      nodeKeyringScope(spaceId, nodeId),
-    );
+    keyringCap = await mintCap(session, subject, 'nodekeyring', nodeKeyringScope(spaceId, nodeId));
   }
 
   // Legacy space-keyring enc nodes need a space-scoped cap (to reach the space keyring);
   // plaintext / per-node-keyring nodes use the narrow per-node content cap (objinv).
-  const cap = await mintMemberCap(
-    session.keys.edPriv,
-    session.keys.edPub,
-    subject,
-    node.enc && !perNodeKeyring ? 'chat' : 'objinv',
-    node.enc && !perNodeKeyring
-      ? spaceMemberScope(spaceId, write)
-      : nodeMemberScope(spaceId, nodeId, write),
-  );
+  const cap = node.enc && !perNodeKeyring
+    ? await mintCap(session, subject, 'chat', spaceMemberScope(spaceId, write))
+    : await mintCap(session, subject, 'objinv', nodeMemberScope(spaceId, nodeId, write));
 
   // Plaintext / per-node-keyring nodes also get a per-node STREAM cap (objinvlog) — a
   // separate single-collection member cap, authenticated by the same ephemeral key.
   let streamCap: unknown;
   if (!node.enc || perNodeKeyring) {
-    streamCap = await mintMemberCap(
-      session.keys.edPriv,
-      session.keys.edPub,
-      subject,
-      'objinvlog',
-      nodeStreamScope(spaceId, nodeId, write),
-    );
+    streamCap = await mintCap(session, subject, 'objinvlog', nodeStreamScope(spaceId, nodeId, write));
   }
 
   const token: NodeInviteLinkToken = {
