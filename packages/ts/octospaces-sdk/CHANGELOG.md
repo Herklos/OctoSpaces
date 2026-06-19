@@ -1,5 +1,50 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.13.1 (2026-06-19)
+
+Internal simplification release — **no public API or behaviour change** (the
+exported surface in `src/index.ts` is byte-identical to 0.13.0, and all 654 tests
+pass unchanged). Space/node revocation and every other feature are preserved.
+
+### Changed
+
+- **De-duplicated internal plumbing** (behaviour-preserving):
+  - `createKeyedStore<T>()` now backs all three in-memory stores (space-invite,
+    node-invite, reqId→owner) instead of three hand-rolled `Map` wrappers.
+  - `computeOwnerTrustedAdders()` (a pure, cycle-safe leaf) replaces three inline
+    copies of the owner trusted-adder branch across `client.ts` / `identity.ts`.
+  - `addKeyringRecipientCore()` is shared by `addSpaceKeyringRecipient` and the
+    per-node `addNodeKeyringRecipient`; `isKeyringMissing` is single-sourced.
+  - `pullPush()` collapses the ten `…Name/…Pull/…Push` collection-path triples and
+    `rwOps()` the repeated member op-set; `nodeKey()` collapses the nine per-node
+    access-store accessors.
+  - Registry: one `runCas()` retry loop + `toPayload()` (the 8-key `_spaces` push
+    body) back both `casUpdateSpacesField` and `updateSpacesDoc`.
+  - `client.ts`: `fetchProfileData()` + `coerceProfile()` fold the three
+    profile-fetch blocks and three `PublicProfile` coercion literals; object-blob
+    upload/load share `sealAndPush` / `pullStored` / `openStored`; the
+    btoa/atob+Buffer base64 detection is shared via `b64FromBinaryString` /
+    `b64ToBinaryString`.
+  - `verifyKemSig()` single-sources the Ed25519 kemSig verification used by
+    `inviteToSpace` / `inviteToNode` / `scanResourceRequests`; `recipientFor()`
+    replaces six inlined keyring-recipient literals; `tryUnsealInbox()` /
+    `sealAppend()` fold the duplicated inbox seal/unseal patterns (the
+    `octospaces:inbox:v1` AAD shard+kind binding is preserved exactly).
+  - `LinkAccessPayload` (internal) unifies the link-access credential shape used in
+    five places; `readIndexObjects()` removes a duplicated index-doc cast.
+
+### Removed
+
+- Dead, unreferenced code: the unreachable `getWebBase` config getter + its
+  `webBase` field (consumers define their own), a dead `SpaceBucket.ts` field, and
+  several unused imports.
+
+### Tooling
+
+- Enabled `noUnusedLocals` / `noUnusedParameters` for the package so dead imports
+  are caught going forward. `typecheck` / `lint` gate the shipped source; test
+  files are validated at runtime by vitest.
+
 ## 0.13.0 (2026-06-17)
 
 ### Security fixes
