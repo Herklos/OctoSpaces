@@ -1,5 +1,32 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.13.2 (2026-06-19)
+
+Second internal simplification pass — **no public API or behaviour change** (the
+exported surface in `src/index.ts` is byte-identical to 0.13.1; all 654 tests pass
+unchanged). Factors repeated invite/revoke/access *logic* into reusable building
+blocks shared across the space and node tiers.
+
+### Changed
+
+- **New `src/spaces/invite-helpers.ts`** — one implementation per concept, reused by
+  both `members.ts` (space tier) and `nodes.ts` (node tier):
+  - `mintCap()` collapses the nine 7-line `mintMemberCap(...)` calls to one line each.
+  - `parseJoinRequest()` (shape + `userId←edPub` + `verifyKemSig`), `capNonce()`,
+    `ephemeralSubject()`, `assertCapForMe()` (the node accept flow wraps it per-label),
+    and `adderOf()` (the `{edPriv,edPub,kemPriv}` signer triple).
+  - `evictKeyringMember()` holds the byte-identical `evictMember` config shared by
+    `revokeSpaceAccess` and `revokeNodeAccess`; each caller keeps its own store lookup,
+    validation, collection, member-nonce source, and `priorRevoked` accumulation.
+  - Result: `members.ts` 438→386, `nodes.ts` 755→668.
+- **`sync/space-access.ts`** — `resolveEntryClient()` + `resolveTrustedAdders()` back
+  `getSpaceClient` / `getNodeStreamClient` / `getNodeAccess` / `buildNodeAccess` /
+  `resolveNodeKeyringHandle`, removing the redundant `clientFromEntry`, the four inline
+  client-build blocks, and the three trusted-adder ternaries.
+- **`spaces/registry.ts`** — `coerceRecord<T>()` backs the dms/reads/archived coercers;
+  `addSpaceWithUpdates()` backs the `addJoinedSpace*` trio (the no-op-when-unchanged
+  optimization preserved).
+
 ## 0.13.1 (2026-06-19)
 
 Internal simplification release — **no public API or behaviour change** (the
