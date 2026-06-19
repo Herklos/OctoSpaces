@@ -17,6 +17,8 @@ import { getBase64 } from '@drakkar.software/starfish-protocol';
 import type { StarfishClient } from '@drakkar.software/starfish-client';
 
 import { kvGet, kvRemove, kvSet } from '../core/adapters.js';
+import { objectBlobName, objectBlobPull, objectBlobPush } from './paths.js';
+import { randomId } from '../core/ids.js';
 
 export interface ByteSealer {
   sealBytes(bytes: Uint8Array, aad?: string): Promise<Uint8Array>;
@@ -26,8 +28,6 @@ export interface ByteSealer {
 export function attachmentKind(mime: string): 'image' | 'file' {
   return mime.startsWith('image/') ? 'image' : 'file';
 }
-import { objectBlobName, objectBlobPull, objectBlobPush } from './paths.js';
-import { randomId } from '../core/ids.js';
 
 /**
  * Maximum allowed byte size for a single object blob upload.
@@ -73,6 +73,36 @@ export interface ObjectBlobStore {
   clearObjectBlobCache(): void;
 }
 
+// ── Shared seal/push/open core (used by both the standalone + cached paths) ────
+
+/** Guard size, mint a blobId, seal (if `enc`) binding the objectBlobName AAD, and
+ *  push. Returns the blobId and the stored (sealed) bytes for optional caching. */
+async function sealAndPush(
+  client: StarfishClient,
+  enc: ByteSealer | null,
+  spaceId: string,
+  bytes: Uint8Array,
+): Promise<{ blobId: string; stored: Uint8Array }> {
+  if (bytes.length > MAX_OBJECT_BLOB_BYTES) {
+    throw new FileTooLargeError(bytes.length, MAX_OBJECT_BLOB_BYTES);
+  }
+  const blobId = randomId();
+  const stored = enc ? await enc.sealBytes(bytes, objectBlobName(spaceId, blobId)) : bytes;
+  await client.pushBlob(objectBlobPush(spaceId, blobId), stored, 'application/octet-stream');
+  return { blobId, stored };
+}
+
+/** Fetch the stored (post-seal) bytes of a blob. */
+async function pullStored(client: StarfishClient, spaceId: string, blobId: string): Promise<Uint8Array> {
+  const res = await client.pullBlob(objectBlobPull(spaceId, blobId));
+  return new Uint8Array(res.data);
+}
+
+/** Open stored bytes back to plaintext (if `enc`), binding the objectBlobName AAD. */
+async function openStored(enc: ByteSealer | null, spaceId: string, blobId: string, stored: Uint8Array): Promise<Uint8Array> {
+  return enc ? enc.openBytes(stored, objectBlobName(spaceId, blobId)) : stored;
+}
+
 // ── Standalone (uncached) helpers ─────────────────────────────────────────────
 
 /** Seal and upload bytes as an object blob; returns the ref to store in node props.
@@ -86,13 +116,7 @@ export async function uploadObjectBlob(
   name: string,
   mime: string,
 ): Promise<ObjectBlobRef> {
-  if (bytes.length > MAX_OBJECT_BLOB_BYTES) {
-    throw new FileTooLargeError(bytes.length, MAX_OBJECT_BLOB_BYTES);
-  }
-  const blobId = randomId();
-  const aad = objectBlobName(spaceId, blobId);
-  const stored = enc ? await enc.sealBytes(bytes, aad) : bytes;
-  await client.pushBlob(objectBlobPush(spaceId, blobId), stored, 'application/octet-stream');
+  const { blobId } = await sealAndPush(client, enc, spaceId, bytes);
   return { blobId, name, mime, size: bytes.length };
 }
 
@@ -106,9 +130,8 @@ export async function loadObjectBlob(
   blobIdOrRef: string | ObjectBlobRef,
 ): Promise<Uint8Array> {
   const blobId = typeof blobIdOrRef === 'string' ? blobIdOrRef : blobIdOrRef.blobId;
-  const res = await client.pullBlob(objectBlobPull(spaceId, blobId));
-  const stored = new Uint8Array(res.data);
-  return enc ? enc.openBytes(stored, objectBlobName(spaceId, blobId)) : stored;
+  const stored = await pullStored(client, spaceId, blobId);
+  return openStored(enc, spaceId, blobId, stored);
 }
 
 // ── Cached store ──────────────────────────────────────────────────────────────
@@ -204,13 +227,7 @@ export function createObjectBlobStore(opts: {
     name: string,
     mime: string,
   ): Promise<ObjectBlobRef> {
-    if (bytes.length > MAX_OBJECT_BLOB_BYTES) {
-      throw new FileTooLargeError(bytes.length, MAX_OBJECT_BLOB_BYTES);
-    }
-    const blobId = randomId();
-    const aad = objectBlobName(spaceId, blobId);
-    const stored = enc ? await enc.sealBytes(bytes, aad) : bytes;
-    await client.pushBlob(objectBlobPush(spaceId, blobId), stored, 'application/octet-stream');
+    const { blobId, stored } = await sealAndPush(client, enc, spaceId, bytes);
     cachePut(cacheKey(spaceId, blobId), bytes);
     await persistPut(spaceId, blobId, stored);
     return { blobId, name, mime, size: bytes.length };
@@ -227,11 +244,10 @@ export function createObjectBlobStore(opts: {
     if (hit) return hit;
     let stored = await persistGet(spaceId, ref.blobId);
     if (!stored) {
-      const res = await client.pullBlob(objectBlobPull(spaceId, ref.blobId));
-      stored = new Uint8Array(res.data);
+      stored = await pullStored(client, spaceId, ref.blobId);
       await persistPut(spaceId, ref.blobId, stored);
     }
-    const bytes = enc ? await enc.openBytes(stored, objectBlobName(spaceId, ref.blobId)) : stored;
+    const bytes = await openStored(enc, spaceId, ref.blobId, stored);
     cachePut(key, bytes);
     return bytes;
   }

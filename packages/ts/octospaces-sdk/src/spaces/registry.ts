@@ -73,28 +73,55 @@ type SpacesPayload = Omit<SpacesDoc, 'hash'>;
 
 const MAX_ATTEMPTS = 3;
 
-async function casUpdateSpacesField<F extends keyof SpacesPayload>(
+/** The `_spaces` doc body sent on push — every field except the CAS `hash`. */
+function toPayload(doc: SpacesDoc): SpacesPayload {
+  return {
+    spaces: doc.spaces,
+    caps: doc.caps,
+    mutes: doc.mutes,
+    reads: doc.reads,
+    pubAccess: doc.pubAccess,
+    dms: doc.dms,
+    quickReactions: doc.quickReactions,
+    archivedDms: doc.archivedDms,
+  };
+}
+
+/**
+ * Read-modify-CAS-write the `_spaces` doc with conflict-retry. `build` receives the
+ * freshly-pulled doc and returns the next payload to push, or `null` to skip the
+ * write (no-op). Shared by `casUpdateSpacesField` and `updateSpacesDoc`.
+ */
+async function runCas(
   client: StarfishClient,
   userId: string,
-  field: F,
-  mutate: (cur: SpacesPayload[F], doc: SpacesDoc) => SpacesPayload[F] | null,
+  build: (doc: SpacesDoc) => SpacesPayload | null,
 ): Promise<void> {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const doc = await pullSpacesDoc(client, userId);
-    const next = mutate(doc[field], doc);
+    const next = build(doc);
     if (next === null) return;
     try {
-      await client.push(
-        spacesPush(userId),
-        { v: 1, spaces: doc.spaces, caps: doc.caps, mutes: doc.mutes, reads: doc.reads, pubAccess: doc.pubAccess, dms: doc.dms, quickReactions: doc.quickReactions, archivedDms: doc.archivedDms, [field]: next },
-        doc.hash,
-      );
+      await client.push(spacesPush(userId), { v: 1, ...next }, doc.hash);
       return;
     } catch (err) {
       if (err instanceof ConflictError && attempt < MAX_ATTEMPTS - 1) continue;
       throw err;
     }
   }
+}
+
+function casUpdateSpacesField<F extends keyof SpacesPayload>(
+  client: StarfishClient,
+  userId: string,
+  field: F,
+  mutate: (cur: SpacesPayload[F], doc: SpacesDoc) => SpacesPayload[F] | null,
+): Promise<void> {
+  return runCas(client, userId, (doc) => {
+    const next = mutate(doc[field], doc);
+    if (next === null) return null;
+    return { ...toPayload(doc), [field]: next };
+  });
 }
 
 function coerceDms(raw: unknown): DmMap {
@@ -179,28 +206,17 @@ export async function readSpaces(client: StarfishClient, userId: string): Promis
   }
 }
 
-export async function updateSpacesDoc(
+export function updateSpacesDoc(
   client: StarfishClient,
   userId: string,
   mutator: (cur: { spaces: Space[]; caps: CapMap; pubAccess: PubAccessMap }) => { spaces: Space[]; caps: CapMap; pubAccess: PubAccessMap },
 ): Promise<void> {
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const doc = await pullSpacesDoc(client, userId);
+  return runCas(client, userId, (doc) => {
     const cur = { spaces: doc.spaces, caps: doc.caps, pubAccess: doc.pubAccess };
     const next = mutator(cur);
-    if (next === cur) return;
-    try {
-      await client.push(
-        spacesPush(userId),
-        { v: 1, spaces: next.spaces, caps: next.caps, mutes: doc.mutes, reads: doc.reads, pubAccess: next.pubAccess, dms: doc.dms, quickReactions: doc.quickReactions, archivedDms: doc.archivedDms },
-        doc.hash,
-      );
-      return;
-    } catch (err) {
-      if (err instanceof ConflictError && attempt < MAX_ATTEMPTS - 1) continue;
-      throw err;
-    }
-  }
+    if (next === cur) return null;
+    return { ...toPayload(doc), spaces: next.spaces, caps: next.caps, pubAccess: next.pubAccess };
+  });
 }
 
 export function updateMutesDoc(

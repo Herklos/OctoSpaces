@@ -15,6 +15,7 @@ import { pullCache, PULL_CACHE_MAX_AGE_MS } from './pull-cache.js';
 import { cacheProfile, loadCachedProfile } from './profile-cache.js';
 import { keyringName, keyringPull, keyringPush, profilePull, profilePush } from './paths.js';
 import { computeOwnerTrustedAdders } from './trusted-adders.js';
+import { b64FromBinaryString } from './b64-primitives.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
 
 export interface DeviceKeys {
@@ -243,24 +244,39 @@ export interface PublicProfile {
   kemSig: string | null;
 }
 
+const emptyProfile = (): PublicProfile => ({ pseudo: null, avatar: null, edPub: null, kemPub: null, kemSig: null });
+
+/** Coerce a raw profile doc body into a typed {@link PublicProfile} (string fields or null). */
+function coerceProfile(data: Record<string, unknown> | null): PublicProfile {
+  return {
+    pseudo: typeof data?.pseudo === 'string' ? data.pseudo : null,
+    avatar: typeof data?.avatar === 'string' ? data.avatar : null,
+    edPub: typeof data?.edPub === 'string' ? data.edPub : null,
+    kemPub: typeof data?.kemPub === 'string' ? data.kemPub : null,
+    kemSig: typeof data?.kemSig === 'string' ? data.kemSig : null,
+  };
+}
+
+/** Raw `fetch` of a user's profile doc — the shared scaffolding behind the three
+ *  profile readers (full profile / key check / own pseudo). Returns the HTTP status
+ *  (callers distinguish 404 from other errors) and the parsed `data` body when 2xx. */
+async function fetchProfileData(userId: string): Promise<{ status: number; ok: boolean; data: Record<string, unknown> | null }> {
+  const r = await fetchWithTimeout()(`${getSyncBase()}${getSyncPrefix()}${profilePull(userId)}`);
+  if (!r.ok) return { status: r.status, ok: false, data: null };
+  const body = await r.json();
+  return { status: r.status, ok: true, data: (body?.data ?? null) as Record<string, unknown> | null };
+}
+
 /** Read any user's public profile. */
 export async function readProfile(userId: string): Promise<PublicProfile> {
   try {
-    const r = await fetchWithTimeout()(`${getSyncBase()}${getSyncPrefix()}${profilePull(userId)}`);
-    if (!r.ok) return { pseudo: null, avatar: null, edPub: null, kemPub: null, kemSig: null };
-    const body = await r.json();
-    const data = body?.data as { pseudo?: unknown; avatar?: unknown; edPub?: unknown; kemPub?: unknown; kemSig?: unknown } | undefined;
-    const profile: PublicProfile = {
-      pseudo: typeof data?.pseudo === 'string' ? data.pseudo : null,
-      avatar: typeof data?.avatar === 'string' ? data.avatar : null,
-      edPub: typeof data?.edPub === 'string' ? data.edPub : null,
-      kemPub: typeof data?.kemPub === 'string' ? data.kemPub : null,
-      kemSig: typeof data?.kemSig === 'string' ? data.kemSig : null,
-    };
+    const info = await fetchProfileData(userId);
+    if (!info.ok) return emptyProfile();
+    const profile = coerceProfile(info.data);
     cacheProfile(userId, profile);
     return profile;
   } catch {
-    return (await loadCachedProfile(userId)) ?? { pseudo: null, avatar: null, edPub: null, kemPub: null, kemSig: null };
+    return (await loadCachedProfile(userId)) ?? emptyProfile();
   }
 }
 
@@ -300,14 +316,7 @@ export async function readProfiles(ids: string[]): Promise<Map<string, PublicPro
     chunk.forEach((id, j) => {
       const entry = entries[j];
       if (!entry || entry.error) return;
-      const data = (entry.data ?? null) as { pseudo?: unknown; avatar?: unknown; edPub?: unknown; kemPub?: unknown; kemSig?: unknown } | null;
-      const profile: PublicProfile = {
-        pseudo: typeof data?.pseudo === 'string' ? data.pseudo : null,
-        avatar: typeof data?.avatar === 'string' ? data.avatar : null,
-        edPub: typeof data?.edPub === 'string' ? data.edPub : null,
-        kemPub: typeof data?.kemPub === 'string' ? data.kemPub : null,
-        kemSig: typeof data?.kemSig === 'string' ? data.kemSig : null,
-      };
+      const profile = coerceProfile((entry.data ?? null) as Record<string, unknown> | null);
       cacheProfile(id, profile);
       out.set(id, profile);
     });
@@ -348,13 +357,10 @@ export async function ensureProfileKeys(
 ): Promise<void> {
   let confirmedAbsent = false;
   try {
-    const r = await fetchWithTimeout()(`${getSyncBase()}${getSyncPrefix()}${profilePull(userId)}`);
-    if (r.status === 404) confirmedAbsent = true;
-    else if (r.ok) {
-      const body = await r.json();
-      const data = body?.data as { edPub?: unknown; kemPub?: unknown } | undefined;
-      confirmedAbsent = !(typeof data?.edPub === 'string' && typeof data?.kemPub === 'string');
-    } else return;
+    const info = await fetchProfileData(userId);
+    if (info.ok) confirmedAbsent = !(typeof info.data?.edPub === 'string' && typeof info.data?.kemPub === 'string');
+    else if (info.status === 404) confirmedAbsent = true;
+    else return;
   } catch {
     return;
   }
@@ -383,10 +389,7 @@ export async function buildAuthHeaders(
   );
 
   const capJson = stableStringify(cap as Record<string, unknown>);
-  const capB64 =
-    typeof btoa === 'function'
-      ? btoa(capJson)
-      : Buffer.from(capJson, 'utf-8').toString('base64');
+  const capB64 = b64FromBinaryString(capJson);
 
   return {
     Authorization: `Cap ${capB64}`,
@@ -398,12 +401,10 @@ export async function buildAuthHeaders(
 
 async function readOwnPseudo(userId: string): Promise<{ read: boolean; pseudo: string | null }> {
   try {
-    const r = await fetchWithTimeout()(`${getSyncBase()}${getSyncPrefix()}${profilePull(userId)}`);
-    if (r.status === 404) return { read: true, pseudo: null };
-    if (!r.ok) return { read: false, pseudo: null };
-    const body = await r.json();
-    const data = body?.data as { pseudo?: unknown } | undefined;
-    return { read: true, pseudo: typeof data?.pseudo === 'string' ? data.pseudo : null };
+    const info = await fetchProfileData(userId);
+    if (info.ok) return { read: true, pseudo: typeof info.data?.pseudo === 'string' ? info.data.pseudo : null };
+    if (info.status === 404) return { read: true, pseudo: null };
+    return { read: false, pseudo: null };
   } catch {
     return { read: false, pseudo: null };
   }
