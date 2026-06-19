@@ -124,12 +124,15 @@ function casUpdateSpacesField<F extends keyof SpacesPayload>(
   });
 }
 
-function coerceDms(raw: unknown): DmMap {
+/** Keep only the entries of a plain object whose value passes `isT`. */
+function coerceRecord<T>(raw: unknown, isT: (v: unknown) => v is T): Record<string, T> {
   const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const out: DmMap = {};
-  for (const [k, v] of Object.entries(src)) if (typeof v === 'string') out[k] = v;
+  const out: Record<string, T> = {};
+  for (const [k, v] of Object.entries(src)) if (isT(v)) out[k] = v;
   return out;
 }
+
+const coerceDms = (raw: unknown): DmMap => coerceRecord(raw, (v): v is string => typeof v === 'string');
 
 function coerceMutes(raw: unknown): MutePrefs {
   const r = (raw && typeof raw === 'object' ? raw : {}) as { rooms?: unknown; spaces?: unknown };
@@ -140,22 +143,14 @@ function coerceMutes(raw: unknown): MutePrefs {
 
 function coerceReads(raw: unknown): ReadPrefs {
   const r = (raw && typeof raw === 'object' ? raw : {}) as { rooms?: unknown };
-  const src = r.rooms && typeof r.rooms === 'object' ? (r.rooms as Record<string, unknown>) : {};
-  const rooms: Record<string, number> = {};
-  for (const [id, v] of Object.entries(src)) if (typeof v === 'number' && Number.isFinite(v)) rooms[id] = v;
-  return { rooms };
+  return { rooms: coerceRecord(r.rooms, (v): v is number => typeof v === 'number' && Number.isFinite(v)) };
 }
 
 function coerceQuickReactions(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : [];
 }
 
-function coerceArchivedDms(raw: unknown): ArchivedDms {
-  const src = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const out: ArchivedDms = {};
-  for (const [k, v] of Object.entries(src)) if (v === true) out[k] = true;
-  return out;
-}
+const coerceArchivedDms = (raw: unknown): ArchivedDms => coerceRecord(raw, (v): v is true => v === true);
 
 async function pullSpacesDoc(client: StarfishClient, userId: string): Promise<SpacesDoc> {
   const res = await client.pull(spacesPull(userId)).catch((err: unknown) => {
@@ -382,38 +377,35 @@ export async function moveSpace(client: StarfishClient, userId: string, spaceId:
   });
 }
 
-export async function addJoinedSpace(client: StarfishClient, userId: string, space: Space): Promise<void> {
-  await updateSpacesDoc(client, userId, (cur) =>
-    cur.spaces.some((s) => s.id === space.id)
-      ? cur
-      : { spaces: [...cur.spaces, space], caps: cur.caps, pubAccess: cur.pubAccess },
-  );
-}
-
-export async function addJoinedSpaceWithCap(
+/** Append a space to the joined list (dup-guarded) plus optional cap / link-access
+ *  updates. With no updates AND the space already present, it's a no-op (skips the write). */
+function addSpaceWithUpdates(
   client: StarfishClient,
   userId: string,
   space: Space,
-  capJson: string,
+  updates?: { caps?: CapMap; pubAccess?: PubAccessMap },
 ): Promise<void> {
-  await updateSpacesDoc(client, userId, (cur) => ({
-    spaces: cur.spaces.some((s) => s.id === space.id) ? cur.spaces : [...cur.spaces, space],
-    caps: { ...cur.caps, [space.id]: capJson },
-    pubAccess: cur.pubAccess,
-  }));
+  return updateSpacesDoc(client, userId, (cur) => {
+    const exists = cur.spaces.some((s) => s.id === space.id);
+    if (exists && !updates) return cur;
+    return {
+      spaces: exists ? cur.spaces : [...cur.spaces, space],
+      caps: updates?.caps ? { ...cur.caps, ...updates.caps } : cur.caps,
+      pubAccess: updates?.pubAccess ? { ...cur.pubAccess, ...updates.pubAccess } : cur.pubAccess,
+    };
+  });
 }
 
-export async function addJoinedSpaceWithLinkAccess(
-  client: StarfishClient,
-  userId: string,
-  space: Space,
-  sealed: SealedBlob,
-): Promise<void> {
-  await updateSpacesDoc(client, userId, (cur) => ({
-    spaces: cur.spaces.some((s) => s.id === space.id) ? cur.spaces : [...cur.spaces, space],
-    caps: cur.caps,
-    pubAccess: { ...cur.pubAccess, [space.id]: sealed },
-  }));
+export function addJoinedSpace(client: StarfishClient, userId: string, space: Space): Promise<void> {
+  return addSpaceWithUpdates(client, userId, space);
+}
+
+export function addJoinedSpaceWithCap(client: StarfishClient, userId: string, space: Space, capJson: string): Promise<void> {
+  return addSpaceWithUpdates(client, userId, space, { caps: { [space.id]: capJson } });
+}
+
+export function addJoinedSpaceWithLinkAccess(client: StarfishClient, userId: string, space: Space, sealed: SealedBlob): Promise<void> {
+  return addSpaceWithUpdates(client, userId, space, { pubAccess: { [space.id]: sealed } });
 }
 
 /**

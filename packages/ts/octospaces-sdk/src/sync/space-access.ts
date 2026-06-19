@@ -56,17 +56,39 @@ export function clearNodeAccessCache(): void {
 }
 
 /**
+ * Build the StarfishClient + cap-issuer for a stored access entry. Link entries sign
+ * as the ephemeral identity; member entries present their cap JSON; no entry falls back
+ * to `session.chatClient` (identity-level, server authorizes by role). Shared by every
+ * resolver below.
+ */
+function resolveEntryClient(
+  entry: SpaceAccessEntry | null | undefined,
+  session: Session,
+): { client: StarfishClient; capIss?: string } {
+  if (entry?.kind === 'link') return { client: makeClient(entry.cap, entry.key) };
+  if (entry?.kind === 'member') {
+    const cap = JSON.parse(entry.cap) as { iss?: string };
+    return { client: makeClient(cap, session.keys.edPriv), capIss: cap.iss };
+  }
+  return { client: session.chatClient };
+}
+
+/** Trusted-adder set for opening a space keyring: the cap issuer, else the registry
+ *  owner, else the session's own owner keys. */
+function resolveTrustedAdders(
+  capIss: string | undefined,
+  reg: { owner: string | null } | null | undefined,
+  session: Session,
+): string[] {
+  return capIss ? [capIss] : reg?.owner ? [reg.owner] : ownerTrustedAdders(session);
+}
+
+/**
  * Return the right StarfishClient for reading/writing member-gated space docs
  * (e.g. the `_index`, `_access`). Spaces are always plaintext — no encryptor.
  */
 export function getSpaceClient(spaceId: string, session: Session): StarfishClient {
-  const entry = getSpaceAccessEntry(spaceId);
-  if (entry?.kind === 'link') return makeClient(entry.cap, entry.key);
-  if (entry?.kind === 'member') {
-    const cap = JSON.parse(entry.cap) as { iss?: string };
-    return makeClient(cap, session.keys.edPriv);
-  }
-  return session.chatClient;
+  return resolveEntryClient(getSpaceAccessEntry(spaceId), session).client;
 }
 
 /**
@@ -81,13 +103,7 @@ export function getSpaceClient(spaceId: string, session: Session): StarfishClien
  * authorizes via space-member role (same as for `objlog`).
  */
 export function getNodeStreamClient(spaceId: string, nodeId: string, session: Session): StarfishClient {
-  const entry = getNodeStreamAccessEntry(spaceId, nodeId);
-  if (entry?.kind === 'link') return makeClient(entry.cap, entry.key);
-  if (entry?.kind === 'member') {
-    const cap = JSON.parse(entry.cap) as { iss?: string };
-    return makeClient(cap, session.keys.edPriv);
-  }
-  return session.chatClient;
+  return resolveEntryClient(getNodeStreamAccessEntry(spaceId, nodeId), session).client;
 }
 
 /**
@@ -106,13 +122,6 @@ function decryptKeysFor(entry: SpaceAccessEntry | null | undefined, session: Ses
 }
 
 /** Build a StarfishClient from a stored access entry, or null when there is none. */
-function clientFromEntry(entry: SpaceAccessEntry | null, session: Session): StarfishClient | null {
-  if (!entry) return null;
-  if (entry.kind === 'link') return makeClient(entry.cap, entry.key);
-  const cap = JSON.parse(entry.cap) as { iss?: string };
-  return makeClient(cap, session.keys.edPriv);
-}
-
 /**
  * Resolve the (content client, node-keyring encryptor) for a PER-NODE-keyring E2EE node
  * (`access:'invite' + enc`, e.g. an OctoDesk ticket). The CEK lives in the node's OWN
@@ -136,25 +145,23 @@ async function resolveNodeKeyringHandle(
   const nodeEntry = getNodeAccessEntry(spaceId, nodeId);
 
   // Content client (objinv / ticket-info): requester → node content cap; member/owner → chat.
-  const contentClient = clientFromEntry(nodeEntry, session) ?? session.chatClient;
+  const contentClient = resolveEntryClient(nodeEntry, session).client;
   // Keyring client (read `nodekeyring`): requester → keyring cap; member/owner → chat.
-  const krClient = clientFromEntry(krEntry, session) ?? session.chatClient;
+  const kr = resolveEntryClient(krEntry, session);
   const krKeys = decryptKeysFor(krEntry, session);
 
   // trustedAdders = the keyring creator (ticket owner). From our cap issuer when we hold a
   // member cap, else the registry owner, else our own keys (owner self-open).
-  const capIss =
-    krEntry?.kind === 'member' ? (JSON.parse(krEntry.cap) as { iss?: string }).iss : undefined;
-  const trustedAdders = capIss ? [capIss] : reg?.owner ? [reg.owner] : ownerTrustedAdders(session);
+  const trustedAdders = resolveTrustedAdders(kr.capIss, reg, session);
 
   const isOwnerOpen = reg != null ? reg.owner === session.userId : krEntry == null;
 
   if (soft) {
-    const encryptor = await buildNodeEncryptor(krClient, krKeys, spaceId, nodeId, trustedAdders);
+    const encryptor = await buildNodeEncryptor(kr.client, krKeys, spaceId, nodeId, trustedAdders);
     if (!encryptor) return null;
     return { encryptor, client: contentClient, isOwnerOpen };
   }
-  const encryptor = await openNodeEncryptor(krClient, krKeys, spaceId, nodeId, trustedAdders);
+  const encryptor = await openNodeEncryptor(kr.client, krKeys, spaceId, nodeId, trustedAdders);
   return { encryptor, client: contentClient, isOwnerOpen };
 }
 
@@ -190,18 +197,8 @@ export function getNodeAccess(
     const spaceEntry = getSpaceAccessEntry(spaceId);
     const activeEntry = nodeEntry ?? spaceEntry;
 
-    // Build the client.
-    let client: StarfishClient;
-    let capIss: string | undefined;
-    if (activeEntry?.kind === 'link') {
-      client = makeClient(activeEntry.cap, activeEntry.key);
-    } else if (activeEntry?.kind === 'member') {
-      const cap = JSON.parse(activeEntry.cap) as { iss?: string };
-      capIss = cap.iss;
-      client = makeClient(cap, session.keys.edPriv);
-    } else {
-      client = session.chatClient;
-    }
+    // Build the client + cap issuer.
+    const { client, capIss } = resolveEntryClient(activeEntry, session);
 
     const isOwnerOpen =
       reg != null ? reg.owner === session.userId : activeEntry == null;
@@ -213,11 +210,7 @@ export function getNodeAccess(
 
     // E2EE node — resolve the SPACE-WIDE keyring.
     const spacePullPath = keyringPull(spaceId);
-    const trustedAdders = capIss
-      ? [capIss]
-      : reg?.owner
-        ? [reg.owner]
-        : ownerTrustedAdders(session);
+    const trustedAdders = resolveTrustedAdders(capIss, reg, session);
 
     if (activeEntry?.kind === 'member' || activeEntry?.kind === 'link') {
       const encryptor = await openEncryptor(client, decryptKeysFor(activeEntry, session), spacePullPath, trustedAdders);
@@ -276,18 +269,9 @@ export async function buildNodeAccess(
   const spaceEntry = getSpaceAccessEntry(spaceId);
   const activeEntry = nodeEntry ?? spaceEntry;
 
-  let client: StarfishClient;
-  let trustedAdders = ownerTrustedAdders(session);
-
-  if (activeEntry?.kind === 'link') {
-    client = makeClient(activeEntry.cap, activeEntry.key);
-  } else if (activeEntry?.kind === 'member') {
-    const cap = JSON.parse(activeEntry.cap) as { iss?: string };
-    client = makeClient(cap, session.keys.edPriv);
-    if (cap.iss) trustedAdders = [cap.iss];
-  } else {
-    client = session.chatClient;
-  }
+  // buildNodeAccess never consults reg.owner for trusted-adders (pass null).
+  const { client, capIss } = resolveEntryClient(activeEntry, session);
+  const trustedAdders = resolveTrustedAdders(capIss, null, session);
 
   if (!node.enc) return { client, encryptor: null };
 
