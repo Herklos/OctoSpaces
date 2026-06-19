@@ -14,6 +14,7 @@ import { fetchWithTimeout } from './fetch-timeout.js';
 import { pullCache, PULL_CACHE_MAX_AGE_MS } from './pull-cache.js';
 import { cacheProfile, loadCachedProfile } from './profile-cache.js';
 import { keyringName, keyringPull, keyringPush, profilePull, profilePush } from './paths.js';
+import { computeOwnerTrustedAdders } from './trusted-adders.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
 
 export interface DeviceKeys {
@@ -150,30 +151,53 @@ export function isAlreadyPresentRecipient(err: unknown): boolean {
   return /already (present|a recipient|exists)|duplicate/i.test(err instanceof Error ? err.message : String(err));
 }
 
+/** True when a keyring op failed because the keyring doesn't exist yet (benign on device-pairing). */
+export function isKeyringMissing(err: unknown): boolean {
+  return err instanceof Error && /not found|404|does not exist|no keyring exists/i.test(err.message);
+}
+
 /**
- * Add a recipient to a space's keyring — mirroring the per-node
- * `addNodeKeyringRecipient` in node-keyring.ts. Swallows "already present".
+ * Add a recipient to a keyring collection. Shared core behind both
+ * `addSpaceKeyringRecipient` and the per-node `addNodeKeyringRecipient`: the two
+ * differ only in the collection path and the trusted-adder allow-list. Swallows
+ * "already present" so re-inviting the same KEM is idempotent.
  */
-export async function addSpaceKeyringRecipient(
-  session: { chatClient: StarfishClient; keys: DeviceKeys; ownerEdPub?: string },
-  spaceId: string,
-  recipient: { subKem: string; userId: string; label: string },
+export async function addKeyringRecipientCore(
+  client: StarfishClient,
+  keys: DeviceKeys,
+  collection: string,
+  recipient: { subKem: string; userId?: string; label?: string },
+  trustedAdders: string[],
 ): Promise<void> {
-  const ownerEdPub = session.ownerEdPub ?? session.keys.edPub;
-  const trustedAdders = ownerEdPub !== session.keys.edPub
-    ? [ownerEdPub, session.keys.edPub]
-    : [session.keys.edPub];
   try {
     await addCollectionRecipient(
-      session.chatClient,
-      keyringName(spaceId),
+      client,
+      collection,
       recipient,
-      { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
+      { edPriv: keys.edPriv, edPub: keys.edPub, kemPriv: keys.kemPriv },
       { trustedAdders },
     );
   } catch (err) {
     if (!isAlreadyPresentRecipient(err)) throw err;
   }
+}
+
+/**
+ * Add a recipient to a space's keyring — mirroring the per-node
+ * `addNodeKeyringRecipient` in node-keyring.ts. Swallows "already present".
+ */
+export function addSpaceKeyringRecipient(
+  session: { chatClient: StarfishClient; keys: DeviceKeys; ownerEdPub?: string },
+  spaceId: string,
+  recipient: { subKem: string; userId: string; label: string },
+): Promise<void> {
+  return addKeyringRecipientCore(
+    session.chatClient,
+    session.keys,
+    keyringName(spaceId),
+    recipient,
+    computeOwnerTrustedAdders(session.ownerEdPub, session.keys.edPub),
+  );
 }
 
 // ── Space-keyring convenience wrappers ────────────────────────────────────────
@@ -192,10 +216,7 @@ export function ownerEnsureSpaceKeyring(
   session: SpaceKeyringSession,
   spaceId: string,
 ): Promise<Encryptor> {
-  const ownerEdPub = session.ownerEdPub ?? session.keys.edPub;
-  const trustedAdders = ownerEdPub !== session.keys.edPub
-    ? [ownerEdPub, session.keys.edPub]
-    : [session.keys.edPub];
+  const trustedAdders = computeOwnerTrustedAdders(session.ownerEdPub, session.keys.edPub);
   return ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId), trustedAdders);
 }
 

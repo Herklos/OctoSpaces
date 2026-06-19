@@ -47,10 +47,10 @@ import type { SealedBlob } from '../sync/account-seal.js';
 import { sealToRecipient, unsealFromRecipient } from '../sync/account-seal.js';
 import { inboxShard, inboxShards, pullInbox } from '../sync/inbox.js';
 import { appendToInbox } from '../sync/signed-append.js';
+import { createKeyedStore } from '../sync/keyed-store.js';
 import { verifyIdentityLinkBinding, verifyIdentityLinkKeys } from './identity-link.js';
 import type { IdentityLink } from './identity-link.js';
-import { createNode } from './nodes.js';
-import { inviteToNode, acceptNodeInvite } from './nodes.js';
+import { createNode, inviteToNode, acceptNodeInvite } from './nodes.js';
 import { readObjectTree } from './object-index.js';
 import { randomId } from '../core/ids.js';
 import type { Session } from '../sync/identity.js';
@@ -80,7 +80,7 @@ const inboxAad = (recipientId: string, shard: string, kind?: string) =>
 // In-memory only (module-level Map). Callers that need persistence across reloads
 // should call `serializeReqIdOwnerStore()` and `hydrateReqIdOwnerStore()`.
 
-const reqIdOwnerStore = new Map<string, string>(); // reqId → ownerEdPub
+const reqIdOwnerStore = createKeyedStore<string>(); // reqId → ownerEdPub
 
 /** Record the owner edPub for a submitted request (called by `submitResourceRequest`). */
 export function saveReqIdOwner(reqId: string, ownerEdPub: string): void {
@@ -89,12 +89,12 @@ export function saveReqIdOwner(reqId: string, ownerEdPub: string): void {
 
 /** Snapshot the store for persistence across reloads. */
 export function serializeReqIdOwnerStore(): Array<[string, string]> {
-  return [...reqIdOwnerStore.entries()];
+  return reqIdOwnerStore.serialize();
 }
 
 /** Restore the store after a reload (additive — does not clear existing entries). */
 export function hydrateReqIdOwnerStore(entries: Array<[string, string]>): void {
-  for (const [k, v] of entries) reqIdOwnerStore.set(k, v);
+  reqIdOwnerStore.hydrate(entries);
 }
 
 /** Clear the store (e.g. on sign-out). */

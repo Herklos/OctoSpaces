@@ -10,6 +10,7 @@ import type { StarfishClient } from '@drakkar.software/starfish-client';
 import type { CapCert } from '@drakkar.software/starfish-protocol';
 
 import { makeClient, ensureProfileKeys, ensurePseudo, type DeviceKeys } from './client.js';
+import { computeOwnerTrustedAdders } from './trusted-adders.js';
 import { accountScope, ownerScope } from './paths.js';
 import { getSharedSpacesNamespace } from '../core/config.js';
 import type { DerivedIdentity, PersistedSession, Vault } from '../core/storage-types.js';
@@ -55,9 +56,7 @@ export interface Session {
  * Trusted-adder allow-list for opening an OWNED space's keyring.
  */
 export function ownerTrustedAdders(session: Session): string[] {
-  return session.ownerEdPub === session.keys.edPub
-    ? [session.keys.edPub]
-    : [session.ownerEdPub, session.keys.edPub];
+  return computeOwnerTrustedAdders(session.ownerEdPub, session.keys.edPub);
 }
 
 /** Fresh 12-word recovery seed. */

@@ -61,7 +61,6 @@ vi.mock('../core/config.js', () => ({
   getSyncNamespace: vi.fn(() => undefined),
   getSyncPrefix: vi.fn(() => ''),
   getOnServerReachable: vi.fn(() => undefined),
-  getWebBase: vi.fn(() => ''),
 }));
 
 vi.mock('../sync/paths.js', async (importOriginal) => {

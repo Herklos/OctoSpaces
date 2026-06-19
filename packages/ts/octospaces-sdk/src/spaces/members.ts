@@ -30,16 +30,16 @@ import type { Space } from '../core/types.js';
 import type { Session } from '../sync/identity.js';
 import { ownerTrustedAdders } from '../sync/identity.js';
 import {
-  getSpaceAccessEntry,
   hydrateSpaceAccessStore,
   localSpaceAccessEntries,
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
-import { keyringName, keyringPull, keyringPush, RECIPIENT_LABEL_LEN, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
-import { addSpaceKeyringRecipient, ensureSpaceKeyringRecipient, isAlreadyPresentRecipient, ownerEnsureSpaceKeyring } from '../sync/client.js';
+import { keyringName, RECIPIENT_LABEL_LEN, spaceMemberScope, userIdFromEdPub } from '../sync/paths.js';
+import { addSpaceKeyringRecipient, ensureSpaceKeyringRecipient, isKeyringMissing } from '../sync/client.js';
 import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, buildSpace, readSpaces, updateSpacesDoc, removeSpaceMember } from './registry.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
 import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
+import { createKeyedStore } from '../sync/keyed-store.js';
 
 export interface JoinRequest {
   edPub: string;
@@ -53,10 +53,6 @@ export function makeJoinRequest(session: Session): string {
   const kemSig = bytesToHex(ed25519.sign(hexToBytes(session.keys.kemPub), hexToBytes(session.keys.edPriv)));
   const req: JoinRequest = { edPub: session.keys.edPub, kemPub: session.keys.kemPub, userId: session.userId, kemSig };
   return JSON.stringify(req);
-}
-
-function isKeyringMissing(err: unknown): boolean {
-  return err instanceof Error && /not found|404|does not exist|no keyring exists/i.test(err.message);
 }
 
 // ── Space invite store (nonces for full eviction) ─────────────────────────────
@@ -76,7 +72,7 @@ export interface StoredSpaceInvite {
   cap: { nonce: string; exp: number };
 }
 
-const spaceInviteStore = new Map<string, StoredSpaceInvite>(); // `${spaceId}:${userId}` → invite
+const spaceInviteStore = createKeyedStore<StoredSpaceInvite>(); // `${spaceId}:${userId}` → invite
 
 /** Save an invite entry for future revocation. Called internally by `inviteToSpace` / `createSpaceInviteLink`. */
 export function saveSpaceInviteEntry(spaceId: string, userId: string, entry: StoredSpaceInvite): void {
@@ -85,7 +81,7 @@ export function saveSpaceInviteEntry(spaceId: string, userId: string, entry: Sto
 
 /** Retrieve a stored invite entry. Returns null when absent. */
 export function getSpaceInviteEntry(spaceId: string, userId: string): StoredSpaceInvite | null {
-  return spaceInviteStore.get(`${spaceId}:${userId}`) ?? null;
+  return spaceInviteStore.get(`${spaceId}:${userId}`);
 }
 
 /** Clear all entries (e.g. on sign-out). */
@@ -95,12 +91,12 @@ export function clearSpaceInviteStore(): void {
 
 /** Snapshot the store for persistence across reloads. */
 export function serializeSpaceInviteStore(): Array<[string, StoredSpaceInvite]> {
-  return [...spaceInviteStore.entries()];
+  return spaceInviteStore.serialize();
 }
 
 /** Restore the store after a reload (additive — does not clear existing entries). */
 export function hydrateSpaceInviteStore(entries: Array<[string, StoredSpaceInvite]>): void {
-  for (const [k, v] of entries) spaceInviteStore.set(k, v);
+  spaceInviteStore.hydrate(entries);
 }
 
 interface SpaceInvite {

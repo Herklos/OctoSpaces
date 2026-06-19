@@ -15,12 +15,12 @@
  * before `addNodeKeyringRecipient`. Use `ensureNodeKeyringRecipient` to get both in
  * the correct order.
  */
-import { addCollectionRecipient, removeRecipient, listRecipients } from '@drakkar.software/starfish-keyring';
+import { removeRecipient, listRecipients } from '@drakkar.software/starfish-keyring';
 import type { Encryptor, StarfishClient } from '@drakkar.software/starfish-client';
 import { buildRevocationList } from '@drakkar.software/starfish-protocol';
 import type { RevocationList, RevokedSubject } from '@drakkar.software/starfish-protocol';
 
-import { openEncryptor, buildEncryptor, ownerEnsureKeyring, isAlreadyPresentRecipient } from './client.js';
+import { openEncryptor, buildEncryptor, ownerEnsureKeyring, addKeyringRecipientCore } from './client.js';
 import type { DeviceKeys } from './client.js';
 import { ownerTrustedAdders } from './identity.js';
 import type { Session } from './identity.js';
@@ -89,25 +89,20 @@ export function buildNodeEncryptor(
  * {@link ensureNodeKeyringRecipient}). "Already present" is swallowed so re-inviting
  * the same KEM is idempotent; every other error propagates.
  */
-export async function addNodeKeyringRecipient(
+export function addNodeKeyringRecipient(
   session: Session,
   spaceId: string,
   nodeId: string,
   recipient: NodeKeyringRecipient,
   opts: { trustedAdders?: string[] } = {},
 ): Promise<void> {
-  try {
-    await addCollectionRecipient(
-      session.chatClient,
-      nodeKeyringName(spaceId, nodeId),
-      recipient,
-      { edPriv: session.keys.edPriv, edPub: session.keys.edPub, kemPriv: session.keys.kemPriv },
-      { trustedAdders: opts.trustedAdders ?? ownerTrustedAdders(session) },
-    );
-  } catch (e) {
-    if (isAlreadyPresentRecipient(e)) return;
-    throw e;
-  }
+  return addKeyringRecipientCore(
+    session.chatClient,
+    session.keys,
+    nodeKeyringName(spaceId, nodeId),
+    recipient,
+    opts.trustedAdders ?? ownerTrustedAdders(session),
+  );
 }
 
 /**

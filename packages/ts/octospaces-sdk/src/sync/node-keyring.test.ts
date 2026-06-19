@@ -20,15 +20,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ── Mocks (hoisted — use vi.fn() inline, never module-level consts) ────────────
-vi.mock('./client.js', () => ({
-  openEncryptor: vi.fn().mockResolvedValue({ tag: 'enc' }),
-  buildEncryptor: vi.fn().mockResolvedValue({ tag: 'enc' }),
-  ownerEnsureKeyring: vi.fn().mockResolvedValue({ tag: 'enc' }),
-  // node-keyring.ts imports isAlreadyPresentRecipient from client.js.
-  isAlreadyPresentRecipient: vi.fn().mockImplementation(
-    (e: unknown) => /already (present|a recipient|exists)|duplicate/i.test(e instanceof Error ? e.message : String(e)),
-  ),
-}));
+// Partial mock: stub only the network-touching encryptor helpers, keep the real
+// addKeyringRecipientCore (which calls the mocked addCollectionRecipient below) so
+// the recipient-add assertions still pin the underlying call.
+vi.mock('./client.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./client.js')>();
+  return {
+    ...actual,
+    openEncryptor: vi.fn().mockResolvedValue({ tag: 'enc' }),
+    buildEncryptor: vi.fn().mockResolvedValue({ tag: 'enc' }),
+    ownerEnsureKeyring: vi.fn().mockResolvedValue({ tag: 'enc' }),
+  };
+});
 
 vi.mock('@drakkar.software/starfish-keyring', () => ({
   addCollectionRecipient: vi.fn().mockResolvedValue(undefined),

@@ -40,7 +40,6 @@ export interface PublicObjectDirEntry {
 /** Internal shape of one per-space bucket in the directory doc. */
 interface SpaceBucket {
   nodes?: unknown[];
-  ts?: number;
 }
 
 /**

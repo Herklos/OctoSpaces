@@ -48,7 +48,6 @@ import {
 } from '../sync/paths.js';
 import { ensureNodeKeyringRecipient } from '../sync/node-keyring.js';
 import {
-  getNodeAccessEntry,
   saveNodeAccessEntry,
   saveNodeStreamAccessEntry,
   saveNodeKeyringAccessEntry,
@@ -56,9 +55,10 @@ import {
 } from '../sync/space-access-store.js';
 import { sealToSelf } from '../sync/account-seal.js';
 import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
+import { createKeyedStore } from '../sync/keyed-store.js';
 import { addObject } from '../objects/objects.js';
 import { updateObjectIndex } from './object-index.js';
-import { addSpaceMember, buildSpace, readSpaces } from './registry.js';
+import { addSpaceMember, buildSpace } from './registry.js';
 import { randomId } from '../core/ids.js';
 import type { JoinRequest } from './members.js';
 
@@ -86,7 +86,7 @@ export interface StoredNodeInvite {
   };
 }
 
-const nodeInviteStore = new Map<string, StoredNodeInvite>();
+const nodeInviteStore = createKeyedStore<StoredNodeInvite>();
 
 /** Record the caps minted for an isolated node invite (owner side). Keyed by
  *  `${spaceId}:${nodeId}:${userId}`. */
@@ -100,7 +100,7 @@ export function saveNodeInviteEntry(
 export function getNodeInviteEntry(
   spaceId: string, nodeId: string, userId: string,
 ): StoredNodeInvite | null {
-  return nodeInviteStore.get(`${spaceId}:${nodeId}:${userId}`) ?? null;
+  return nodeInviteStore.get(`${spaceId}:${nodeId}:${userId}`);
 }
 
 /** Clear all stored invite entries (for test isolation or sign-out). */
@@ -113,7 +113,7 @@ export function clearNodeInviteStore(): void {
  * (IndexedDB, AsyncStorage, etc.) and later restore it via `hydrateNodeInviteStore`.
  */
 export function serializeNodeInviteStore(): Array<[string, StoredNodeInvite]> {
-  return [...nodeInviteStore.entries()];
+  return nodeInviteStore.serialize();
 }
 
 /**
@@ -122,7 +122,7 @@ export function serializeNodeInviteStore(): Array<[string, StoredNodeInvite]> {
  * remains possible after a page reload or process restart.
  */
 export function hydrateNodeInviteStore(entries: Array<[string, StoredNodeInvite]>): void {
-  for (const [k, v] of entries) nodeInviteStore.set(k, v);
+  nodeInviteStore.hydrate(entries);
 }
 
 // ── createNode ────────────────────────────────────────────────────────────────

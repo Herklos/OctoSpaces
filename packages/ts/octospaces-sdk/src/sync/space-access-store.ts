@@ -14,7 +14,6 @@
  * Keyed PER-USER so multiple accounts on one device never see each other's entries.
  */
 import type { CapMap, PubAccessMap } from '../core/types.js';
-import type { SealedBlob } from './account-seal.js';
 import { kvGet, kvSet } from '../core/adapters.js';
 
 export type SpaceAccessEntry =
