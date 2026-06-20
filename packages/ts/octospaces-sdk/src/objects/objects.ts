@@ -153,13 +153,25 @@ export function addObject(nodes: ObjectNode[], input: NewObjectInput, now: numbe
 }
 
 /** Patch a node's mutable metadata (title/emoji/meta/access/enc), bumping `updatedAt`. */
+/** Map over `nodes`, stamping `changes(n)` + a fresh `updatedAt: now` onto each node
+ *  matching `match` and leaving the rest untouched — the shared shape of every node
+ *  mutation below. */
+function updateNodes(
+  nodes: ObjectNode[],
+  match: (n: ObjectNode) => boolean,
+  changes: (n: ObjectNode) => Partial<ObjectNode>,
+  now: number,
+): ObjectNode[] {
+  return nodes.map((n) => (match(n) ? { ...n, ...changes(n), updatedAt: now } : n));
+}
+
 export function patchObject(
   nodes: ObjectNode[],
   id: ID,
   patch: Partial<Pick<ObjectNode, 'title' | 'emoji' | 'meta' | 'access' | 'enc'>>,
   now: number,
 ): ObjectNode[] {
-  return nodes.map((n) => (n.id === id ? { ...n, ...patch, updatedAt: now } : n));
+  return updateNodes(nodes, (n) => n.id === id, () => patch, now);
 }
 
 /** Reparent a node (move in the tree). Rejects making a node its own descendant. */
@@ -167,17 +179,17 @@ export function reparentObject(nodes: ObjectNode[], id: ID, parentId: ID | null,
   if (id === parentId) return nodes;
   if (parentId != null && subtreeIds(nodes, id).has(parentId)) return nodes;
   const siblings = nodes.filter((n) => n.parentId === parentId && n.id !== id);
-  return nodes.map((n) => (n.id === id ? { ...n, parentId, order: nextOrder(siblings), updatedAt: now } : n));
+  return updateNodes(nodes, (n) => n.id === id, () => ({ parentId, order: nextOrder(siblings) }), now);
 }
 
 /** Set explicit sibling order (drag-reorder). */
 export function reorderObjects(nodes: ObjectNode[], orderById: Record<ID, number>, now: number): ObjectNode[] {
-  return nodes.map((n) => (n.id in orderById ? { ...n, order: orderById[n.id]!, updatedAt: now } : n));
+  return updateNodes(nodes, (n) => n.id in orderById, (n) => ({ order: orderById[n.id]! }), now);
 }
 
 /** Cascade-archive a node and its whole subtree (soft delete). */
 export function archiveObject(nodes: ObjectNode[], id: ID, now: number): ObjectNode[] {
   const ids = subtreeIds(nodes, id);
-  return nodes.map((n) => (ids.has(n.id) ? { ...n, archived: true, updatedAt: now } : n));
+  return updateNodes(nodes, (n) => ids.has(n.id), () => ({ archived: true }), now);
 }
 

@@ -1,5 +1,17 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.14.2 (2026-06-20)
+
+Round-6 internal refactor — **no public API or behaviour change** (`index.ts`
+byte-identical; all 654 tests pass).
+
+### Changed
+
+- **`objects/objects.ts`** — `patchObject` / `reparentObject` / `reorderObjects` /
+  `archiveObject` all shared the same `nodes.map(n => match ? {…n, …changes, updatedAt:
+  now} : n)` shape; they now route through one `updateNodes(nodes, match, changes, now)`
+  helper. Pure tree functions, output byte-identical (covered by the objects vector tests).
+
 ## 0.14.1 (2026-06-20)
 
 Round-5/6 internal refactors — **no public API or behaviour change** (`index.ts`
