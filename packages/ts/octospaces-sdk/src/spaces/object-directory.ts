@@ -17,9 +17,7 @@
  * - objectDirPull() in sync/paths.ts (the pull path helper)
  */
 
-import { StarfishClient } from '@drakkar.software/starfish-client';
-import { getSyncBase, getSyncNamespace } from '../core/config.js';
-import { fetchWithTimeout } from '../sync/fetch-timeout.js';
+import { makeAnonClient } from '../sync/client.js';
 import { objectDirPull } from '../sync/paths.js';
 
 /**
@@ -83,11 +81,7 @@ export function parseObjectDirectoryDoc(data: unknown): PublicObjectDirEntry[] {
 export async function readObjectDirectory(
   shard: string = 'public',
 ): Promise<PublicObjectDirEntry[]> {
-  const client = new StarfishClient({
-    baseUrl: getSyncBase(),
-    namespace: getSyncNamespace(),
-    fetch: fetchWithTimeout(),
-  });
+  const client = makeAnonClient();
   let res: { data?: unknown } | null = null;
   try {
     res = await client.pull(objectDirPull(shard));

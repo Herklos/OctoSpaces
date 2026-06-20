@@ -384,6 +384,16 @@ export async function inviteToNode(
 /** Set of valid NodeInviteBundle kind discriminators. */
 const VALID_INVITE_KINDS: ReadonlySet<string> = new Set(['plaintext', 'space-enc', 'node-enc']);
 
+/** The three per-node cap tiers carried in a NodeInviteBundle, paired with their
+ *  access-store writers — drives `acceptNodeInvite`'s storage fan-out so each tier is
+ *  handled once. (The read-only-keyring vs read/write distinction lives in the MINTING
+ *  paths, not here; storage is uniform.) */
+const NODE_BUNDLE_TIERS = [
+  { field: 'nodeCap', save: saveNodeAccessEntry },
+  { field: 'streamCap', save: saveNodeStreamAccessEntry },
+  { field: 'keyringCap', save: saveNodeKeyringAccessEntry },
+] as const;
+
 export async function acceptNodeInvite(session: Session, bundleJson: string): Promise<string> {
   const bundle = JSON.parse(bundleJson) as Partial<NodeInviteBundle>;
   if (!bundle.spaceId || !bundle.nodeId) throw new Error('Invalid node invite.');
@@ -394,37 +404,27 @@ export async function acceptNodeInvite(session: Session, bundleJson: string): Pr
     throw new Error(`Invalid node invite: unknown kind '${bundle.kind}'.`);
   }
 
-  // Validate every cap that IS present was issued for this identity. `isolated`
-  // invites omit the space cap, so it's optional; but the bundle must carry at
-  // least one usable cap (space OR per-node content).
-  const assertForUs = (c: { kind?: string; sub?: string } | undefined, label: string): boolean =>
-    assertCapForMe(c, session.keys.edPub, `Invalid node invite (${label}): unexpected cap kind.`, `This invite was issued for a different identity (${label}).`);
+  // Validate every cap that IS present was issued for this identity, BEFORE storing any
+  // (so a bundle with one bad cap stores nothing). `isolated` invites omit the space cap,
+  // so it's optional; but the bundle must carry at least one usable cap (space OR per-node
+  // content). The space cap stores under the space tier; the three per-node caps under
+  // their own tiers (content `objinv`, stream `objinvlog`, keyring `nodekeyring`).
+  const assertForUs = (c: unknown, label: string): boolean =>
+    assertCapForMe(c as { kind?: string; sub?: string } | undefined, session.keys.edPub, `Invalid node invite (${label}): unexpected cap kind.`, `This invite was issued for a different identity (${label}).`);
 
-  const hasSpaceCap = assertForUs(bundle.cap as { kind?: string; sub?: string } | undefined, 'cap');
-  const hasNodeCap = assertForUs(bundle.nodeCap as { kind?: string; sub?: string } | undefined, 'nodeCap');
-  assertForUs(bundle.streamCap as { kind?: string; sub?: string } | undefined, 'streamCap');
-  assertForUs(bundle.keyringCap as { kind?: string; sub?: string } | undefined, 'keyringCap');
+  const spaceId = bundle.spaceId; // narrowed to string by the guard above
+  const nodeId = bundle.nodeId;
+  const hasSpaceCap = assertForUs(bundle.cap, 'cap');
+  const tierHas = NODE_BUNDLE_TIERS.map((t) => assertForUs(bundle[t.field], t.field));
+  const hasNodeCap = tierHas[0]!; // nodeCap is the first per-node tier
   if (!hasSpaceCap && !hasNodeCap) throw new Error('Invalid node invite.');
 
-  if (hasSpaceCap) {
-    // Store space-level cap so the invitee can read the index.
-    saveSpaceAccessEntry(bundle.spaceId, { kind: 'member', cap: JSON.stringify(bundle.cap) });
-  }
-  if (hasNodeCap) {
-    // invite+plaintext (or per-node-keyring enc): store the narrow per-node content cap.
-    saveNodeAccessEntry(bundle.spaceId, bundle.nodeId, { kind: 'member', cap: JSON.stringify(bundle.nodeCap) });
-  }
-  if (bundle.streamCap) {
-    // ...and the per-node STREAM cap (objinvlog), under its own entry.
-    saveNodeStreamAccessEntry(bundle.spaceId, bundle.nodeId, { kind: 'member', cap: JSON.stringify(bundle.streamCap) });
-  }
-  if (bundle.keyringCap) {
-    // ...and the per-node KEYRING cap (nodekeyring) for E2EE tickets — lets the requester
-    // open the node keyring and decrypt content without the space-wide key.
-    saveNodeKeyringAccessEntry(bundle.spaceId, bundle.nodeId, { kind: 'member', cap: JSON.stringify(bundle.keyringCap) });
-  }
+  if (hasSpaceCap) saveSpaceAccessEntry(spaceId, { kind: 'member', cap: JSON.stringify(bundle.cap) });
+  NODE_BUNDLE_TIERS.forEach((t, i) => {
+    if (tierHas[i]) t.save(spaceId, nodeId, { kind: 'member', cap: JSON.stringify(bundle[t.field]) });
+  });
 
-  return bundle.nodeId;
+  return nodeId;
 }
 
 // ── revokeNodeAccess ──────────────────────────────────────────────────────────

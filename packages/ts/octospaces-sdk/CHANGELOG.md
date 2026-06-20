@@ -1,5 +1,25 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.14.1 (2026-06-20)
+
+Round-5/6 internal refactors — **no public API or behaviour change** (`index.ts`
+byte-identical; all 654 tests pass; no wire artifact changed).
+
+### Changed
+
+- **`spaces/nodes.ts`** — `acceptNodeInvite`'s per-node cap storage fan-out (content /
+  stream / keyring) is driven by one `NODE_BUNDLE_TIERS` descriptor instead of three
+  hand-written `if (bundle.xCap) saveX(...)` blocks. All caps are still validated for the
+  recipient identity BEFORE any is stored (unchanged ordering); the read-only-keyring vs
+  read/write distinction stays in the minting paths.
+- **`sync/client.ts`** — new internal `makeAnonClient()` builds the cap-less
+  `{ baseUrl, namespace, fetch }` client that `getProfileBatchClient`, `pairing.ts`
+  (was a local `anonClient`), and `spaces/object-directory.ts` each constructed inline.
+- **`spaces/registry.ts`** — `pullSpacesDoc`'s return mapping and `readSpaces`'s error
+  fallback shared the same 8-field empty/coerced `_spaces` doc shape; both now route
+  through one `coerceSpacesDoc(data, hash)` (per-field coerce semantics unchanged —
+  `coerceMutes`/`coerceReads` keep their distinct value handling).
+
 ## 0.14.0 (2026-06-20)
 
 **Wire-format change (breaking for pre-0.13 inbox items only).** Drops the legacy

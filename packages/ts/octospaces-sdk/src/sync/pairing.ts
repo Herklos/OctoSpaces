@@ -5,7 +5,6 @@
  * nonce; the new device fetches the sealed blob, opens it with the PIN, and
  * validates the cap bundle.
  */
-import { StarfishClient } from '@drakkar.software/starfish-client';
 import {
   installPairingBundle,
   openWithPassphrase,
@@ -14,9 +13,7 @@ import {
 } from '@drakkar.software/starfish-identities';
 import type { CapCert } from '@drakkar.software/starfish-protocol';
 
-import type { DeviceKeys } from './client.js';
-import { getSyncBase, getSyncNamespace } from '../core/config.js';
-import { fetchWithTimeout } from './fetch-timeout.js';
+import { makeAnonClient, type DeviceKeys } from './client.js';
 import type { Session } from './identity.js';
 import { fingerprintFromUserId } from './identity.js';
 import { bytesToHex, linkedDeviceScope } from './paths.js';
@@ -27,10 +24,6 @@ export const PAIR_PREFIX = 'octospaces-pair:';
 
 // Linked-device cap-cert lifetime — one year keeps a linked device usable long-term.
 const LINKED_DEVICE_TTL_SEC = 365 * 24 * 60 * 60;
-
-function anonClient(): StarfishClient {
-  return new StarfishClient({ baseUrl: getSyncBase(), namespace: getSyncNamespace(), fetch: fetchWithTimeout() });
-}
 
 function randomNonce(): string {
   const b = new Uint8Array(16);
@@ -83,7 +76,7 @@ export async function startDevicePairing(session: Session, pin: string, opts?: S
   // This ensures only the FIRST write to this slot succeeds; an attacker who learns
   // the nonce cannot silently overwrite our bundle (a subsequent push needs the
   // post-write hash, which only the server knows).
-  const client = anonClient();
+  const client = makeAnonClient();
   const existingHash = await client
     .pull(`/pull/_pairing/${nonce}`)
     .then((r) => r.hash)
@@ -111,7 +104,7 @@ export async function completeDevicePairing(payload: string, pin: string): Promi
     ? payload.slice(payload.indexOf(':') + 1)
     : payload).trim();
   const [nonce, expectedRootEdPub] = body.split('.');
-  const res = await anonClient().pull(`/pull/_pairing/${nonce}`).catch(() => null);
+  const res = await makeAnonClient().pull(`/pull/_pairing/${nonce}`).catch(() => null);
   const sealed = res?.data as Record<string, unknown> | undefined;
   if (!sealed || !sealed.v) throw new Error('Pairing code not found or expired.');
   let inner: Uint8Array;
@@ -130,7 +123,7 @@ export async function completeDevicePairing(payload: string, pin: string): Promi
   // Best-effort one-shot clear: overwrite the rendezvous slot with an empty doc so the
   // PIN-sealed bundle is not left readable in the public collection indefinitely.
   // Failure here is harmless — the server's TTL on _pairing/* is the real backstop.
-  const clearClient = anonClient();
+  const clearClient = makeAnonClient();
   void clearClient
     .pull(`/pull/_pairing/${nonce}`)
     .then((r) =>

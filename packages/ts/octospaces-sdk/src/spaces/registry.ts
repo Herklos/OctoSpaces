@@ -150,23 +150,21 @@ function coerceQuickReactions(raw: unknown): string[] {
 
 const coerceArchivedDms = (raw: unknown): ArchivedDms => coerceRecord(raw, (v): v is true => v === true);
 
-async function pullSpacesDoc(client: StarfishClient, userId: string): Promise<SpacesDoc> {
-  const res = await client.pull(spacesPull(userId)).catch((err: unknown) => {
-    if (err instanceof StarfishHttpError && err.status === 404) return null;
-    throw err;
-  });
-  const data = res?.data as
-    | {
-        spaces?: Space[];
-        caps?: CapMap;
-        mutes?: unknown;
-        reads?: unknown;
-        pubAccess?: PubAccessMap;
-        dms?: unknown;
-        quickReactions?: unknown;
-        archivedDms?: unknown;
-      }
-    | undefined;
+type RawSpacesDoc = {
+  spaces?: Space[];
+  caps?: CapMap;
+  mutes?: unknown;
+  reads?: unknown;
+  pubAccess?: PubAccessMap;
+  dms?: unknown;
+  quickReactions?: unknown;
+  archivedDms?: unknown;
+};
+
+/** Coerce a raw `_spaces` doc body (or `undefined`) into a typed {@link SpacesDoc}.
+ *  Shared by the normal pull path AND the error/empty fallback so the per-field defaults
+ *  live in one place — every coercer already maps `undefined` to its empty value. */
+function coerceSpacesDoc(data: RawSpacesDoc | undefined, hash: string | null): SpacesDoc {
   return {
     spaces: Array.isArray(data?.spaces) ? data!.spaces! : [],
     caps: data?.caps && typeof data.caps === 'object' ? data.caps : {},
@@ -176,8 +174,16 @@ async function pullSpacesDoc(client: StarfishClient, userId: string): Promise<Sp
     dms: coerceDms(data?.dms),
     quickReactions: coerceQuickReactions(data?.quickReactions),
     archivedDms: coerceArchivedDms(data?.archivedDms),
-    hash: res?.hash ?? null,
+    hash,
   };
+}
+
+async function pullSpacesDoc(client: StarfishClient, userId: string): Promise<SpacesDoc> {
+  const res = await client.pull(spacesPull(userId)).catch((err: unknown) => {
+    if (err instanceof StarfishHttpError && err.status === 404) return null;
+    throw err;
+  });
+  return coerceSpacesDoc(res?.data as RawSpacesDoc | undefined, res?.hash ?? null);
 }
 
 export async function readSpaces(client: StarfishClient, userId: string): Promise<SpacesDoc> {
@@ -185,17 +191,7 @@ export async function readSpaces(client: StarfishClient, userId: string): Promis
     return await pullSpacesDoc(client, userId);
   } catch (err) {
     console.error('[readSpaces] failed to pull spaces registry', err);
-    return {
-      spaces: [],
-      caps: {},
-      mutes: coerceMutes(undefined),
-      reads: coerceReads(undefined),
-      pubAccess: {},
-      dms: {},
-      quickReactions: [],
-      archivedDms: {},
-      hash: null,
-    };
+    return coerceSpacesDoc(undefined, null);
   }
 }
 

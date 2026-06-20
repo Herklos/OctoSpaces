@@ -50,6 +50,14 @@ export function makeClient(cap: unknown, devEdPrivHex: string, namespaceOverride
   });
 }
 
+/** Build a cap-less Starfish client — anonymous reads/writes that carry no member cap
+ *  (public object/space directories, the pairing rendezvous, batch profile pulls). Same
+ *  base URL / namespace / timeout-fetch as every other client; no cap, cache, or
+ *  revalidation wiring. */
+export function makeAnonClient(): StarfishClient {
+  return new StarfishClient({ baseUrl: getSyncBase(), namespace: getSyncNamespace(), fetch: fetchWithTimeout() });
+}
+
 /**
  * Open a node's decryptor, throwing a descriptive error per failure mode
  * (unreachable server / no keyring yet / not a recipient).
@@ -293,7 +301,7 @@ export async function readPseudo(userId: string): Promise<string | null> {
 let profileBatchClient: StarfishClient | undefined;
 function getProfileBatchClient(): StarfishClient {
   if (!profileBatchClient) {
-    profileBatchClient = new StarfishClient({ baseUrl: getSyncBase(), namespace: getSyncNamespace(), fetch: fetchWithTimeout() });
+    profileBatchClient = makeAnonClient();
   }
   return profileBatchClient;
 }
