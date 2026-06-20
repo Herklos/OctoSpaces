@@ -1,5 +1,20 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.13.5 (2026-06-20)
+
+Round-5 continuation — **no public API or behaviour change** (`index.ts` byte-identical;
+all 654 tests pass, including the 27 resource-request security-regression tests; no wire
+artifact changed).
+
+### Changed
+
+- **`spaces/resource-requests.ts`** — `scanResourceRequests` and `scanResourceGrants` shared
+  the same inbox-scan scaffold (walk both shards → `pullInbox` → sealed-check →
+  `tryUnsealInbox` → JSON-parse). Factored into one generic `scanInbox(session, defaultKind,
+  handle)` primitive; each scanner now supplies only its per-item validation as the handler.
+  All security checks (sender-authenticity, `userId←edPub`, kemSig, dedup, grant
+  sender-auth) are unchanged — they moved verbatim into the handlers.
+
 ## 0.13.4 (2026-06-19)
 
 Fourth internal simplification pass — **no public API or behaviour change** (the

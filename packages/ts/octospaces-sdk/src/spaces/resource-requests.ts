@@ -118,6 +118,39 @@ async function sealAppend(
   );
 }
 
+/**
+ * Generic inbox scan: walk both shards, pull each element, trial-unseal it with the
+ * kind-bound AAD (falling back to legacy), JSON-parse it, and hand the parsed payload +
+ * its sealed envelope to `handle`. The shared scaffold behind `scanResourceRequests` and
+ * `scanResourceGrants` — only the per-item validation differs (it lives in `handle`, which
+ * returns early to skip an element). Best-effort: a corrupt / unsealed / unparseable
+ * element is skipped, never aborting the scan.
+ */
+async function scanInbox(
+  session: Session,
+  defaultKind: string,
+  handle: (parsed: unknown, sealed: SealedBlob) => void | Promise<void>,
+): Promise<void> {
+  for (const shard of inboxShards()) {
+    const items = await pullInbox(session.accountClient, session.userId, shard);
+    for (const item of items) {
+      const payload = item?.data as Partial<InboxPayload> | undefined;
+      if (!payload?.sealed) continue;
+
+      const plaintext = await tryUnsealInbox(session, payload.sealed, shard, payload.mkind, defaultKind);
+      if (plaintext === null) continue;
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(plaintext);
+      } catch {
+        continue;
+      }
+      await handle(parsed, payload.sealed);
+    }
+  }
+}
+
 // ── Owner-store: reqId → owner edPub (sender-authenticity for scanResourceGrants) ────────────
 //
 // When a requester submits a request they record which owner edPub they sent it to.
@@ -315,73 +348,59 @@ export async function scanResourceRequests(
   const treeCache = new Map<string, ObjectNode[]>();
 
   const out: PendingRequest[] = [];
-  for (const shard of inboxShards()) {
-    const items = await pullInbox(session.accountClient, session.userId, shard);
-    for (const item of items) {
-      const payload = item?.data as Partial<InboxPayload> | undefined;
-      if (!payload?.sealed) continue;
+  await scanInbox(session, 'request', async (parsed, sealed) => {
+    const req = parsed as Partial<ResourceRequest>;
 
-      const plaintext = await tryUnsealInbox(session, payload.sealed, shard, payload.mkind, 'request');
-      if (plaintext === null) continue;
-
-      let req: Partial<ResourceRequest>;
-      try {
-        req = JSON.parse(plaintext) as Partial<ResourceRequest>;
-      } catch {
-        continue;
-      }
-
-      if (
-        req.v !== 1 ||
-        req.kind !== 'create-resource' ||
-        typeof req.reqId !== 'string' ||
-        typeof req.spaceId !== 'string' ||
-        typeof req.nodeType !== 'string' ||
-        typeof req.title !== 'string' ||
-        !req.requester ||
-        typeof req.requester.edPub !== 'string' ||
-        typeof req.requester.kemPub !== 'string' ||
-        typeof req.requester.userId !== 'string' ||
-        typeof req.requester.kemSig !== 'string'
-      ) {
-        continue; // not a valid resource request
-      }
-
-      // Sender-authenticity check: the sealer's edPub must match the declared identity.
-      if (payload.sealed.entry.addedBy !== req.requester.edPub) {
-        continue; // spoofed requester identity — skip
-      }
-
-      // Verify the requester's userId is cryptographically derived from their edPub.
-      // Without this check a requester could supply a forged userId to pollute the roster
-      // (cap minting in acceptResourceRequest uses req.requester.userId as the cap subject).
-      if ((await userIdFromEdPub(req.requester.edPub)) !== req.requester.userId) continue;
-
-      // Verify kemSig — Ed25519 sig of kemPub by edPriv — prevents an MITM from
-      // substituting their own kemPub so they can read E2EE content sealed for the requester.
-      if (!verifyKemSig(req.requester.edPub, req.requester.kemPub, req.requester.kemSig)) {
-        continue; // missing/invalid kemSig or malformed hex — skip
-      }
-
-      // Space-id allow-list (optional)
-      if (spaceIds && !spaceIds.has(req.spaceId)) {
-        continue;
-      }
-
-      // Dedup: skip if a node with this reqId already exists in the target space.
-      if (!treeCache.has(req.spaceId)) {
-        const tree = await readObjectTree(session, req.spaceId).catch(() => []);
-        treeCache.set(req.spaceId, tree);
-      }
-      const tree = treeCache.get(req.spaceId) ?? [];
-      const alreadyFulfilled = tree.some(
-        (n) => (n.meta as Record<string, unknown> | undefined)?.reqId === req.reqId,
-      );
-      if (alreadyFulfilled) continue;
-
-      out.push({ req: req as ResourceRequest, senderEdPub: payload.sealed.entry.addedBy });
+    if (
+      req.v !== 1 ||
+      req.kind !== 'create-resource' ||
+      typeof req.reqId !== 'string' ||
+      typeof req.spaceId !== 'string' ||
+      typeof req.nodeType !== 'string' ||
+      typeof req.title !== 'string' ||
+      !req.requester ||
+      typeof req.requester.edPub !== 'string' ||
+      typeof req.requester.kemPub !== 'string' ||
+      typeof req.requester.userId !== 'string' ||
+      typeof req.requester.kemSig !== 'string'
+    ) {
+      return; // not a valid resource request
     }
-  }
+
+    // Sender-authenticity check: the sealer's edPub must match the declared identity.
+    if (sealed.entry.addedBy !== req.requester.edPub) {
+      return; // spoofed requester identity — skip
+    }
+
+    // Verify the requester's userId is cryptographically derived from their edPub.
+    // Without this check a requester could supply a forged userId to pollute the roster
+    // (cap minting in acceptResourceRequest uses req.requester.userId as the cap subject).
+    if ((await userIdFromEdPub(req.requester.edPub)) !== req.requester.userId) return;
+
+    // Verify kemSig — Ed25519 sig of kemPub by edPriv — prevents an MITM from
+    // substituting their own kemPub so they can read E2EE content sealed for the requester.
+    if (!verifyKemSig(req.requester.edPub, req.requester.kemPub, req.requester.kemSig)) {
+      return; // missing/invalid kemSig or malformed hex — skip
+    }
+
+    // Space-id allow-list (optional)
+    if (spaceIds && !spaceIds.has(req.spaceId)) {
+      return;
+    }
+
+    // Dedup: skip if a node with this reqId already exists in the target space.
+    if (!treeCache.has(req.spaceId)) {
+      const tree = await readObjectTree(session, req.spaceId).catch(() => []);
+      treeCache.set(req.spaceId, tree);
+    }
+    const tree = treeCache.get(req.spaceId) ?? [];
+    const alreadyFulfilled = tree.some(
+      (n) => (n.meta as Record<string, unknown> | undefined)?.reqId === req.reqId,
+    );
+    if (alreadyFulfilled) return;
+
+    out.push({ req: req as ResourceRequest, senderEdPub: sealed.entry.addedBy });
+  });
   return out;
 }
 
@@ -501,47 +520,33 @@ export async function scanResourceGrants(
   const out: ResourceGrant[] = [];
   // Use caller-provided Set (persistent cross-scan dedup) or a fresh one (in-scan only).
   const seenReqIds = opts?.seenReqIds ?? new Set<string>();
-  for (const shard of inboxShards()) {
-    const items = await pullInbox(session.accountClient, session.userId, shard);
-    for (const item of items) {
-      const payload = item?.data as Partial<InboxPayload> | undefined;
-      if (!payload?.sealed) continue;
+  await scanInbox(session, 'grant', (parsed, sealed) => {
+    const msg = parsed as Partial<ResourceGrant | ResourceReject>;
 
-      const plaintext = await tryUnsealInbox(session, payload.sealed, shard, payload.mkind, 'grant');
-      if (plaintext === null) continue;
-
-      let msg: Partial<ResourceGrant | ResourceReject>;
-      try {
-        msg = JSON.parse(plaintext) as Partial<ResourceGrant | ResourceReject>;
-      } catch {
-        continue;
-      }
-
-      if (msg.v !== 1 || msg.kind !== 'grant') continue;
-      const g = msg as Partial<ResourceGrant>;
-      if (
-        typeof g.reqId !== 'string' ||
-        typeof g.spaceId !== 'string' ||
-        typeof g.nodeId !== 'string' ||
-        typeof g.bundle !== 'string'
-      ) {
-        continue;
-      }
-
-      // Sender-authenticity check: when we have a record of which owner edPub we sent
-      // this reqId to, the grant MUST come from that owner. This prevents a third party
-      // from forging a grant and burning the reqId in seenReqIds (which would cause the
-      // legitimate grant to be silently skipped).
-      const expectedOwnerEdPub = reqIdOwnerStore.get(g.reqId!);
-      if (expectedOwnerEdPub && payload.sealed.entry.addedBy !== expectedOwnerEdPub) {
-        continue; // forged sender — skip without burning the reqId
-      }
-
-      if (seenReqIds.has(g.reqId!)) continue; // skip replayed/duplicate grant
-      seenReqIds.add(g.reqId!);
-      out.push(g as ResourceGrant);
+    if (msg.v !== 1 || msg.kind !== 'grant') return;
+    const g = msg as Partial<ResourceGrant>;
+    if (
+      typeof g.reqId !== 'string' ||
+      typeof g.spaceId !== 'string' ||
+      typeof g.nodeId !== 'string' ||
+      typeof g.bundle !== 'string'
+    ) {
+      return;
     }
-  }
+
+    // Sender-authenticity check: when we have a record of which owner edPub we sent
+    // this reqId to, the grant MUST come from that owner. This prevents a third party
+    // from forging a grant and burning the reqId in seenReqIds (which would cause the
+    // legitimate grant to be silently skipped).
+    const expectedOwnerEdPub = reqIdOwnerStore.get(g.reqId!);
+    if (expectedOwnerEdPub && sealed.entry.addedBy !== expectedOwnerEdPub) {
+      return; // forged sender — skip without burning the reqId
+    }
+
+    if (seenReqIds.has(g.reqId!)) return; // skip replayed/duplicate grant
+    seenReqIds.add(g.reqId!);
+    out.push(g as ResourceGrant);
+  });
   return out;
 }
 
