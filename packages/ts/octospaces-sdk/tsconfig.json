@@ -15,6 +15,6 @@
     "types": ["node"]
   },
   "include": ["src"],
-  "//": "Test files are validated at runtime by vitest; typecheck/lint gate the shipped source (with noUnusedLocals).",
-  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
+  "//": "Tests live under tests/ (outside include) and are validated at runtime by vitest; typecheck/lint gate the shipped source (with noUnusedLocals).",
+  "exclude": ["node_modules", "dist"]
 }

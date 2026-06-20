@@ -4,17 +4,16 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: false,
-    include: ['src/**/*.test.ts'],
+    include: ['tests/**/*.test.ts'],
     // Run serially — some tests share module-level singletons (member-caps cache).
     pool: 'forks',
     poolOptions: { forks: { singleFork: true } },
     coverage: {
       provider: 'v8',
       include: ['src/**/*.ts'],
+      // Tests live under tests/ (outside the coverage include); only entry
+      // points need excluding from the src/ source set.
       exclude: [
-        'src/**/*.test.ts',
-        'src/**/*.vectors.test.ts',
-        'src/**/*.regression.test.ts',
         'src/index.ts',
         'src/wal.ts',
       ],

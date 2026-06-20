@@ -11,8 +11,9 @@
 # From package dir — vitest not in PATH from root
 cd packages/ts/octospaces-sdk && /Users/user/Documents/dev/Drakkar-Software/octospaces/node_modules/.bin/vitest run
 # Single file
-cd packages/ts/octospaces-sdk && /Users/user/Documents/dev/Drakkar-Software/octospaces/node_modules/.bin/vitest run src/spaces/members.keyring.test.ts
+cd packages/ts/octospaces-sdk && /Users/user/Documents/dev/Drakkar-Software/octospaces/node_modules/.bin/vitest run tests/spaces/members.keyring.test.ts
 ```
+Tests live in `tests/` (mirrors `src/` subdirs); source files import nothing from there.
 `pnpm --filter octospaces-sdk exec vitest run <abs-path>` does NOT work — use package-relative path from within the package dir.
 
 ## Vitest mock gotcha
