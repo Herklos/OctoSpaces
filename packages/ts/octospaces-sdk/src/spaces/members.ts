@@ -38,7 +38,7 @@ import { addSpaceKeyringRecipient, ensureSpaceKeyringRecipient, isKeyringMissing
 import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, buildSpace, readSpaces, updateSpacesDoc, removeSpaceMember } from './registry.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
 import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
-import { createKeyedStore } from '../sync/keyed-store.js';
+import { createComposedStore } from '../sync/keyed-store.js';
 
 export interface JoinRequest {
   edPub: string;
@@ -71,32 +71,22 @@ export interface StoredSpaceInvite {
   cap: { nonce: string; exp: number };
 }
 
-const spaceInviteStore = createKeyedStore<StoredSpaceInvite>(); // `${spaceId}:${userId}` → invite
+// Keyed `${spaceId}:${userId}` → invite. Wrappers keep their exact names/signatures; the
+// save/get/clear/serialize/hydrate API is provided by `createComposedStore`.
+const spaceInviteStore = createComposedStore<StoredSpaceInvite, [string, string]>((spaceId, userId) => `${spaceId}:${userId}`);
 
 /** Save an invite entry for future revocation. Called internally by `inviteToSpace` / `createSpaceInviteLink`. */
-export function saveSpaceInviteEntry(spaceId: string, userId: string, entry: StoredSpaceInvite): void {
-  spaceInviteStore.set(`${spaceId}:${userId}`, entry);
-}
-
+export const saveSpaceInviteEntry = (spaceId: string, userId: string, entry: StoredSpaceInvite): void =>
+  spaceInviteStore.save([spaceId, userId], entry);
 /** Retrieve a stored invite entry. Returns null when absent. */
-export function getSpaceInviteEntry(spaceId: string, userId: string): StoredSpaceInvite | null {
-  return spaceInviteStore.get(`${spaceId}:${userId}`);
-}
-
+export const getSpaceInviteEntry = (spaceId: string, userId: string): StoredSpaceInvite | null =>
+  spaceInviteStore.get([spaceId, userId]);
 /** Clear all entries (e.g. on sign-out). */
-export function clearSpaceInviteStore(): void {
-  spaceInviteStore.clear();
-}
-
+export const clearSpaceInviteStore = spaceInviteStore.clear;
 /** Snapshot the store for persistence across reloads. */
-export function serializeSpaceInviteStore(): Array<[string, StoredSpaceInvite]> {
-  return spaceInviteStore.serialize();
-}
-
+export const serializeSpaceInviteStore = spaceInviteStore.serialize;
 /** Restore the store after a reload (additive — does not clear existing entries). */
-export function hydrateSpaceInviteStore(entries: Array<[string, StoredSpaceInvite]>): void {
-  spaceInviteStore.hydrate(entries);
-}
+export const hydrateSpaceInviteStore = spaceInviteStore.hydrate;
 
 interface SpaceInvite {
   spaceId: string;
@@ -362,7 +352,7 @@ export async function revokeSpaceAccess(
     submitRevocation: (list: RevocationList) => Promise<void>;
   },
 ): Promise<{ revoked: boolean }> {
-  const invite = spaceInviteStore.get(`${spaceId}:${userId}`);
+  const invite = getSpaceInviteEntry(spaceId, userId);
   if (!invite) {
     throw new Error(
       `revokeSpaceAccess: no stored invite for ${userId} on space ${spaceId} — call saveSpaceInviteEntry or use inviteToSpace / createSpaceInviteLink (which auto-store the entry)`,

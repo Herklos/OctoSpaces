@@ -1,5 +1,31 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.14.3 (2026-06-20)
+
+Keyed-store consolidation — **no public API or behaviour change** (`index.ts` byte-identical;
+all 654 tests pass; net −17 source lines).
+
+### Changed
+
+- **`sync/keyed-store.ts`** — new `createComposedStore<T, K>(composeKey)` factory bundling a
+  keyed store with a key-composer and exposing the shared `save`/`get`/`clear`/`serialize`/
+  `hydrate` API.
+- **`spaces/members.ts` (`spaceInviteStore`), `spaces/nodes.ts` (`nodeInviteStore`)** — the
+  hand-rolled 5-function wrapper sets now delegate to `createComposedStore`; every export keeps
+  its name and call signature (`function` → `const` arrow only). Internal `revoke*Access`
+  callers use the public `get*InviteEntry` wrappers instead of the raw store.
+- **`spaces/resource-requests.ts` (`reqIdOwnerStore`)** — kept on the raw keyed store (the
+  `scanResourceGrants` sender-authenticity check reads it directly by `reqId`); only its
+  `serialize`/`hydrate`/`clear` trio collapsed to direct method references.
+
+### Notes
+
+- A "generic crypto" layer was evaluated and **deliberately not done**: the seal/encryptor/
+  keyring cores are already shared, and the thin per-tier wrappers are load-bearing — they
+  enforce the ensure-before-add-recipient ordering, the rotate-only-vs-full-evict distinction,
+  the device-pairing-must-not-ensure rule, and AAD shard/kind binding. Genericizing them would
+  trade those safety guarantees and type-safety for ~5–15 cosmetic lines. Not worth it.
+
 ## 0.14.2 (2026-06-20)
 
 Round-6 internal refactor — **no public API or behaviour change** (`index.ts`

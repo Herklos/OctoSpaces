@@ -26,3 +26,21 @@ export function createKeyedStore<T>(): KeyedStore<T> {
     hydrate: (entries) => { for (const [key, value] of entries) map.set(key, value); },
   };
 }
+
+/**
+ * A {@link createKeyedStore} plus a key-composer, exposing the
+ * `save`/`get`/`clear`/`serialize`/`hydrate` API the SDK's invite/owner stores share. `K` is
+ * the tuple of key parts each store composes (e.g. `[spaceId, userId]`); `save`/`get` take the
+ * parts as an array and the rest delegate straight through. Lets each store collapse its
+ * hand-rolled wrapper set to a few one-liners with no behaviour change.
+ */
+export function createComposedStore<T, K extends unknown[]>(composeKey: (...parts: K) => string) {
+  const store = createKeyedStore<T>();
+  return {
+    save: (parts: K, value: T): void => store.set(composeKey(...parts), value),
+    get: (parts: K): T | null => store.get(composeKey(...parts)),
+    clear: store.clear,
+    serialize: store.serialize,
+    hydrate: store.hydrate,
+  };
+}

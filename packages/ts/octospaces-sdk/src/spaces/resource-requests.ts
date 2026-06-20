@@ -156,27 +156,18 @@ async function scanInbox(
 // In-memory only (module-level Map). Callers that need persistence across reloads
 // should call `serializeReqIdOwnerStore()` and `hydrateReqIdOwnerStore()`.
 
-const reqIdOwnerStore = createKeyedStore<string>(); // reqId → ownerEdPub
+// reqId → ownerEdPub. Kept on the raw keyed store because `scanResourceGrants` reads it
+// directly by reqId (`reqIdOwnerStore.get(reqId)`); the persistence trio is plain delegation.
+const reqIdOwnerStore = createKeyedStore<string>();
 
 /** Record the owner edPub for a submitted request (called by `submitResourceRequest`). */
-export function saveReqIdOwner(reqId: string, ownerEdPub: string): void {
-  reqIdOwnerStore.set(reqId, ownerEdPub);
-}
-
+export const saveReqIdOwner = (reqId: string, ownerEdPub: string): void => reqIdOwnerStore.set(reqId, ownerEdPub);
 /** Snapshot the store for persistence across reloads. */
-export function serializeReqIdOwnerStore(): Array<[string, string]> {
-  return reqIdOwnerStore.serialize();
-}
-
+export const serializeReqIdOwnerStore = reqIdOwnerStore.serialize;
 /** Restore the store after a reload (additive — does not clear existing entries). */
-export function hydrateReqIdOwnerStore(entries: Array<[string, string]>): void {
-  reqIdOwnerStore.hydrate(entries);
-}
-
+export const hydrateReqIdOwnerStore = reqIdOwnerStore.hydrate;
 /** Clear the store (e.g. on sign-out). */
-export function clearReqIdOwnerStore(): void {
-  reqIdOwnerStore.clear();
-}
+export const clearReqIdOwnerStore = reqIdOwnerStore.clear;
 
 // ── Payload types ─────────────────────────────────────────────────────────────
 

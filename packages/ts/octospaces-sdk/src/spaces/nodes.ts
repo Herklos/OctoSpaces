@@ -49,7 +49,7 @@ import {
 } from '../sync/space-access-store.js';
 import { sealToSelf } from '../sync/account-seal.js';
 import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
-import { createKeyedStore } from '../sync/keyed-store.js';
+import { createComposedStore } from '../sync/keyed-store.js';
 import { addObject } from '../objects/objects.js';
 import { updateObjectIndex } from './object-index.js';
 import { addSpaceMember, buildSpace } from './registry.js';
@@ -79,44 +79,28 @@ export interface StoredNodeInvite {
   };
 }
 
-const nodeInviteStore = createKeyedStore<StoredNodeInvite>();
+// Keyed `${spaceId}:${nodeId}:${userId}` → invite. Wrappers keep their exact
+// names/signatures; the store API is provided by `createComposedStore`.
+const nodeInviteStore = createComposedStore<StoredNodeInvite, [string, string, string]>(
+  (spaceId, nodeId, userId) => `${spaceId}:${nodeId}:${userId}`,
+);
 
-/** Record the caps minted for an isolated node invite (owner side). Keyed by
- *  `${spaceId}:${nodeId}:${userId}`. */
-export function saveNodeInviteEntry(
+/** Record the caps minted for an isolated node invite (owner side). */
+export const saveNodeInviteEntry = (
   spaceId: string, nodeId: string, userId: string, entry: StoredNodeInvite,
-): void {
-  nodeInviteStore.set(`${spaceId}:${nodeId}:${userId}`, entry);
-}
-
+): void => nodeInviteStore.save([spaceId, nodeId, userId], entry);
 /** Retrieve the stored invite entry for a user on a node, or null if absent. */
-export function getNodeInviteEntry(
+export const getNodeInviteEntry = (
   spaceId: string, nodeId: string, userId: string,
-): StoredNodeInvite | null {
-  return nodeInviteStore.get(`${spaceId}:${nodeId}:${userId}`);
-}
-
+): StoredNodeInvite | null => nodeInviteStore.get([spaceId, nodeId, userId]);
 /** Clear all stored invite entries (for test isolation or sign-out). */
-export function clearNodeInviteStore(): void {
-  nodeInviteStore.clear();
-}
-
-/**
- * Serialize the in-memory invite store so callers can persist it across reloads
- * (IndexedDB, AsyncStorage, etc.) and later restore it via `hydrateNodeInviteStore`.
- */
-export function serializeNodeInviteStore(): Array<[string, StoredNodeInvite]> {
-  return nodeInviteStore.serialize();
-}
-
-/**
- * Restore previously-serialized invite entries into the in-memory store.
- * Call on app startup before any `revokeNodeAccess` call to ensure revocation
- * remains possible after a page reload or process restart.
- */
-export function hydrateNodeInviteStore(entries: Array<[string, StoredNodeInvite]>): void {
-  nodeInviteStore.hydrate(entries);
-}
+export const clearNodeInviteStore = nodeInviteStore.clear;
+/** Serialize the in-memory invite store so callers can persist it across reloads
+ *  (IndexedDB, AsyncStorage, etc.) and later restore it via `hydrateNodeInviteStore`. */
+export const serializeNodeInviteStore = nodeInviteStore.serialize;
+/** Restore previously-serialized invite entries into the in-memory store. Call on app
+ *  startup before any `revokeNodeAccess` call so revocation survives a reload/restart. */
+export const hydrateNodeInviteStore = nodeInviteStore.hydrate;
 
 // ── createNode ────────────────────────────────────────────────────────────────
 
@@ -459,7 +443,7 @@ export async function revokeNodeAccess(
     submitRevocation: (list: RevocationList) => Promise<void>;
   },
 ): Promise<{ newEpoch?: number; revoked: boolean }> {
-  const invite = nodeInviteStore.get(`${spaceId}:${nodeId}:${userId}`);
+  const invite = getNodeInviteEntry(spaceId, nodeId, userId);
   if (!invite) {
     throw new Error(`revokeNodeAccess: no stored invite for ${userId} on node ${nodeId} — call saveNodeInviteEntry or use inviteToNode (which auto-stores for isolated enc nodes)`);
   }
