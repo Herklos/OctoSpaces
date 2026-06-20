@@ -720,9 +720,9 @@ describe('shard-bound inbox AAD', () => {
 
     await scanResourceRequests(ownerSession);
 
-    // Kind-bound attempt is first per item; fallback shard-only is second.
+    // One kind-bound attempt per item (the legacy shard-only fallback was dropped in 0.14).
     expect(capturedAads[0]).toBe(`octospaces:inbox:v1:${ownerSession.userId}:2024-06:request`);
-    expect(capturedAads[2]).toBe(`octospaces:inbox:v1:${ownerSession.userId}:2024-05:request`);
+    expect(capturedAads[1]).toBe(`octospaces:inbox:v1:${ownerSession.userId}:2024-05:request`);
   });
 
   it('FAILS (pre-fix): scanResourceGrants unseals with per-shard AAD', async () => {
@@ -737,9 +737,9 @@ describe('shard-bound inbox AAD', () => {
 
     await scanResourceGrants(requesterSession);
 
-    // Kind-bound attempt is first per item; fallback shard-only is second.
+    // One kind-bound attempt per item (the legacy shard-only fallback was dropped in 0.14).
     expect(capturedAads[0]).toBe(`octospaces:inbox:v1:${requesterSession.userId}:2024-06:grant`);
-    expect(capturedAads[2]).toBe(`octospaces:inbox:v1:${requesterSession.userId}:2024-05:grant`);
+    expect(capturedAads[1]).toBe(`octospaces:inbox:v1:${requesterSession.userId}:2024-05:grant`);
   });
 });
 

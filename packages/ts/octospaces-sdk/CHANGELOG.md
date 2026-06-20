@@ -1,5 +1,21 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.14.0 (2026-06-20)
+
+**Wire-format change (breaking for pre-0.13 inbox items only).** Drops the legacy
+shard-only inbox-AAD fallback.
+
+### Changed
+
+- **`spaces/resource-requests.ts`** — `inboxAad` is now single-form (always kind-bound:
+  `octospaces:inbox:v1:${recipientId}:${shard}:${kind}`) and `tryUnsealInbox` makes a single
+  kind-bound unseal attempt instead of falling back to the legacy shard-only AAD. Every
+  accepted inbox item must now be kind-bound. The inbox is a 500-item monthly-sharded ring
+  buffer, so any pre-0.13 (shard-only) seal has long since been evicted — this strengthens
+  the AAD shard/kind-binding invariant rather than weakening it. Server is uninvolved (it
+  never seals/unseals). Two AAD regression tests updated to expect one kind-bound attempt
+  per item (the shard+kind binding assertion is preserved).
+
 ## 0.13.5 (2026-06-20)
 
 Round-5 continuation — **no public API or behaviour change** (`index.ts` byte-identical;

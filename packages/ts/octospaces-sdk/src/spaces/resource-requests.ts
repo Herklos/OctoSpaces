@@ -66,16 +66,17 @@ import { ed25519 } from '@noble/curves/ed25519.js';
  *   - Cross-shard relocation (`2024-06` seal not replayable in `2024-07`).
  *   - Cross-kind confusion (a `reject` seal cannot open with the `grant` AAD).
  *
- * Legacy seals (pre-0.13) used no `:kind` suffix. When `kind` is omitted the
- * legacy AAD is produced for backward-compatible trial-unseal.
+ * Kind-bound since 0.13. The legacy shard-only fallback (pre-0.13 seals) was dropped
+ * in 0.14 — the inbox is a 500-item monthly-sharded ring buffer, so any pre-0.13 item
+ * has long since been evicted. Every accepted item must now be kind-bound.
  */
-const inboxAad = (recipientId: string, shard: string, kind?: string) =>
-  kind ? `octospaces:inbox:v1:${recipientId}:${shard}:${kind}` : `octospaces:inbox:v1:${recipientId}:${shard}`;
+const inboxAad = (recipientId: string, shard: string, kind: string) =>
+  `octospaces:inbox:v1:${recipientId}:${shard}:${kind}`;
 
 /**
- * Trial-unseal an inbox element for `session.userId`: try the kind-bound AAD
- * (SDK ≥0.13 seals) first, falling back to the legacy shard-only AAD. Returns the
- * plaintext, or `null` when the element isn't sealed to us / is tampered.
+ * Trial-unseal an inbox element for `session.userId` with the kind-bound AAD. Returns
+ * the plaintext, or `null` when the element isn't sealed to us / is tampered / is a
+ * pre-0.13 legacy seal (no longer accepted).
  */
 async function tryUnsealInbox(
   session: Session,
@@ -85,14 +86,9 @@ async function tryUnsealInbox(
   defaultKind: string,
 ): Promise<string | null> {
   try {
-    const aad = inboxAad(session.userId, shard, mkind ?? defaultKind);
-    try {
-      return await unsealFromRecipient(session, sealed, aad);
-    } catch {
-      return await unsealFromRecipient(session, sealed, inboxAad(session.userId, shard));
-    }
+    return await unsealFromRecipient(session, sealed, inboxAad(session.userId, shard, mkind ?? defaultKind));
   } catch {
-    return null; // not sealed to us or tampered — trial-unseal skip
+    return null; // not sealed to us, tampered, or legacy pre-kind-bound seal — trial-unseal skip
   }
 }
 
