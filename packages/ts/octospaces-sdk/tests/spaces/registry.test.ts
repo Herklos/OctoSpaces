@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { StarfishClient } from '@drakkar.software/starfish-client';
-import { readSpaceAccess, writeSpaceAccess, addSpaceMember, removeSpaceMember, removeJoinedSpace, moveSpace } from '../../src/spaces/registry.js';
+import { readSpaceAccess, writeSpaceAccess, addSpaceMember, removeSpaceMember, removeJoinedSpace, moveSpace, readSpaces, reorderSpaces, updateSpacesExtraField } from '../../src/spaces/registry.js';
 
 // ── Fake client ────────────────────────────────────────────────────────────────
 
@@ -208,5 +208,66 @@ describe('moveSpace', () => {
     const client = makeSpacesClient(spaces);
     await moveSpace(client, 'alice', 'sp-1', 0);
     expect(client.push).not.toHaveBeenCalled();
+  });
+});
+
+// ── Back-compat migration + extra passthrough ─────────────────────────────────
+
+/** A client whose `_spaces` doc is in the PRE-0.16 legacy shape: node mutes/reads keyed
+ *  under `rooms`, plus app-specific `dms`/`archivedDms`/`quickReactions` fields. */
+function makeLegacyClient(): StarfishClient {
+  return {
+    pull: vi.fn().mockResolvedValue({
+      data: {
+        v: 1,
+        spaces: [{ id: 'sp-1', name: 'One', short: 'ON', members: 1 }, { id: 'sp-2', name: 'Two', short: 'TW', members: 1 }],
+        caps: {},
+        pubAccess: {},
+        mutes: { rooms: { 'sp-1-a': true }, spaces: { 'sp-9': true } },
+        reads: { rooms: { 'sp-1-a': 1234 } },
+        dms: { peer1: 'sp-dm-1' },
+        archivedDms: { 'sp-dm-2': true },
+        quickReactions: ['👍'],
+      },
+      hash: 'h1',
+    }),
+    push: vi.fn().mockResolvedValue(undefined),
+  } as unknown as StarfishClient;
+}
+
+describe('legacy `rooms` → `nodes` migration', () => {
+  it('coerces mute/read marks keyed under `rooms` into `nodes`', async () => {
+    const doc = await readSpaces(makeLegacyClient(), 'alice');
+    expect(doc.mutes.nodes).toEqual({ 'sp-1-a': true });
+    expect(doc.mutes.spaces).toEqual({ 'sp-9': true });
+    expect(doc.reads.nodes).toEqual({ 'sp-1-a': 1234 });
+    expect(doc.mutes).not.toHaveProperty('rooms');
+    expect(doc.reads).not.toHaveProperty('rooms');
+  });
+
+  it('collects unmodelled app fields into `extra`', async () => {
+    const doc = await readSpaces(makeLegacyClient(), 'alice');
+    expect(doc.extra).toEqual({ dms: { peer1: 'sp-dm-1' }, archivedDms: { 'sp-dm-2': true }, quickReactions: ['👍'] });
+  });
+});
+
+describe('extra passthrough', () => {
+  it('preserves app-specific `dms` through an unrelated write', async () => {
+    const client = makeLegacyClient();
+    await reorderSpaces(client, 'alice', ['sp-2', 'sp-1']);
+    const [, doc] = (client.push as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Record<string, unknown>];
+    expect(doc.dms).toEqual({ peer1: 'sp-dm-1' });
+    expect(doc.archivedDms).toEqual({ 'sp-dm-2': true });
+    // and the rename is persisted forward
+    expect((doc.mutes as { nodes: unknown }).nodes).toEqual({ 'sp-1-a': true });
+    expect(doc).not.toHaveProperty('extra'); // never stored as a nested key
+  });
+
+  it('updateSpacesExtraField CAS-updates one app field, leaving others intact', async () => {
+    const client = makeLegacyClient();
+    await updateSpacesExtraField<Record<string, string>>(client, 'alice', 'dms', (cur) => ({ ...cur, peer2: 'sp-dm-3' }));
+    const [, doc] = (client.push as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Record<string, unknown>];
+    expect(doc.dms).toEqual({ peer1: 'sp-dm-1', peer2: 'sp-dm-3' });
+    expect(doc.quickReactions).toEqual(['👍']);
   });
 });

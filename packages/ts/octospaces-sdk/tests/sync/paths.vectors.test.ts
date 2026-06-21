@@ -22,7 +22,7 @@ import {
   spaceAccessPush,
   userIdFromEdPub,
 } from '../../src/sync/paths.js';
-import { roomSlug } from '../../src/core/ids.js';
+import { slugify } from '../../src/core/ids.js';
 import { toBase64Url, fromBase64Url } from '../../src/sync/base64.js';
 
 import pathsVectors from '../../../../../tests/test-vectors/paths-scopes.json';
@@ -42,10 +42,10 @@ describe('userIdFromEdPub (vectors)', () => {
   }
 });
 
-describe('roomSlug (vectors)', () => {
+describe('slugify (vectors)', () => {
   for (const c of slugVectors.vectors) {
-    it(`roomSlug(${JSON.stringify(c.input)}) → ${JSON.stringify(c.expected)}`, () => {
-      expect(roomSlug(c.input)).toBe(c.expected);
+    it(`slugify(${JSON.stringify(c.input)}) → ${JSON.stringify(c.expected)}`, () => {
+      expect(slugify(c.input)).toBe(c.expected);
     });
   }
 });

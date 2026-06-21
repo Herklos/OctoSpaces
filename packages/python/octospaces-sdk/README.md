@@ -75,7 +75,7 @@ This package mirrors `@drakkar.software/octospaces-sdk` v0.4.3. Known divergence
 
 | Feature | TypeScript | Python |
 |---|---|---|
-| `room_slug` (accented chars) | Strips non-ASCII (é → '') | Normalises NFD first (é → e) |
+| `slugify` (accented chars) | Strips non-ASCII (é → '') | Normalises NFD first (é → e) |
 | `userId` derivation | `sha256(edPub)[0:16].hex()` via WebCrypto (async) | Same algorithm (sync via `hashlib`) |
 | Account-seal `ct` encoding | hex (`iv‖ciphertext`) | hex (`iv‖ciphertext`) — same ✓ |
 | Web/RN shims | `platform/*`, AsyncStorage, passkeys | Not ported — use `KvAdapter` instead |

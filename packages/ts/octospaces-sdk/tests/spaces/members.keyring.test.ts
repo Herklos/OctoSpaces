@@ -129,7 +129,7 @@ const mockSession = {
     kemPriv: 'alice-kem-priv',
   },
   // pull must return a Promise — ownerEnsureKeyring calls pull(…).catch(…) internally
-  chatClient: { pull: vi.fn().mockResolvedValue(null), push: vi.fn().mockResolvedValue(null) },
+  contentClient: { pull: vi.fn().mockResolvedValue(null), push: vi.fn().mockResolvedValue(null) },
   accountClient: { pull: vi.fn().mockResolvedValue(null), push: vi.fn().mockResolvedValue(null) },
 } as unknown as Session;
 

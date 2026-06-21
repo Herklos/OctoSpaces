@@ -145,7 +145,7 @@ function makeSession(indexClient?: StarfishClient) {
   return {
     userId: 'alice',
     keys: { edPriv: 'priv', edPub: 'pub', kemPriv: 'kempriv', kemPub: 'kempub' },
-    chatClient: indexClient ?? makeIndexClient(),
+    contentClient: indexClient ?? makeIndexClient(),
     accountClient: {
       pull: vi.fn().mockResolvedValue({ data: { v: 1, spaces: [], caps: {}, pubAccess: {} }, hash: null }),
       push: vi.fn().mockResolvedValue(undefined),

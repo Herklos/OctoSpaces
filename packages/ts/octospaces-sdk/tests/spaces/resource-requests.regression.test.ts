@@ -126,7 +126,7 @@ function makeSession(keys: KeySet): Session {
     },
     ownerEdPub: keys.edPub,
     accountClient: {} as Session['accountClient'],
-    chatClient: {} as Session['chatClient'],
+    contentClient: {} as Session['contentClient'],
   } as unknown as Session;
 }
 

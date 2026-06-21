@@ -25,14 +25,14 @@ export function isMuteActive(v: MuteValue | undefined): boolean {
 export interface MutesStore {
   isMuteActive: (v: MuteValue | undefined) => boolean;
   getMutePrefs: () => MutePrefs;
-  isRoomMuted: (roomId: string) => boolean;
+  isNodeMuted: (nodeId: string) => boolean;
   isSpaceMuted: (spaceId: string) => boolean;
-  isMuted: (roomId: string, spaceId: string) => boolean;
+  isMuted: (nodeId: string, spaceId: string) => boolean;
   subscribeMutes: (listener: () => void) => () => void;
   hydrateMutes: (userId: string, serverPrefs: MutePrefs) => Promise<void>;
   resetMutes: () => void;
   loadMutesFromKv: (userId: string) => Promise<MutePrefs>;
-  setRoomMute: (session: Session, roomId: string, muted: boolean) => Promise<void>;
+  setNodeMute: (session: Session, nodeId: string, muted: boolean) => Promise<void>;
   setSpaceMute: (session: Session, spaceId: string, muted: boolean) => Promise<void>;
 }
 
@@ -42,7 +42,7 @@ export function createMutesStore(opts: {
   logTag: string;
 }): MutesStore {
   const { client, kvNamespace, logTag } = opts;
-  const EMPTY: MutePrefs = { rooms: {}, spaces: {} };
+  const EMPTY: MutePrefs = { nodes: {}, spaces: {} };
   const keyFor = (userId: string) => `${kvNamespace}.mutes.${userId}`;
 
   let cache: MutePrefs = EMPTY;
@@ -51,10 +51,11 @@ export function createMutesStore(opts: {
   const listeners = new Set<() => void>();
 
   function coerce(raw: unknown): MutePrefs {
-    const r = (raw && typeof raw === 'object' ? raw : {}) as { rooms?: unknown; spaces?: unknown };
+    // Back-compat: pre-0.16 docs keyed node mutes under `rooms`; new wins on overlap.
+    const r = (raw && typeof raw === 'object' ? raw : {}) as { rooms?: unknown; nodes?: unknown; spaces?: unknown };
     const pick = (v: unknown): Record<string, MuteValue> =>
       v && typeof v === 'object' ? (v as Record<string, MuteValue>) : {};
-    return { rooms: pick(r.rooms), spaces: pick(r.spaces) };
+    return { nodes: { ...pick(r.rooms), ...pick(r.nodes) }, spaces: pick(r.spaces) };
   }
 
   function mapEqual(a: Record<string, MuteValue>, b: Record<string, MuteValue>): boolean {
@@ -64,7 +65,7 @@ export function createMutesStore(opts: {
     return true;
   }
   function prefsEqual(a: MutePrefs, b: MutePrefs): boolean {
-    return mapEqual(a.rooms, b.rooms) && mapEqual(a.spaces, b.spaces);
+    return mapEqual(a.nodes, b.nodes) && mapEqual(a.spaces, b.spaces);
   }
 
   function emit(next: MutePrefs): void {
@@ -76,7 +77,7 @@ export function createMutesStore(opts: {
     if (activeKey) void kvSet(activeKey, JSON.stringify(cache)).catch(() => {});
   }
 
-  function applyMute(prefs: MutePrefs, field: 'rooms' | 'spaces', id: string, muted: boolean): MutePrefs | null {
+  function applyMute(prefs: MutePrefs, field: 'nodes' | 'spaces', id: string, muted: boolean): MutePrefs | null {
     const already = isMuteActive(prefs[field][id]);
     if (muted === already && !(muted === false && id in prefs[field])) return null;
     const sub = { ...prefs[field] };
@@ -85,7 +86,7 @@ export function createMutesStore(opts: {
     return { ...prefs, [field]: sub };
   }
 
-  async function setMute(session: Session, field: 'rooms' | 'spaces', id: string, muted: boolean): Promise<void> {
+  async function setMute(session: Session, field: 'nodes' | 'spaces', id: string, muted: boolean): Promise<void> {
     activeKey = keyFor(session.userId);
     const next = applyMute(cache, field, id, muted);
     if (next) {
@@ -105,9 +106,9 @@ export function createMutesStore(opts: {
   return {
     isMuteActive,
     getMutePrefs: () => cache,
-    isRoomMuted: (roomId) => isMuteActive(cache.rooms[roomId]),
+    isNodeMuted: (nodeId) => isMuteActive(cache.nodes[nodeId]),
     isSpaceMuted: (spaceId) => isMuteActive(cache.spaces[spaceId]),
-    isMuted: (roomId, spaceId) => isMuteActive(cache.rooms[roomId]) || isMuteActive(cache.spaces[spaceId]),
+    isMuted: (nodeId, spaceId) => isMuteActive(cache.nodes[nodeId]) || isMuteActive(cache.spaces[spaceId]),
     subscribeMutes: (listener) => {
       listeners.add(listener);
       return () => { listeners.delete(listener); };
@@ -128,7 +129,7 @@ export function createMutesStore(opts: {
       if (!raw) return EMPTY;
       try { return coerce(JSON.parse(raw)); } catch { return EMPTY; }
     },
-    setRoomMute: (session, roomId, muted) => setMute(session, 'rooms', roomId, muted),
+    setNodeMute: (session, nodeId, muted) => setMute(session, 'nodes', nodeId, muted),
     setSpaceMute: (session, spaceId, muted) => setMute(session, 'spaces', spaceId, muted),
   };
 }

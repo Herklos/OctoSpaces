@@ -84,7 +84,7 @@ describe('updateObjectIndex', () => {
   const fakeSession = {
     userId: 'alice',
     keys: { edPriv: 'priv', edPub: 'pub', kemPriv: 'kempriv', kemPub: 'kempub' },
-    chatClient: makeClient({ v: 2, objects: spaceNodes }),
+    contentClient: makeClient({ v: 2, objects: spaceNodes }),
     accountClient: makeClient(null),
   } as unknown as import('../../src/sync/identity.js').Session;
 
@@ -103,14 +103,14 @@ describe('updateObjectIndex', () => {
 
   it('is a no-op when the mutator returns null', async () => {
     const client = makeClient({ v: 2, objects: spaceNodes });
-    const session = { ...fakeSession, chatClient: client } as unknown as import('../../src/sync/identity.js').Session;
+    const session = { ...fakeSession, contentClient: client } as unknown as import('../../src/sync/identity.js').Session;
     await updateObjectIndex(session, spaceId, () => null);
     expect(client.push).not.toHaveBeenCalled();
   });
 
   it('strips invite titles before pushing', async () => {
     const client = makeClient({ v: 2, objects: [] });
-    const session = { ...fakeSession, chatClient: client } as unknown as import('../../src/sync/identity.js').Session;
+    const session = { ...fakeSession, contentClient: client } as unknown as import('../../src/sync/identity.js').Session;
 
     await updateObjectIndex(session, spaceId, (nodes, now) => [
       ...nodes,
@@ -134,7 +134,7 @@ describe('readObjectTree', () => {
     const session = {
       userId: 'alice',
       keys: { edPriv: 'priv', edPub: 'pub', kemPriv: 'kempriv', kemPub: 'kempub' },
-      chatClient: client,
+      contentClient: client,
       accountClient: makeClient(null),
     } as unknown as import('../../src/sync/identity.js').Session;
 
@@ -151,7 +151,7 @@ describe('readObjectTree', () => {
     const session = {
       userId: 'alice',
       keys: { edPriv: 'priv', edPub: 'pub', kemPriv: 'kempriv', kemPub: 'kempub' },
-      chatClient: client,
+      contentClient: client,
       accountClient: makeClient(null),
     } as unknown as import('../../src/sync/identity.js').Session;
 

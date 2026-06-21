@@ -8,7 +8,7 @@
  * For unencrypted (public/plaintext) nodes, pass `enc: null` — bytes are stored raw.
  *
  * This module supersedes the legacy `attachments.ts` pipeline (which targeted the
- * now-removed `attachments` collection keyed by room). Use {@link createObjectBlobStore}
+ * now-removed `attachments` collection keyed by node). Use {@link createObjectBlobStore}
  * to get a scoped instance with your app's KV prefixes and an in-memory + persisted
  * decrypted-blob cache; use the standalone {@link uploadObjectBlob} / {@link loadObjectBlob}
  * for one-off calls without caching.

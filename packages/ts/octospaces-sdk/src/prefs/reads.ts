@@ -21,13 +21,13 @@ const FLUSH_DELAY_MS = 8_000;
 
 export interface ReadsStore {
   getReadPrefs: () => ReadPrefs;
-  getRoomReadAt: (roomId: string) => number;
+  getNodeReadAt: (nodeId: string) => number;
   subscribeReads: (listener: () => void) => () => void;
   loadReadMarksFromKv: (userId: string) => Promise<Record<string, number>>;
   hydrateReads: (userId: string, serverPrefs: ReadPrefs) => Promise<void>;
   resetReads: () => void;
   flushReadsNow: () => Promise<void>;
-  setRoomReadAt: (session: Session, roomId: string, ts: number) => void;
+  setNodeReadAt: (session: Session, nodeId: string, ts: number) => void;
 }
 
 export function createReadsStore(opts: {
@@ -36,7 +36,7 @@ export function createReadsStore(opts: {
   logTag: string;
 }): ReadsStore {
   const { client, kvNamespace, logTag } = opts;
-  const EMPTY: ReadPrefs = { rooms: {} };
+  const EMPTY: ReadPrefs = { nodes: {} };
   const keyFor = (userId: string) => `${kvNamespace}.reads.${userId}`;
   const legacyKeyFor = (userId: string) => `${kvNamespace}.lastread.${userId}`;
 
@@ -47,15 +47,15 @@ export function createReadsStore(opts: {
   const listeners = new Set<() => void>();
 
   function maxMerge(base: ReadPrefs, over: ReadPrefs): ReadPrefs {
-    let rooms: Record<string, number> | null = null;
-    for (const [id, ts] of Object.entries(over.rooms)) {
+    let nodes: Record<string, number> | null = null;
+    for (const [id, ts] of Object.entries(over.nodes)) {
       if (typeof ts !== 'number' || !Number.isFinite(ts)) continue;
-      if (!(id in base.rooms) || ts > base.rooms[id]) {
-        rooms ??= { ...base.rooms };
-        rooms[id] = ts;
+      if (!(id in base.nodes) || ts > base.nodes[id]) {
+        nodes ??= { ...base.nodes };
+        nodes[id] = ts;
       }
     }
-    return rooms ? { rooms } : base;
+    return nodes ? { nodes } : base;
   }
 
   function emit(next: ReadPrefs): void {
@@ -72,13 +72,15 @@ export function createReadsStore(opts: {
     if (!raw) return EMPTY;
     try {
       const parsed = JSON.parse(raw) as unknown;
-      const rooms = (parsed && typeof parsed === 'object' && 'rooms' in (parsed as object)
-        ? (parsed as { rooms?: unknown }).rooms
+      // Back-compat: pre-0.16 docs keyed marks under `rooms`; bare maps stay supported.
+      const p = parsed as { nodes?: unknown; rooms?: unknown } | undefined;
+      const marks = (p && typeof p === 'object' && ('nodes' in p || 'rooms' in p)
+        ? p.nodes ?? p.rooms
         : parsed) as Record<string, unknown> | undefined;
-      if (!rooms || typeof rooms !== 'object') return EMPTY;
+      if (!marks || typeof marks !== 'object') return EMPTY;
       const out: Record<string, number> = {};
-      for (const [id, v] of Object.entries(rooms)) if (typeof v === 'number' && Number.isFinite(v)) out[id] = v;
-      return { rooms: out };
+      for (const [id, v] of Object.entries(marks)) if (typeof v === 'number' && Number.isFinite(v)) out[id] = v;
+      return { nodes: out };
     } catch {
       return EMPTY;
     }
@@ -102,19 +104,19 @@ export function createReadsStore(opts: {
 
   return {
     getReadPrefs: () => cache,
-    getRoomReadAt: (roomId) => cache.rooms[roomId] ?? 0,
+    getNodeReadAt: (nodeId) => cache.nodes[nodeId] ?? 0,
     subscribeReads(listener) {
       listeners.add(listener);
       return () => { listeners.delete(listener); };
     },
     async loadReadMarksFromKv(userId) {
       const [kvReads, legacy] = await Promise.all([loadReadsKv(keyFor(userId)), loadReadsKv(legacyKeyFor(userId))]);
-      return maxMerge(kvReads, legacy).rooms;
+      return maxMerge(kvReads, legacy).nodes;
     },
     async hydrateReads(userId, serverPrefs) {
       activeKey = keyFor(userId);
       let merged = cache;
-      if (Object.keys(cache.rooms).length === 0) {
+      if (Object.keys(cache.nodes).length === 0) {
         const [kvReads, legacy] = await Promise.all([loadReadsKv(keyFor(userId)), loadReadsKv(legacyKeyFor(userId))]);
         merged = maxMerge(merged, kvReads);
         merged = maxMerge(merged, legacy);
@@ -134,11 +136,11 @@ export function createReadsStore(opts: {
       emit(EMPTY);
     },
     flushReadsNow: () => flush(),
-    setRoomReadAt(session, roomId, ts) {
+    setNodeReadAt(session, nodeId, ts) {
       activeKey = keyFor(session.userId);
       flushSession = session;
-      if (ts > (cache.rooms[roomId] ?? 0)) {
-        emit({ rooms: { ...cache.rooms, [roomId]: ts } });
+      if (ts > (cache.nodes[nodeId] ?? 0)) {
+        emit({ nodes: { ...cache.nodes, [nodeId]: ts } });
         persist();
       }
       if (!flushTimer) flushTimer = setTimeout(() => void flush(), FLUSH_DELAY_MS);

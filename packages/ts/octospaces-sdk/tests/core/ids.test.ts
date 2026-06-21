@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { randomId, roomSlug } from '../../src/core/ids.js';
+import { randomId, slugify } from '../../src/core/ids.js';
 
 describe('randomId', () => {
   it('returns a non-empty string', () => {
@@ -19,27 +19,26 @@ describe('randomId', () => {
   });
 });
 
-describe('roomSlug', () => {
+describe('slugify', () => {
   it('lowercases and replaces spaces with hyphens', () => {
-    expect(roomSlug('General Channel')).toBe('general-channel');
+    expect(slugify('General Channel')).toBe('general-channel');
   });
 
   it('strips non-alphanumeric characters', () => {
-    expect(roomSlug('Off-Topic!')).toBe('off-topic');
+    expect(slugify('Off-Topic!')).toBe('off-topic');
   });
 
-  it('handles empty string — returns a non-empty fallback or empty string', () => {
-    // roomSlug may return a fallback (e.g. 'room') for empty input.
-    const result = roomSlug('');
-    expect(typeof result).toBe('string');
+  it('handles empty string — returns the non-empty fallback', () => {
+    // slugify falls back to 'item' for empty input.
+    expect(slugify('')).toBe('item');
   });
 
   it('returns lowercase for single word', () => {
-    expect(roomSlug('General')).toBe('general');
+    expect(slugify('General')).toBe('general');
   });
 
   it('trims leading/trailing hyphens', () => {
-    const slug = roomSlug('  hello  ');
+    const slug = slugify('  hello  ');
     expect(slug).not.toMatch(/^-|-$/);
   });
 });

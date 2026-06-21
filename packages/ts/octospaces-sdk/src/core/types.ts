@@ -36,27 +36,21 @@ export type CapMap = Record<string, string>;
  *  bearer secret; recovered on any device with the same seed. */
 export type PubAccessMap = Record<string, import('../sync/account-seal.js').SealedBlob>;
 
-/** Maps a DM peer's userId → the private DM-space id shared with them. */
-export type DmMap = Record<string, string>;
-
-/** The set of DM-space ids the user has archived (hidden from the DM list). */
-export type ArchivedDms = Record<string, true>;
-
 /** A mute entry. `true` = muted indefinitely; a number = muted UNTIL that epoch-ms instant. */
 export type MuteValue = true | number;
 
-/** Per-user mute preferences: which rooms and which whole spaces are silenced. */
+/** Per-user mute preferences: which nodes and which whole spaces are silenced. */
 export interface MutePrefs {
-  rooms: Record<string, MuteValue>;
+  nodes: Record<string, MuteValue>;
   spaces: Record<string, MuteValue>;
 }
 
-/** A per-room read mark: the epoch-ms instant the viewer last read that room. */
+/** A per-node read mark: the epoch-ms instant the viewer last read that node. */
 export type ReadValue = number;
 
-/** Per-user read marks — the timestamp each room was last read. */
+/** Per-user read marks — the timestamp each node was last read. */
 export interface ReadPrefs {
-  rooms: Record<string, ReadValue>;
+  nodes: Record<string, ReadValue>;
 }
 
 /** A joined or listed space. Visibility and encryption are per-node (see ObjectNode),

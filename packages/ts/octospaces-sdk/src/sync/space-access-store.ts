@@ -46,7 +46,7 @@ let activeKey: string | null = null;
 
 /**
  * Load the active account's space-access entries into memory. Call (and await) on
- * sign-in and on every account switch, before opening rooms.
+ * sign-in and on every account switch, before opening nodes.
  *
  * `serverCaps` (private member caps from `_spaces.caps`) and `serverPubAccess`
  * (sealed link credentials from `_spaces.pubAccess`, already unsealed by the caller)

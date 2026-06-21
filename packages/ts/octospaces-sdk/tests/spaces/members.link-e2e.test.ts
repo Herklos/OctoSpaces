@@ -1,5 +1,5 @@
 /**
- * Real-crypto regression test for Fix C: link-joined members can decrypt E2EE rooms.
+ * Real-crypto regression test for Fix C: link-joined members can decrypt E2EE nodes.
  *
  * No mocks on the keyring or identity layer — this exercises the actual
  * @drakkar.software/starfish-keyring and starfish-identities primitives so that if

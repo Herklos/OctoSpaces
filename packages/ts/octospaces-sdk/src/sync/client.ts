@@ -196,12 +196,12 @@ export async function addKeyringRecipientCore(
  * `addNodeKeyringRecipient` in node-keyring.ts. Swallows "already present".
  */
 export function addSpaceKeyringRecipient(
-  session: { chatClient: StarfishClient; keys: DeviceKeys; ownerEdPub?: string },
+  session: { contentClient: StarfishClient; keys: DeviceKeys; ownerEdPub?: string },
   spaceId: string,
   recipient: { subKem: string; userId: string; label: string },
 ): Promise<void> {
   return addKeyringRecipientCore(
-    session.chatClient,
+    session.contentClient,
     session.keys,
     keyringName(spaceId),
     recipient,
@@ -215,7 +215,7 @@ export function addSpaceKeyringRecipient(
 // `ensureNodeKeyringRecipient`) so that every space-keyring call site can use a
 // single helper instead of spelling out the pull/push/trustedAdders triple.
 
-type SpaceKeyringSession = { chatClient: StarfishClient; keys: DeviceKeys; ownerEdPub?: string };
+type SpaceKeyringSession = { contentClient: StarfishClient; keys: DeviceKeys; ownerEdPub?: string };
 
 /**
  * Create the space keyring if it doesn't exist, then return the owner's encryptor.
@@ -226,7 +226,7 @@ export function ownerEnsureSpaceKeyring(
   spaceId: string,
 ): Promise<Encryptor> {
   const trustedAdders = computeOwnerTrustedAdders(session.ownerEdPub, session.keys.edPub);
-  return ownerEnsureKeyring(session.chatClient, session.keys, keyringPull(spaceId), keyringPush(spaceId), trustedAdders);
+  return ownerEnsureKeyring(session.contentClient, session.keys, keyringPull(spaceId), keyringPush(spaceId), trustedAdders);
 }
 
 /**

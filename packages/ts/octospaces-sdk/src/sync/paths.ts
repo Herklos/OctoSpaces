@@ -32,8 +32,8 @@ const pullPush = <A extends unknown[]>(name: (...args: A) => string) => ({
   push: (...args: A) => push(name(...args)),
 });
 
-/** A room id is `sp-<rand>-<name>`; the space is its first two `-` segments. */
-export const spaceIdFromRoomId = (roomId: string) => roomId.split('-').slice(0, 2).join('-');
+/** A node id is `sp-<rand>-<name>`; the space is its first two `-` segments. */
+export const spaceIdFromNodeId = (nodeId: string) => nodeId.split('-').slice(0, 2).join('-');
 
 // ── Space-wide keyring (one keyring per space, encrypts all enc nodes) ────────
 /** Base name used as the `collectionName` arg to `addCollectionRecipient`.
@@ -116,12 +116,12 @@ export const objectDirPull = (shard: string = 'public') => pull(objectDirName(sh
 
 // ── Global space directory (server-maintained projection) ────────────────────
 // Pull `_index/spaces/{shard}` to discover public spaces (Explore screen).
-// Shard 'public' = spaces with at least one public room; 'meta' = name+image for all spaces.
+// Shard 'public' = spaces with at least one public node; 'meta' = name+image for all spaces.
 export const spaceDirName = (shard: string = 'public') => `_index/spaces/${shard}`;
 export const spaceDirPull = (shard: string = 'public') => pull(spaceDirName(shard));
 
 // ── Public append-log (access:'public' streams) ───────────────────────────────
-// For access:'public' nodes with an append-log content kind (e.g. public chat rooms).
+// For access:'public' nodes with an append-log content kind (e.g. public streams).
 // Path sits under objects/pub/{nodeId}/log — sibling of the objpub merge-doc.
 // Public-read + member-write. Keep in sync with objpublog in server collections.
 export const objPubLogName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/pub/${nodeId}/log`;
@@ -134,19 +134,19 @@ export const { pull: objPubLogPull, push: objPubLogPush } = pullPush(objPubLogNa
 export const objInvLogName = (spaceId: string, nodeId: string) => `spaces/${spaceId}/objects/n/${nodeId}/log`;
 export const { pull: objInvLogPull, push: objInvLogPush } = pullPush(objInvLogName);
 
-// ── Room-scoped stream path shortcuts (roomId encodes spaceId) ────────────────
-// Convenience wrappers for callers that have a roomId and want to route to the
+// ── Node-scoped stream path shortcuts (nodeId encodes spaceId) ────────────────
+// Convenience wrappers for callers that have a nodeId and want to route to the
 // correct log tier without extracting the spaceId separately.
-// Room ids use `sp-<spaceId>-<local>` so spaceIdFromRoomId extracts the space portion.
-export const streamRoomName = (roomId: string) => objLogName(spaceIdFromRoomId(roomId), roomId);
-export const streamRoomPull = (roomId: string) => objLogPull(spaceIdFromRoomId(roomId), roomId);
-export const streamRoomPush = (roomId: string) => objLogPush(spaceIdFromRoomId(roomId), roomId);
-export const streamPubRoomName = (roomId: string) => objPubLogName(spaceIdFromRoomId(roomId), roomId);
-export const streamPubRoomPull = (roomId: string) => objPubLogPull(spaceIdFromRoomId(roomId), roomId);
-export const streamPubRoomPush = (roomId: string) => objPubLogPush(spaceIdFromRoomId(roomId), roomId);
-export const streamInvRoomName = (roomId: string) => objInvLogName(spaceIdFromRoomId(roomId), roomId);
-export const streamInvRoomPull = (roomId: string) => objInvLogPull(spaceIdFromRoomId(roomId), roomId);
-export const streamInvRoomPush = (roomId: string) => objInvLogPush(spaceIdFromRoomId(roomId), roomId);
+// Node ids use `sp-<spaceId>-<local>` so spaceIdFromNodeId extracts the space portion.
+export const streamNodeName = (nodeId: string) => objLogName(spaceIdFromNodeId(nodeId), nodeId);
+export const streamNodePull = (nodeId: string) => objLogPull(spaceIdFromNodeId(nodeId), nodeId);
+export const streamNodePush = (nodeId: string) => objLogPush(spaceIdFromNodeId(nodeId), nodeId);
+export const streamPubNodeName = (nodeId: string) => objPubLogName(spaceIdFromNodeId(nodeId), nodeId);
+export const streamPubNodePull = (nodeId: string) => objPubLogPull(spaceIdFromNodeId(nodeId), nodeId);
+export const streamPubNodePush = (nodeId: string) => objPubLogPush(spaceIdFromNodeId(nodeId), nodeId);
+export const streamInvNodeName = (nodeId: string) => objInvLogName(spaceIdFromNodeId(nodeId), nodeId);
+export const streamInvNodePull = (nodeId: string) => objInvLogPull(spaceIdFromNodeId(nodeId), nodeId);
+export const streamInvNodePush = (nodeId: string) => objInvLogPush(spaceIdFromNodeId(nodeId), nodeId);
 
 // ── Owner-only node content (access:'owner') ──────────────────────────────────
 // For access:'owner' nodes — readable and writable only by the space owner.
@@ -157,7 +157,7 @@ export const objOwnerName = (spaceId: string, nodeId: string) => `spaces/${space
 export const { pull: objOwnerPull, push: objOwnerPush } = pullPush(objOwnerName);
 
 // ── Identity inbox (public-write, cap-read) ───────────────────────────────────
-// Per-identity DM drop-box. Anyone appends; only the recipient reads via cap:read:inbox.
+// Per-identity drop-box (resource requests/grants, etc). Anyone appends; only the recipient reads via cap:read:inbox.
 // Time-sharded by UTC month (shard = 'YYYY-MM'). Path is identity-scoped, NOT under spaces/.
 // Keep in sync with inbox in server collections.
 export const inboxName = (identity: string, shard: string = 'default') => `inbox/${identity}/${shard}`;
@@ -270,7 +270,7 @@ export function nodeKeyringScope(spaceId: string, nodeId: string): ScopePreset {
 
 /**
  * Personal cap: profile + space registry + device directory + all spaces + inbox.
- * Covers reading the identity's own DM inbox (`cap:read:inbox` via `inbox/{userId}/**`).
+ * Covers reading the identity's own inbox (`cap:read:inbox` via `inbox/{userId}/**`).
  */
 export function accountScope(userId: string): ScopePreset {
   return {
@@ -290,7 +290,7 @@ export function accountScope(userId: string): ScopePreset {
  * The single cap-cert scope granted to a PAIRED (linked) device. Covers both the
  * object-store client (ownerScope) and the account client (accountScope), deduped,
  * because a paired device cannot self-mint — it presents one root-signed cap-cert.
- * Includes `objowner` (linked device acts as owner) and `inbox` (reads DMs).
+ * Includes `objowner` (linked device acts as owner) and `inbox` (reads requests).
  */
 export function linkedDeviceScope(userId: string): ScopePreset {
   return {

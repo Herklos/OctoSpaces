@@ -20,14 +20,11 @@ CapMap = dict[str, str]
 # key = spaceId or "{spaceId}:{nodeId}" → SealedBlob dict
 PubAccessMap = dict[str, Any]
 
-DmMap = dict[str, str]
-ArchivedDms = dict[str, Literal[True]]
-
 MuteValue = bool | int  # True or a Unix-ms timestamp until which muted
 
 
 class MutePrefs(TypedDict):
-    rooms: dict[str, MuteValue]
+    nodes: dict[str, MuteValue]
     spaces: dict[str, MuteValue]
 
 
@@ -35,7 +32,7 @@ ReadValue = int  # Unix-ms timestamp of last read
 
 
 class ReadPrefs(TypedDict):
-    rooms: dict[str, ReadValue]
+    nodes: dict[str, ReadValue]
 
 
 ObjectType = str

@@ -24,7 +24,7 @@
  *     - no keyring, reg.owner !== userId: returns null (no mint, no throw)
  *
  *   getSpaceClient:
- *     - no entry → session.chatClient
+ *     - no entry → session.contentClient
  *     - link entry → makeClient with cap + key
  *     - member entry → makeClient with parsed cap + edPriv
  *
@@ -103,7 +103,7 @@ const DEVICE_KEYS = {
 function makeSession(userId: string) {
   return {
     userId,
-    chatClient: mockChatClient,
+    contentClient: mockChatClient,
     keys: DEVICE_KEYS,
   } as Parameters<typeof getNodeAccess>[3];
 }
@@ -127,7 +127,7 @@ describe('getSpaceClient', () => {
     vi.mocked(makeClient).mockReturnValue(mockMemberClient);
   });
 
-  it('returns session.chatClient when no space entry exists', () => {
+  it('returns session.contentClient when no space entry exists', () => {
     const session = makeSession(OWNER_ID);
     const client = getSpaceClient(SPACE_ID, session);
     expect(client).toBe(mockChatClient);
@@ -438,7 +438,7 @@ describe('getNodeAccess — per-node keyring (invite + enc)', () => {
     expect(result.encryptor).toBe(MOCK_ENCRYPTOR);
   });
 
-  it('space member / owner (no keyring entry): opens the NODE keyring via session.chatClient', async () => {
+  it('space member / owner (no keyring entry): opens the NODE keyring via session.contentClient', async () => {
     const session = makeSession(OWNER_ID);
     const result = await getNodeAccess(SPACE_ID, NODE_ID, { access: 'invite', enc: true }, session, { owner: OWNER_ID, members: [] });
     expect(openNodeEncryptor).toHaveBeenCalledWith(mockChatClient, DEVICE_KEYS, SPACE_ID, NODE_ID, [OWNER_ID]);

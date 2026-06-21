@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from typing import Any, Callable, Optional, TypedDict
 
-from octospaces_sdk.core.ids import random_id, room_slug
+from octospaces_sdk.core.ids import random_id, slugify
 from octospaces_sdk.core.types import ID, CapMap, Space
 from octospaces_sdk.sync.identity import Session
 from octospaces_sdk.sync.paths import space_access_pull, space_access_push, spaces_pull, spaces_push
@@ -148,7 +148,7 @@ async def create_space(session: Session, name: str) -> Space:
     from octospaces_sdk.sync.paths import OBJECT_COLLECTIONS, owner_scope
 
     space_id = f"sp-{random_id()}"
-    short = room_slug(name)
+    short = slugify(name)
     space = Space(id=space_id, name=name, short=short, members=1)
 
     # Write _access

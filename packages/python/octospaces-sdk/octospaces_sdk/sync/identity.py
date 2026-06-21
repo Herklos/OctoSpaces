@@ -88,13 +88,13 @@ class Session:
     fingerprint: str
 
     # Starfish clients (starfish_sdk.StarfishClient)
-    chat_client: Any
+    content_client: Any
     account_client: Any
     spaces_registry_client: Any
     spaces_keyring_client: Any
 
     # Capability JSON strings (raw cap-cert dicts)
-    chat_cap: Any
+    content_cap: Any
     account_cap: Any
 
 
@@ -142,11 +142,11 @@ async def derive_session(
     fingerprint = fingerprint_from_user_id(user_id)
 
     (
-        chat_client,
+        content_client,
         account_client,
         spaces_registry_client,
         spaces_keyring_client,
-        chat_cap,
+        content_cap,
         account_cap,
     ) = await _build_clients_for_identity(keys, user_id)
 
@@ -156,11 +156,11 @@ async def derive_session(
         keys=keys,
         owner_ed_pub=keys["edPub"],
         fingerprint=fingerprint,
-        chat_client=chat_client,
+        content_client=content_client,
         account_client=account_client,
         spaces_registry_client=spaces_registry_client,
         spaces_keyring_client=spaces_keyring_client,
-        chat_cap=chat_cap,
+        content_cap=content_cap,
         account_cap=account_cap,
     )
 
@@ -174,11 +174,11 @@ async def build_session(derived: DerivedIdentity, name: str = "default") -> Sess
     fingerprint = fingerprint_from_user_id(user_id)
 
     (
-        chat_client,
+        content_client,
         account_client,
         spaces_registry_client,
         spaces_keyring_client,
-        chat_cap,
+        content_cap,
         account_cap,
     ) = await _build_clients_for_identity(keys, user_id)
 
@@ -188,10 +188,10 @@ async def build_session(derived: DerivedIdentity, name: str = "default") -> Sess
         keys=keys,
         owner_ed_pub=keys["edPub"],
         fingerprint=fingerprint,
-        chat_client=chat_client,
+        content_client=content_client,
         account_client=account_client,
         spaces_registry_client=spaces_registry_client,
         spaces_keyring_client=spaces_keyring_client,
-        chat_cap=chat_cap,
+        content_cap=content_cap,
         account_cap=account_cap,
     )

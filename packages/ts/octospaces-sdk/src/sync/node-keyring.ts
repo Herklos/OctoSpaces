@@ -45,7 +45,7 @@ export function ownerEnsureNodeKeyring(
   trustedAdders: string[] = ownerTrustedAdders(session),
 ): Promise<Encryptor> {
   return ownerEnsureKeyring(
-    session.chatClient,
+    session.contentClient,
     session.keys,
     nodeKeyringPull(spaceId, nodeId),
     nodeKeyringPush(spaceId, nodeId),
@@ -57,7 +57,7 @@ export function ownerEnsureNodeKeyring(
  * Open the node keyring as a recipient (hard — throws SpaceAccessError when the
  * keyring is missing or the caller is not a recipient). `client` is whatever client
  * carries read access to the node keyring (a requester's cap client, or
- * `session.chatClient` for a space member).
+ * `session.contentClient` for a space member).
  */
 export function openNodeEncryptor(
   client: StarfishClient,
@@ -94,7 +94,7 @@ export function addNodeKeyringRecipient(
   opts: { trustedAdders?: string[] } = {},
 ): Promise<void> {
   return addKeyringRecipientCore(
-    session.chatClient,
+    session.contentClient,
     session.keys,
     nodeKeyringName(spaceId, nodeId),
     recipient,
@@ -136,7 +136,7 @@ export async function removeNodeKeyringRecipient(
   opts: { trustedAdders?: string[] } = {},
 ): Promise<{ newEpoch: number }> {
   return removeRecipient(
-    session.chatClient,
+    session.contentClient,
     nodeKeyringName(spaceId, nodeId),
     removeSubKems,
     adderOf(session),

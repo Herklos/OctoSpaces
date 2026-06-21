@@ -58,7 +58,7 @@ export function clearNodeAccessCache(): void {
 /**
  * Build the StarfishClient + cap-issuer for a stored access entry. Link entries sign
  * as the ephemeral identity; member entries present their cap JSON; no entry falls back
- * to `session.chatClient` (identity-level, server authorizes by role). Shared by every
+ * to `session.contentClient` (identity-level, server authorizes by role). Shared by every
  * resolver below.
  */
 function resolveEntryClient(
@@ -70,7 +70,7 @@ function resolveEntryClient(
     const cap = JSON.parse(entry.cap) as { iss?: string };
     return { client: makeClient(cap, session.keys.edPriv), capIss: cap.iss };
   }
-  return { client: session.chatClient };
+  return { client: session.contentClient };
 }
 
 /** Trusted-adder set for opening a space keyring: the cap issuer, else the registry
@@ -99,7 +99,7 @@ export function getSpaceClient(spaceId: string, session: Session): StarfishClien
  * node content entry nor the space entry can reach the stream — presenting either cap
  * would get a server 403. Only the dedicated stream entry (`nodeStreamScope`) carries
  * the right collection scope. For non-invite members (space members, owner) who have no
- * per-node stream entry, `session.chatClient` signs at the identity level and the server
+ * per-node stream entry, `session.contentClient` signs at the identity level and the server
  * authorizes via space-member role (same as for `objlog`).
  */
 export function getNodeStreamClient(spaceId: string, nodeId: string, session: Session): StarfishClient {
@@ -130,7 +130,7 @@ function decryptKeysFor(entry: SpaceAccessEntry | null | undefined, session: Ses
  *  - Isolated requester: holds a per-node keyring cap (read) + content/stream caps; opens
  *    the keyring with its cap client and ephemeral/own keys.
  *  - Space member / owner: holds no per-node entry but IS a keyring recipient (added at
- *    create / on assignment); opens via `session.chatClient` (space:member read) + own keys.
+ *    create / on assignment); opens via `session.contentClient` (space:member read) + own keys.
  *
  * `soft` returns null (instead of throwing) when the keyring isn't open-able yet.
  */
@@ -144,9 +144,9 @@ async function resolveNodeKeyringHandle(
   const krEntry = getNodeKeyringAccessEntry(spaceId, nodeId);
   const nodeEntry = getNodeAccessEntry(spaceId, nodeId);
 
-  // Content client (objinv / ticket-info): requester → node content cap; member/owner → chat.
+  // Content client (objinv / ticket-info): requester → node content cap; member/owner → contentClient.
   const contentClient = resolveEntryClient(nodeEntry, session).client;
-  // Keyring client (read `nodekeyring`): requester → keyring cap; member/owner → chat.
+  // Keyring client (read `nodekeyring`): requester → keyring cap; member/owner → contentClient.
   const kr = resolveEntryClient(krEntry, session);
   const krKeys = decryptKeysFor(krEntry, session);
 
@@ -228,13 +228,13 @@ export function getNodeAccess(
       );
     }
     const encryptor = await ownerEnsureKeyring(
-      session.chatClient,
+      session.contentClient,
       session.keys,
       spacePullPath,
       keyringPush(spaceId),
       ownerTrustedAdders(session),
     );
-    return { encryptor, client: session.chatClient, isOwnerOpen: true };
+    return { encryptor, client: session.contentClient, isOwnerOpen: true };
   })();
 
   cache.set(cacheKey, p);
@@ -284,13 +284,13 @@ export async function buildNodeAccess(
   // This recovers spaces created before the eager-mint fix landed (Fix A).
   if (reg != null && reg.owner === session.userId) {
     const mintedEncryptor = await ownerEnsureKeyring(
-      session.chatClient,
+      session.contentClient,
       session.keys,
       spacePullPath,
       keyringPush(spaceId),
       ownerTrustedAdders(session),
     );
-    return { client: session.chatClient, encryptor: mintedEncryptor };
+    return { client: session.contentClient, encryptor: mintedEncryptor };
   }
 
   return null;

@@ -20,7 +20,7 @@ from octospaces_sdk.core.types import (
 from octospaces_sdk.core.storage_types import DerivedIdentity, PersistedSession, Vault
 from octospaces_sdk.core.space_access_error import SpaceAccessError
 # ── IDs ────────────────────────────────────────────────────────────────────────
-from octospaces_sdk.core.ids import random_id, room_slug
+from octospaces_sdk.core.ids import random_id, slugify
 # ── Paths ─────────────────────────────────────────────────────────────────────
 from octospaces_sdk.sync.paths import (
     OBJECT_COLLECTIONS, owner_scope, space_member_scope, node_member_scope,
@@ -37,7 +37,7 @@ from octospaces_sdk.sync.paths import (
     object_dir_name, object_dir_pull,
     profile_pull, profile_push, spaces_pull, spaces_push,
     space_access_pull, space_access_push,
-    space_id_from_room_id, space_id_from_cap,
+    space_id_from_node_id, space_id_from_cap,
     bytes_to_hex, user_id_from_ed_pub,
 )
 # ── Base64 ─────────────────────────────────────────────────────────────────────

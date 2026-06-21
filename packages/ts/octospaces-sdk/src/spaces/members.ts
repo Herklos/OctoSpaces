@@ -114,8 +114,8 @@ export async function inviteToSpace(
   // then add the invitee as a recipient so they can decrypt enc nodes from the start.
   await ensureSpaceKeyringRecipient(session, spaceId, recipientFor(req.kemPub, req.userId));
 
-  // 'chat' is the cap collection the deployed server's space-member enricher recognises.
-  const cap = await mintCap(session, { edPubHex: req.edPub, kemPubHex: req.kemPub, userIdHex: req.userId }, 'chat', spaceMemberScope(spaceId, canWrite));
+  // 'content' is the cap collection the deployed server's space-member enricher recognises.
+  const cap = await mintCap(session, { edPubHex: req.edPub, kemPubHex: req.kemPub, userIdHex: req.userId }, 'content', spaceMemberScope(spaceId, canWrite));
   // Retain the cap nonce so `revokeSpaceAccess` can revoke it later.
   const nonce = capNonce(cap);
   if (nonce) saveSpaceInviteEntry(spaceId, req.userId, { edPub: req.edPub, kemPub: req.kemPub, cap: nonce });
@@ -207,7 +207,7 @@ export async function createSpaceInviteLink(
   origin: string,
 ): Promise<{ token: SpaceInviteLinkToken; link: string }> {
   const { ek, userId: ephemeralUserId, subject } = await ephemeralSubject();
-  const cap = await mintCap(session, subject, 'chat', spaceMemberScope(spaceId, write));
+  const cap = await mintCap(session, subject, 'content', spaceMemberScope(spaceId, write));
   // Retain the cap nonce so `revokeSpaceAccess` can revoke the link's ephemeral cap later.
   const nonce = capNonce(cap);
   if (nonce) saveSpaceInviteEntry(spaceId, ephemeralUserId, { edPub: ek.edPub, kemPub: ek.kemPub, cap: nonce });
@@ -360,7 +360,7 @@ export async function revokeSpaceAccess(
 
   // Evict from the space keyring (rotate + revoke cap in one operation).
   await evictKeyringMember(
-    session.chatClient,
+    session.contentClient,
     session,
     keyringName(spaceId),
     { sub: invite.edPub, nonce: invite.cap.nonce, exp: invite.cap.exp, subKem: invite.kemPub },

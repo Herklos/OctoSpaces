@@ -166,29 +166,29 @@ async def _build_clients_for_identity(
 ) -> tuple[Any, Any, Any, Any, Any, Any]:
     """Mint caps and construct the four clients for a Session.
 
-    Returns (chat_client, account_client, spaces_registry_client,
-             spaces_keyring_client, chat_cap, account_cap).
+    Returns (content_client, account_client, spaces_registry_client,
+             spaces_keyring_client, content_cap, account_cap).
     """
-    chat_cap = _mint_self_cap(keys, user_id, owner_scope())
+    content_cap = _mint_self_cap(keys, user_id, owner_scope())
     account_cap = _mint_self_cap(keys, user_id, account_scope(user_id))
 
-    chat_client = make_client(chat_cap, keys["edPriv"])
+    content_client = make_client(content_cap, keys["edPriv"])
     account_client = make_client(account_cap, keys["edPriv"])
 
     shared_ns = get_shared_spaces_namespace()
     if shared_ns:
         spaces_registry_client = make_client(account_cap, keys["edPriv"], namespace_override=shared_ns)
-        spaces_keyring_client = make_client(chat_cap, keys["edPriv"], namespace_override=shared_ns)
+        spaces_keyring_client = make_client(content_cap, keys["edPriv"], namespace_override=shared_ns)
     else:
         spaces_registry_client = account_client
-        spaces_keyring_client = chat_client
+        spaces_keyring_client = content_client
 
     return (
-        chat_client,
+        content_client,
         account_client,
         spaces_registry_client,
         spaces_keyring_client,
-        chat_cap,
+        content_cap,
         account_cap,
     )
 

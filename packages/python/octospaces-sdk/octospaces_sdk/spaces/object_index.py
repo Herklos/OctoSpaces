@@ -40,7 +40,7 @@ async def push_index_seed(client: Any, space_id: str, nodes: list[ObjectNode] | 
 
 
 async def seed_space_object_index(session: Session, space_id: str, nodes: list[ObjectNode] | None = None) -> None:
-    await push_index_seed(session.chat_client, space_id, nodes)
+    await push_index_seed(session.content_client, space_id, nodes)
 
 
 async def update_object_index(
@@ -54,7 +54,7 @@ async def update_object_index(
     path_w = obj_index_push(space_id)
 
     for _ in range(_MAX_RETRIES):
-        doc = await session.chat_client.pull(path_r)
+        doc = await session.content_client.pull(path_r)
         data = doc.get("data", {}) if doc else {}
         base_hash = doc.get("hash") if doc else None
         nodes: list[ObjectNode] = data.get("objects", [])
@@ -64,7 +64,7 @@ async def update_object_index(
         clean = [_strip_invite_node(n) for n in updated]
         index = {**data, "objects": clean, "updatedAt": now}
         try:
-            await session.chat_client.push(path_w, index, base_hash=base_hash)
+            await session.content_client.push(path_w, index, base_hash=base_hash)
             return
         except Exception as exc:
             if "conflict" in str(exc).lower():
@@ -75,6 +75,6 @@ async def update_object_index(
 
 async def read_object_tree(session: Session, space_id: str) -> list[ObjectNode]:
     """Pull the object index and return the flat node list."""
-    doc = await session.chat_client.pull(obj_index_pull(space_id))
+    doc = await session.content_client.pull(obj_index_pull(space_id))
     data = doc.get("data", {}) if doc else {}
     return data.get("objects", [])

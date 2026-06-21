@@ -332,7 +332,7 @@ export async function inviteToNode(
   if (!isolated) {
     // Ensure space membership (for index access) + mint the space-level cap.
     await addSpaceMember(session.accountClient, spaceId, session.userId, req.userId);
-    bundle.cap = await mintCap(session, subject, 'chat', spaceMemberScope(spaceId, canWrite));
+    bundle.cap = await mintCap(session, subject, 'content', spaceMemberScope(spaceId, canWrite));
   }
 
   if (!node.enc || perNodeKeyring) {
@@ -462,7 +462,7 @@ export async function revokeNodeAccess(
   }
 
   return evictKeyringMember(
-    session.chatClient,
+    session.contentClient,
     session,
     nodeKeyringName(spaceId, nodeId),
     { sub: invite.edPub, nonce: invite.caps.keyring.nonce, exp: invite.caps.keyring.exp, subKem: invite.kemPub },
@@ -565,7 +565,7 @@ export async function createNodeInviteLink(
   // Legacy space-keyring enc nodes need a space-scoped cap (to reach the space keyring);
   // plaintext / per-node-keyring nodes use the narrow per-node content cap (objinv).
   const cap = node.enc && !perNodeKeyring
-    ? await mintCap(session, subject, 'chat', spaceMemberScope(spaceId, write))
+    ? await mintCap(session, subject, 'content', spaceMemberScope(spaceId, write))
     : await mintCap(session, subject, 'objinv', nodeMemberScope(spaceId, nodeId, write));
 
   // Plaintext / per-node-keyring nodes also get a per-node STREAM cap (objinvlog) — a

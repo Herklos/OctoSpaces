@@ -1,5 +1,5 @@
 {
-  "description": "Cross-language vector for room_slug (ASCII inputs only). Pipeline: lowercase → replace non-[a-z0-9] runs with '-' → strip leading/trailing '-' → truncate 40 → fallback 'room'. Non-ASCII inputs are excluded — TS and Python differ on how accented characters are handled (TS strips them, Python normalises first).",
+  "description": "Cross-language vector for slugify (ASCII inputs only). Pipeline: lowercase → replace non-[a-z0-9] runs with '-' → strip leading/trailing '-' → truncate 40 → fallback 'item'. Non-ASCII inputs are excluded — TS and Python differ on how accented characters are handled (TS strips them, Python normalises first).",
   "vectors": [
     {
       "input": "Hello World",
@@ -19,11 +19,11 @@
     },
     {
       "input": "",
-      "expected": "room"
+      "expected": "item"
     },
     {
       "input": "!!! @@@",
-      "expected": "room"
+      "expected": "item"
     },
     {
       "input": "simple",

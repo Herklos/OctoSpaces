@@ -138,7 +138,7 @@ function makeSession(): Session {
     userId: 'alice',
     ownerEdPub: 'owner-edpub',
     keys: { edPriv: 'owner-edpriv', edPub: 'owner-edpub', kemPriv: 'owner-kempriv', kemPub: 'owner-kempub' },
-    chatClient: {
+    contentClient: {
       pull: vi.fn().mockResolvedValue(null),
       push: vi.fn().mockResolvedValue(undefined),
     } as unknown as StarfishClient,
@@ -231,7 +231,7 @@ describe('revokeSpaceAccess', () => {
     await revokeSpaceAccess(session, SP, UID, { generation: 5, submitRevocation });
 
     expect(evictMember).toHaveBeenCalledWith(
-      session.chatClient,
+      session.contentClient,
       expect.objectContaining({
         keyringCollection: keyringName(SP),
         membersCollection: keyringName(SP),

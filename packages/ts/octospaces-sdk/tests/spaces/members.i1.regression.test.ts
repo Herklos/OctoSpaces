@@ -84,7 +84,7 @@ function makeSession() {
   return {
     userId: 'owner',
     keys: { edPriv: 'priv', edPub: 'pub', kemPriv: 'kempriv', kemPub: 'kempub' },
-    chatClient: {
+    contentClient: {
       pull: vi.fn().mockResolvedValue(null),
       push: vi.fn().mockResolvedValue(undefined),
     } as unknown as StarfishClient,

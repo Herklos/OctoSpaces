@@ -19,13 +19,13 @@ export interface Session {
   userId: string;
   name: string;
   keys: DeviceKeys;
-  chatCap: unknown;
+  contentCap: unknown;
   accountCap: unknown;
   /**
-   * The primary Starfish client for space content (keyring, channels, objects).
+   * The primary Starfish client for space content (keyring, nodes, objects).
    * Uses the app's default namespace.
    */
-  chatClient: StarfishClient;
+  contentClient: StarfishClient;
   /**
    * The Starfish client for account-scoped content (profile, _spaces registry).
    * Uses the app's default namespace.
@@ -41,7 +41,7 @@ export interface Session {
   /**
    * Starfish client for cross-app shared-spaces keyring operations.
    * Same namespace logic as `spacesRegistryClient`, scoped to space content.
-   * Falls back to `chatClient` when no shared namespace is configured.
+   * Falls back to `contentClient` when no shared namespace is configured.
    */
   spacesKeyringClient: StarfishClient;
   fingerprint: string;
@@ -81,14 +81,14 @@ export function fingerprintFromUserId(userId: string): string {
 export async function buildSession({ userId, keys }: DerivedIdentity, name?: string): Promise<Session> {
   const fallback = name && name.trim() ? name.trim() : `user-${userId.slice(0, 6)}`;
   const sub = { edPubHex: keys.edPub, kemPubHex: keys.kemPub };
-  const chatCap = await mintDeviceCap(keys.edPriv, keys.edPub, sub, ownerScope());
+  const contentCap = await mintDeviceCap(keys.edPriv, keys.edPub, sub, ownerScope());
   const accountCap = await mintDeviceCap(keys.edPriv, keys.edPub, sub, accountScope(userId));
-  const chatClient = makeClient(chatCap, keys.edPriv);
+  const contentClient = makeClient(contentCap, keys.edPriv);
   const accountClient = makeClient(accountCap, keys.edPriv);
 
   const sharedNs = getSharedSpacesNamespace();
   const spacesRegistryClient = sharedNs ? makeClient(accountCap, keys.edPriv, sharedNs) : accountClient;
-  const spacesKeyringClient = sharedNs ? makeClient(chatCap, keys.edPriv, sharedNs) : chatClient;
+  const spacesKeyringClient = sharedNs ? makeClient(contentCap, keys.edPriv, sharedNs) : contentClient;
 
   const displayName = await ensurePseudo(accountClient, userId, fallback).catch(() => fallback);
   void ensureProfileKeys(accountClient, userId, keys).catch(() => {});
@@ -96,9 +96,9 @@ export async function buildSession({ userId, keys }: DerivedIdentity, name?: str
     userId,
     name: displayName,
     keys,
-    chatCap,
+    contentCap,
     accountCap,
-    chatClient,
+    contentClient,
     accountClient,
     spacesRegistryClient,
     spacesKeyringClient,
@@ -121,21 +121,21 @@ export interface LinkedIdentity {
  */
 export async function buildLinkedSession({ userId, keys, capCert }: LinkedIdentity, name?: string): Promise<Session> {
   const fallback = name && name.trim() ? name.trim() : `user-${userId.slice(0, 6)}`;
-  const chatClient = makeClient(capCert, keys.edPriv);
+  const contentClient = makeClient(capCert, keys.edPriv);
   const accountClient = makeClient(capCert, keys.edPriv);
 
   const sharedNs = getSharedSpacesNamespace();
   const spacesRegistryClient = sharedNs ? makeClient(capCert, keys.edPriv, sharedNs) : accountClient;
-  const spacesKeyringClient = sharedNs ? makeClient(capCert, keys.edPriv, sharedNs) : chatClient;
+  const spacesKeyringClient = sharedNs ? makeClient(capCert, keys.edPriv, sharedNs) : contentClient;
 
   const displayName = await ensurePseudo(accountClient, userId, fallback).catch(() => fallback);
   return {
     userId,
     name: displayName,
     keys,
-    chatCap: capCert,
+    contentCap: capCert,
     accountCap: capCert,
-    chatClient,
+    contentClient,
     accountClient,
     spacesRegistryClient,
     spacesKeyringClient,

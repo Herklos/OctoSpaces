@@ -29,15 +29,15 @@ def user_id_from_ed_pub(ed_pub_hex: str) -> str:
     return hashlib.sha256(bytes.fromhex(ed_pub_hex)).digest()[:16].hex()
 
 
-# ── Mirrors room_slug in core/ids.py ─────────────────────────────────────────
+# ── Mirrors slugify in core/ids.py ───────────────────────────────────────────
 
-def room_slug(name: str) -> str:
+def slugify(name: str) -> str:
     normalized = unicodedata.normalize("NFD", name)
     ascii_only = normalized.encode("ascii", "ignore").decode("ascii")
     lowered = ascii_only.lower()
     slugged = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
     truncated = slugged[:40]
-    return truncated or "room"
+    return truncated or "item"
 
 
 # ── Mirrors path builders in sync/paths.py (must stay in sync) ───────────────
@@ -189,20 +189,20 @@ def main() -> None:
         "ALL CAPS",
         "a" * 50,  # truncated to 40
         "",
-        "!!! @@@",  # all non-alnum → "room"
+        "!!! @@@",  # all non-alnum → "item"
         "simple",
         "abc-123-xyz",
     ]
     room_slug_vectors = {
         "description": (
-            "Cross-language vector for room_slug (ASCII inputs only). "
+            "Cross-language vector for slugify (ASCII inputs only). "
             "Pipeline: lowercase → replace non-[a-z0-9] runs with '-' → "
-            "strip leading/trailing '-' → truncate 40 → fallback 'room'. "
+            "strip leading/trailing '-' → truncate 40 → fallback 'item'. "
             "Non-ASCII inputs are excluded — TS and Python differ on how accented "
             "characters are handled (TS strips them, Python normalises first)."
         ),
         "vectors": [
-            {"input": name, "expected": room_slug(name)}
+            {"input": name, "expected": slugify(name)}
             for name in slug_inputs
         ],
     }

@@ -69,7 +69,7 @@ const mockSession = {
   userId: 'alice-user-id',
   ownerEdPub: 'alice-ed-pub', // owner = self
   keys: { edPub: 'alice-ed-pub', edPriv: 'alice-ed-priv', kemPub: 'alice-kem-pub', kemPriv: 'alice-kem-priv' },
-  chatClient: { pull: vi.fn(), push: vi.fn() },
+  contentClient: { pull: vi.fn(), push: vi.fn() },
   accountClient: { pull: vi.fn(), push: vi.fn() },
 } as unknown as Session;
 
@@ -78,7 +78,7 @@ const deviceSession = {
   userId: 'alice-device-2',
   ownerEdPub: 'alice-ed-pub', // same owner, different device
   keys: { edPub: 'device-pub', edPriv: 'dev-priv', kemPub: 'dev-kempub', kemPriv: 'dev-kempriv' },
-  chatClient: { pull: vi.fn(), push: vi.fn() },
+  contentClient: { pull: vi.fn(), push: vi.fn() },
   accountClient: { pull: vi.fn(), push: vi.fn() },
 } as unknown as Session;
 
@@ -117,7 +117,7 @@ describe('ownerEnsureNodeKeyring', () => {
   it('delegates to ownerEnsureKeyring with the NODE keyring pull/push paths', async () => {
     await ownerEnsureNodeKeyring(mockSession, SP, NID);
     expect(ownerEnsureKeyring).toHaveBeenCalledWith(
-      mockSession.chatClient,
+      mockSession.contentClient,
       mockSession.keys,
       nodeKeyringPull(SP, NID),
       nodeKeyringPush(SP, NID),
@@ -128,7 +128,7 @@ describe('ownerEnsureNodeKeyring', () => {
   it('forwards explicit trustedAdders when given', async () => {
     await ownerEnsureNodeKeyring(mockSession, SP, NID, ['root-key']);
     expect(ownerEnsureKeyring).toHaveBeenCalledWith(
-      mockSession.chatClient, mockSession.keys, nodeKeyringPull(SP, NID), nodeKeyringPush(SP, NID), ['root-key'],
+      mockSession.contentClient, mockSession.keys, nodeKeyringPull(SP, NID), nodeKeyringPush(SP, NID), ['root-key'],
     );
   });
 });
@@ -140,18 +140,18 @@ describe('openNodeEncryptor / buildNodeEncryptor', () => {
   });
 
   it('openNodeEncryptor passes the NODE keyring pull path + trustedAdders', async () => {
-    await openNodeEncryptor(mockSession.chatClient as never, mockSession.keys, SP, NID, ['adder']);
-    expect(openEncryptor).toHaveBeenCalledWith(mockSession.chatClient, mockSession.keys, nodeKeyringPull(SP, NID), ['adder']);
+    await openNodeEncryptor(mockSession.contentClient as never, mockSession.keys, SP, NID, ['adder']);
+    expect(openEncryptor).toHaveBeenCalledWith(mockSession.contentClient, mockSession.keys, nodeKeyringPull(SP, NID), ['adder']);
   });
 
   it('openNodeEncryptor propagates a SpaceAccessError from the generic opener', async () => {
     vi.mocked(openEncryptor).mockRejectedValueOnce(new SpaceAccessError('not a recipient'));
-    await expect(openNodeEncryptor(mockSession.chatClient as never, mockSession.keys, SP, NID, ['adder'])).rejects.toBeInstanceOf(SpaceAccessError);
+    await expect(openNodeEncryptor(mockSession.contentClient as never, mockSession.keys, SP, NID, ['adder'])).rejects.toBeInstanceOf(SpaceAccessError);
   });
 
   it('buildNodeEncryptor returns null (soft) when the keyring is absent', async () => {
     vi.mocked(buildEncryptor).mockResolvedValueOnce(null);
-    await expect(buildNodeEncryptor(mockSession.chatClient as never, mockSession.keys, SP, NID, ['adder'])).resolves.toBeNull();
+    await expect(buildNodeEncryptor(mockSession.contentClient as never, mockSession.keys, SP, NID, ['adder'])).resolves.toBeNull();
   });
 });
 
@@ -161,7 +161,7 @@ describe('addNodeKeyringRecipient', () => {
   it('targets nodeKeyringName with the adder keys and default trustedAdders [edPub]', async () => {
     await addNodeKeyringRecipient(mockSession, SP, NID, { subKem: 'bob-kem', userId: 'bob' });
     expect(addCollectionRecipient).toHaveBeenCalledWith(
-      mockSession.chatClient,
+      mockSession.contentClient,
       nodeKeyringName(SP, NID),
       { subKem: 'bob-kem', userId: 'bob' },
       { edPriv: 'alice-ed-priv', edPub: 'alice-ed-pub', kemPriv: 'alice-kem-priv' },
@@ -186,7 +186,7 @@ describe('removeNodeKeyringRecipient (revocation + rotation)', () => {
   it('rotates the node keyring, dropping the named recipient(s), default trustedAdders [edPub]', async () => {
     const res = await removeNodeKeyringRecipient(mockSession, SP, NID, ['bob-kem']);
     expect(removeRecipient).toHaveBeenCalledWith(
-      mockSession.chatClient,
+      mockSession.contentClient,
       nodeKeyringName(SP, NID),
       ['bob-kem'],
       { edPriv: 'alice-ed-priv', edPub: 'alice-ed-pub', kemPriv: 'alice-kem-priv' },
@@ -198,7 +198,7 @@ describe('removeNodeKeyringRecipient (revocation + rotation)', () => {
   it('honors explicit trustedAdders (retain recipients granted by those keys)', async () => {
     await removeNodeKeyringRecipient(mockSession, SP, NID, ['bob-kem'], { trustedAdders: ['owner-key', 'bot-key'] });
     expect(removeRecipient).toHaveBeenCalledWith(
-      mockSession.chatClient, nodeKeyringName(SP, NID), ['bob-kem'], expect.anything(), { trustedAdders: ['owner-key', 'bot-key'] },
+      mockSession.contentClient, nodeKeyringName(SP, NID), ['bob-kem'], expect.anything(), { trustedAdders: ['owner-key', 'bot-key'] },
     );
   });
 });

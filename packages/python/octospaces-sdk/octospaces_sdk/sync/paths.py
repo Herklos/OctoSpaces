@@ -36,9 +36,9 @@ def _push(rest: str) -> str:
 # ── Space ID helpers ──────────────────────────────────────────────────────────
 
 
-def space_id_from_room_id(room_id: str) -> str:
-    """A room id is ``sp-<rand>-<name>``; the space is its first two ``-`` segments."""
-    return "-".join(room_id.split("-")[:2])
+def space_id_from_node_id(node_id: str) -> str:
+    """A node id is ``sp-<rand>-<name>``; the space is its first two ``-`` segments."""
+    return "-".join(node_id.split("-")[:2])
 
 
 # ── Space-wide keyring ────────────────────────────────────────────────────────
@@ -59,16 +59,16 @@ def keyring_push(space_id: str) -> str:
 # ── Attachments ───────────────────────────────────────────────────────────────
 
 
-def attachment_name(room_id: str, blob_id: str) -> str:
-    return f"spaces/{space_id_from_room_id(room_id)}/attachments/{room_id}/{blob_id}"
+def attachment_name(node_id: str, blob_id: str) -> str:
+    return f"spaces/{space_id_from_node_id(node_id)}/attachments/{node_id}/{blob_id}"
 
 
-def attachment_pull(room_id: str, blob_id: str) -> str:
-    return _pull(attachment_name(room_id, blob_id))
+def attachment_pull(node_id: str, blob_id: str) -> str:
+    return _pull(attachment_name(node_id, blob_id))
 
 
-def attachment_push(room_id: str, blob_id: str) -> str:
-    return _push(attachment_name(room_id, blob_id))
+def attachment_push(node_id: str, blob_id: str) -> str:
+    return _push(attachment_name(node_id, blob_id))
 
 
 # ── Profile + registries ──────────────────────────────────────────────────────

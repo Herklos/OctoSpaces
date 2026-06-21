@@ -73,7 +73,7 @@ async def get_node_access(
     client: Any
 
     if access == "public" and not enc:
-        client = session.chat_client
+        client = session.content_client
     elif enc:
         # Encrypted: need space-member cap + keyring encryptor
         client = get_space_client(space_id, session)

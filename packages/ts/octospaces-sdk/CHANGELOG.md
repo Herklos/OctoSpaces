@@ -1,5 +1,47 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.16.0 (2026-06-21)
+
+De-chat pass — the SDK is a **generic per-node-access** core, so chat/room/DM-domain
+vocabulary was removed in favour of node-oriented names. **Breaking** public-export
+renames → minor bump. Consumers (OctoChat/OctoVault) update their pins + re-export
+shims in lockstep. All TS tests pass; Python SDK mirrored.
+
+### Changed
+
+- **`core/ids.ts`** — `roomSlug` → **`slugify`**; empty-input fallback `'room'` → `'item'`.
+- **`sync/paths.ts`** — `spaceIdFromRoomId` → **`spaceIdFromNodeId`**; the nine
+  `streamRoom*`/`streamPubRoom*`/`streamInvRoom*` log-path helpers → **`streamNode*`**/
+  **`streamPubNode*`**/**`streamInvNode*`**.
+- **`sync/identity.ts`** — `Session.chatClient` → **`contentClient`**, `Session.chatCap`
+  → **`contentCap`** (the "primary client for space content"). All internal readers
+  (`sync/client.ts`, `sync/node-keyring.ts`, `sync/space-access.ts`, `spaces/members.ts`,
+  `spaces/nodes.ts`) updated.
+- **`core/types.ts` + `prefs/mutes.ts` + `prefs/reads.ts`** — `MutePrefs.rooms` /
+  `ReadPrefs.rooms` → **`nodes`**; `isRoomMuted`/`setRoomMute` → **`isNodeMuted`**/
+  **`setNodeMute`**; `getRoomReadAt`/`setRoomReadAt` → **`getNodeReadAt`**/**`setNodeReadAt`**.
+  Reads coerce the legacy `rooms` key on load so pre-0.16 synced/kv docs migrate
+  losslessly (new `nodes` wins on overlap).
+- **`spaces/members.ts` + `spaces/nodes.ts`** — the space-member cap collection string
+  `'chat'` → **`'content'`**. Backward-compatible: the deployed server authorizes space
+  members via the `space:member` role enricher, not the collection name, so already-issued
+  `'chat'` caps keep working. Infra test fixtures updated for parity.
+
+### Removed
+
+- **DM surface extracted to OctoChat.** `DmMap`/`ArchivedDms` types, the `dms`/
+  `archivedDms`/`quickReactions` registry fields, and `updateDmsDoc`/`updateArchivedDmsDoc`/
+  `setDmMapping`/`updateQuickReactionsDoc` are gone from the generic SDK (only OctoChat used
+  them at runtime). They now live in OctoChat on top of the new generic passthrough below.
+
+### Added
+
+- **`spaces/registry.ts` — `updateSpacesExtraField(client, userId, key, mutator)`** plus an
+  `extra: Record<string, unknown>` field on the in-memory `_spaces` doc model. Any doc-body
+  key the SDK does not model (an app's `dms`, `archivedDms`, `quickReactions`, …) is collected
+  into `extra` on read and round-tripped untouched on every CAS write — so a generic-SDK
+  mutation never drops a consumer's own data. `readSpaces(...).extra` exposes them.
+
 ## 0.15.1 (2026-06-21)
 
 Crypto consolidation — **no public API or behaviour change** (`index.ts` surface

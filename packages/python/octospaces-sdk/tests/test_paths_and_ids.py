@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from octospaces_sdk.core.ids import room_slug
+from octospaces_sdk.core.ids import slugify
 from octospaces_sdk.sync.base64url import from_base64_url_json, to_base64_url
 from octospaces_sdk.sync.paths import (
     OBJECT_COLLECTIONS,
@@ -47,13 +47,13 @@ def test_user_id_from_ed_pub(case):
     assert len(result) == 32  # 16 bytes → 32 hex chars
 
 
-# ── room_slug ─────────────────────────────────────────────────────────────────
+# ── slugify ───────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize("case", V_SLUG["vectors"])
-def test_room_slug(case):
-    result = room_slug(case["input"])
-    assert result == case["expected"], f"room_slug({case['input']!r}): got {result!r}"
+def test_slugify(case):
+    result = slugify(case["input"])
+    assert result == case["expected"], f"slugify({case['input']!r}): got {result!r}"
 
 
 # ── path builders ─────────────────────────────────────────────────────────────

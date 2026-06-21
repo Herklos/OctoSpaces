@@ -9,7 +9,7 @@
 import { StarfishHttpError } from '@drakkar.software/starfish-client';
 import type { StarfishClient } from '@drakkar.software/starfish-client';
 
-import type { ArchivedDms, CapMap, DmMap, MutePrefs, PubAccessMap, ReadPrefs, Space } from '../core/types.js';
+import type { CapMap, MutePrefs, PubAccessMap, ReadPrefs, Space } from '../core/types.js';
 import type { SealedBlob } from '../sync/account-seal.js';
 import { randomId } from '../core/ids.js';
 import type { Session } from '../sync/identity.js';
@@ -64,25 +64,39 @@ interface SpacesDoc {
   mutes: MutePrefs;
   reads: ReadPrefs;
   pubAccess: PubAccessMap;
-  dms: DmMap;
-  quickReactions: string[];
-  archivedDms: ArchivedDms;
+  /** App-specific registry fields the SDK does not model (e.g. OctoChat's `dms`,
+   *  `archivedDms`, `quickReactions`). Round-tripped untouched on every CAS write so a
+   *  generic-SDK mutation never drops a consumer's own data. Access via
+   *  {@link updateSpacesExtraField} and `readSpaces(...).extra`. */
+  extra: Record<string, unknown>;
   hash: string | null;
 }
 
-type SpacesPayload = Omit<SpacesDoc, 'hash'>;
+/** The `_spaces` doc body sent on push — the modelled core fields plus any app-specific
+ *  fields spread at the top level (never a nested `extra` key). */
+type SpacesPayload = {
+  spaces: Space[];
+  caps: CapMap;
+  mutes: MutePrefs;
+  reads: ReadPrefs;
+  pubAccess: PubAccessMap;
+  [key: string]: unknown;
+};
 
-/** The `_spaces` doc body sent on push — every field except the CAS `hash`. */
+/** Core keys the SDK models explicitly; everything else in the doc body lives in `extra`.
+ *  `v` is the protocol version (re-added on write); `hash` is the CAS token (never in body). */
+const CORE_SPACES_KEYS = new Set(['spaces', 'caps', 'mutes', 'reads', 'pubAccess', 'v', 'hash']);
+
+/** Build the `_spaces` doc body: app-specific `extra` fields spread FIRST so the modelled
+ *  core fields always take precedence. No nested `extra` key reaches storage. */
 function toPayload(doc: SpacesDoc): SpacesPayload {
   return {
+    ...doc.extra,
     spaces: doc.spaces,
     caps: doc.caps,
     mutes: doc.mutes,
     reads: doc.reads,
     pubAccess: doc.pubAccess,
-    dms: doc.dms,
-    quickReactions: doc.quickReactions,
-    archivedDms: doc.archivedDms,
   };
 }
 
@@ -109,11 +123,11 @@ async function runCas(
   });
 }
 
-function casUpdateSpacesField<F extends keyof SpacesPayload>(
+function casUpdateSpacesField<F extends keyof SpacesDoc>(
   client: StarfishClient,
   userId: string,
   field: F,
-  mutate: (cur: SpacesPayload[F], doc: SpacesDoc) => SpacesPayload[F] | null,
+  mutate: (cur: SpacesDoc[F], doc: SpacesDoc) => SpacesDoc[F] | null,
 ): Promise<void> {
   return runCas(client, userId, (doc) => {
     const next = mutate(doc[field], doc);
@@ -130,25 +144,20 @@ function coerceRecord<T>(raw: unknown, isT: (v: unknown) => v is T): Record<stri
   return out;
 }
 
-const coerceDms = (raw: unknown): DmMap => coerceRecord(raw, (v): v is string => typeof v === 'string');
-
 function coerceMutes(raw: unknown): MutePrefs {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as { rooms?: unknown; spaces?: unknown };
+  // Back-compat: pre-0.16 docs keyed node mutes under `rooms`; new `nodes` wins on overlap.
+  const r = (raw && typeof raw === 'object' ? raw : {}) as { rooms?: unknown; nodes?: unknown; spaces?: unknown };
   const pick = (v: unknown): Record<string, true | number> =>
     v && typeof v === 'object' ? (v as Record<string, true | number>) : {};
-  return { rooms: pick(r.rooms), spaces: pick(r.spaces) };
+  return { nodes: { ...pick(r.rooms), ...pick(r.nodes) }, spaces: pick(r.spaces) };
 }
 
 function coerceReads(raw: unknown): ReadPrefs {
-  const r = (raw && typeof raw === 'object' ? raw : {}) as { rooms?: unknown };
-  return { rooms: coerceRecord(r.rooms, (v): v is number => typeof v === 'number' && Number.isFinite(v)) };
+  // Back-compat: pre-0.16 docs keyed read marks under `rooms`.
+  const r = (raw && typeof raw === 'object' ? raw : {}) as { rooms?: unknown; nodes?: unknown };
+  const isTs = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  return { nodes: { ...coerceRecord(r.rooms, isTs), ...coerceRecord(r.nodes, isTs) } };
 }
-
-function coerceQuickReactions(raw: unknown): string[] {
-  return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : [];
-}
-
-const coerceArchivedDms = (raw: unknown): ArchivedDms => coerceRecord(raw, (v): v is true => v === true);
 
 type RawSpacesDoc = {
   spaces?: Space[];
@@ -156,10 +165,16 @@ type RawSpacesDoc = {
   mutes?: unknown;
   reads?: unknown;
   pubAccess?: PubAccessMap;
-  dms?: unknown;
-  quickReactions?: unknown;
-  archivedDms?: unknown;
-};
+} & Record<string, unknown>;
+
+/** Collect every doc-body key the SDK does not model into `extra`, so app-specific
+ *  fields (OctoChat's `dms`/`archivedDms`/`quickReactions`, …) survive the round-trip. */
+function collectExtra(data: RawSpacesDoc | undefined): Record<string, unknown> {
+  if (!data || typeof data !== 'object') return {};
+  const extra: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) if (!CORE_SPACES_KEYS.has(k)) extra[k] = v;
+  return extra;
+}
 
 /** Coerce a raw `_spaces` doc body (or `undefined`) into a typed {@link SpacesDoc}.
  *  Shared by the normal pull path AND the error/empty fallback so the per-field defaults
@@ -171,9 +186,7 @@ function coerceSpacesDoc(data: RawSpacesDoc | undefined, hash: string | null): S
     mutes: coerceMutes(data?.mutes),
     reads: coerceReads(data?.reads),
     pubAccess: data?.pubAccess && typeof data.pubAccess === 'object' ? data.pubAccess : {},
-    dms: coerceDms(data?.dms),
-    quickReactions: coerceQuickReactions(data?.quickReactions),
-    archivedDms: coerceArchivedDms(data?.archivedDms),
+    extra: collectExtra(data),
     hash,
   };
 }
@@ -224,37 +237,24 @@ export function updateReadsDoc(
   return casUpdateSpacesField(client, userId, 'reads', (cur) => mutator(cur));
 }
 
-export function updateDmsDoc(
+/**
+ * Read-modify-CAS-write ONE app-specific (`extra`) field of the `_spaces` doc. The SDK
+ * does not model these keys (e.g. OctoChat's `dms`/`archivedDms`/`quickReactions`); they
+ * round-trip untouched through every other registry write. `mutator` receives the current
+ * value (or `undefined` when absent) and returns the next value, or `null` to skip the
+ * write. Reading the value back: `readSpaces(...).extra[key]`.
+ */
+export function updateSpacesExtraField<T>(
   client: StarfishClient,
   userId: string,
-  mutator: (cur: DmMap) => DmMap | null,
+  key: string,
+  mutator: (cur: T | undefined) => T | null,
 ): Promise<void> {
-  return casUpdateSpacesField(client, userId, 'dms', (cur) => mutator(cur));
-}
-
-export function updateQuickReactionsDoc(
-  client: StarfishClient,
-  userId: string,
-  mutator: (cur: string[]) => string[] | null,
-): Promise<void> {
-  return casUpdateSpacesField(client, userId, 'quickReactions', (cur) => mutator(cur));
-}
-
-export function updateArchivedDmsDoc(
-  client: StarfishClient,
-  userId: string,
-  mutator: (cur: ArchivedDms) => ArchivedDms | null,
-): Promise<void> {
-  return casUpdateSpacesField(client, userId, 'archivedDms', (cur) => mutator(cur));
-}
-
-export async function setDmMapping(
-  client: StarfishClient,
-  userId: string,
-  peerUserId: string,
-  spaceId: string,
-): Promise<void> {
-  await updateDmsDoc(client, userId, (cur) => (cur[peerUserId] === spaceId ? null : { ...cur, [peerUserId]: spaceId }));
+  return runCas(client, userId, (doc) => {
+    const next = mutator(doc.extra[key] as T | undefined);
+    if (next === null) return null;
+    return { ...toPayload(doc), [key]: next };
+  });
 }
 
 export async function writeSpaces(
