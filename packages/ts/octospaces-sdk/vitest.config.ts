@@ -15,7 +15,8 @@ export default defineConfig({
       // points need excluding from the src/ source set.
       exclude: [
         'src/index.ts',
-        'src/wal.ts',
+        // WAL subpath wiring — thin Starfish adapters, integration-wired (no unit tests).
+        'src/wal/**',
       ],
       thresholds: {
         // Overall floor — raise as test coverage improves.

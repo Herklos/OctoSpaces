@@ -15,10 +15,8 @@
  * before `addNodeKeyringRecipient`. Use `ensureNodeKeyringRecipient` to get both in
  * the correct order.
  */
-import { removeRecipient, listRecipients } from '@drakkar.software/starfish-keyring';
+import { removeRecipient } from '@drakkar.software/starfish-keyring';
 import type { Encryptor, StarfishClient } from '@drakkar.software/starfish-client';
-import { buildRevocationList } from '@drakkar.software/starfish-protocol';
-import type { RevocationList, RevokedSubject } from '@drakkar.software/starfish-protocol';
 
 import { openEncryptor, buildEncryptor, ownerEnsureKeyring, addKeyringRecipientCore } from './client.js';
 import type { DeviceKeys } from './client.js';
@@ -26,8 +24,6 @@ import { ownerTrustedAdders } from './identity.js';
 import type { Session } from './identity.js';
 import { adderOf } from '../spaces/invite-helpers.js';
 import { nodeKeyringName, nodeKeyringPull, nodeKeyringPush } from './paths.js';
-import { getSyncBase, getSyncPrefix } from '../core/config.js';
-import { fetchWithTimeout } from './fetch-timeout.js';
 
 /** A keyring recipient, referenced by their X25519 KEM pubkey (hex). */
 export interface NodeKeyringRecipient {
@@ -122,13 +118,6 @@ export async function ensureNodeKeyringRecipient(
   return enc;
 }
 
-/** One recipient of a node keyring, projected for listing (provenance-filtered). */
-export interface ListedNodeRecipient {
-  subKem: string;
-  addedBy: string;
-  addedAt: number;
-}
-
 /**
  * REVOKE one or more recipients from a node keyring: rotates to a NEW epoch, mints a fresh
  * CEK, and re-wraps it ONLY to the retained recipients — so a removed party (e.g. an
@@ -153,95 +142,4 @@ export async function removeNodeKeyringRecipient(
     adderOf(session),
     { trustedAdders: opts.trustedAdders ?? ownerTrustedAdders(session) },
   );
-}
-
-/**
- * List the current recipients of a node keyring (provenance-filtered: only entries from a
- * trusted adder with a valid signature surface). Returns `{epoch:0, recipients:[]}` when no
- * keyring exists yet.
- */
-export async function listNodeKeyringRecipients(
-  session: Session,
-  spaceId: string,
-  nodeId: string,
-  opts: { trustedAdders?: string[] } = {},
-): Promise<{ epoch: number; recipients: ListedNodeRecipient[] }> {
-  return listRecipients(session.chatClient, nodeKeyringName(spaceId, nodeId), {
-    trustedAdders: opts.trustedAdders ?? ownerTrustedAdders(session),
-  });
-}
-
-// ── Full revocation ───────────────────────────────────────────────────────────
-
-/**
- * POST a signed {@link RevocationList} to the server's `/revocations` endpoint.
- * Default transport for `revokeNodeAccess`; override via `opts.submitRevocation`.
- */
-async function defaultSubmitRevocation(list: RevocationList): Promise<void> {
-  const url = `${getSyncBase()}${getSyncPrefix()}/revocations`;
-  const res = await fetchWithTimeout()(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(list),
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to submit revocation list: HTTP ${res.status}`);
-  }
-}
-
-/**
- * True eviction of one or more node-keyring recipients.
- *
- * Composes two cryptographic steps:
- *   1. **Keyring rotation** (forward secrecy) — rotates to a new epoch so the
- *      removed parties cannot decrypt future messages. Delegates to
- *      `removeNodeKeyringRecipient`.
- *   2. **Cap revocation** (access cut-off) — builds a signed {@link RevocationList}
- *      (subject-level, invalidates every cap for the subject regardless of nonce)
- *      and submits it to the server via `submitRevocation`. The server's
- *      `isRevoked` check then rejects authenticated requests from the revoked
- *      subjects.
- *
- * Cap revocation only runs when `opts.revokedSubjects` is non-empty.  The caller
- * is responsible for mapping `subKem` → `{ sub: edPub, exp }` (cap subject +
- * expiry), which they had at invite time.
- *
- * `opts.generation` MUST be strictly greater than any prior generation submitted
- * by this issuer (`session.keys.edPub`). The server rejects out-of-order lists.
- * Callers should persist the last-used generation and increment it. If omitted,
- * the current millisecond timestamp is used (safe for burst revocations within the
- * same second; use an explicit counter for very high-frequency scenarios).
- */
-export async function revokeNodeKeyringRecipients(
-  session: Session,
-  spaceId: string,
-  nodeId: string,
-  removeSubKems: string[],
-  opts: {
-    trustedAdders?: string[];
-    revokedSubjects?: RevokedSubject[];
-    generation?: number;
-    submitRevocation?: (list: RevocationList) => Promise<void>;
-  } = {},
-): Promise<{ newEpoch: number; revoked: boolean }> {
-  // Step 1: rotate the keyring (forward secrecy).
-  const { newEpoch } = await removeNodeKeyringRecipient(session, spaceId, nodeId, removeSubKems, {
-    trustedAdders: opts.trustedAdders,
-  });
-
-  // Step 2: revoke the cap(s) so the server stops honouring authenticated requests.
-  if (!opts.revokedSubjects || opts.revokedSubjects.length === 0) {
-    return { newEpoch, revoked: false };
-  }
-  const generation = opts.generation ?? Date.now();
-  const list = buildRevocationList({
-    issEdPubHex: session.keys.edPub,
-    issEdPrivHex: session.keys.edPriv,
-    generation,
-    revoked: [],
-    revokedSubjects: opts.revokedSubjects,
-  });
-  const submit = opts.submitRevocation ?? defaultSubmitRevocation;
-  await submit(list);
-  return { newEpoch, revoked: true };
 }

@@ -145,9 +145,8 @@ export {
   addNodeKeyringRecipient,
   ensureNodeKeyringRecipient,
   removeNodeKeyringRecipient,
-  listNodeKeyringRecipients,
 } from './sync/node-keyring.js';
-export type { NodeKeyringRecipient, ListedNodeRecipient } from './sync/node-keyring.js';
+export type { NodeKeyringRecipient } from './sync/node-keyring.js';
 
 // Identity / session
 export {
@@ -388,5 +387,4 @@ export { createReadsStore } from './prefs/reads.js';
 export type { ReadsStore } from './prefs/reads.js';
 
 // Format
-export { plural, clockTime, initialsFor, formatBytes } from './format/format.js';
-export { relativeTime, relativeTimeShort } from './format/relative-time.js';
+export { plural, clockTime, initialsFor, formatBytes, relativeTime, relativeTimeShort } from './format/format.js';

@@ -1,5 +1,34 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.15.0 (2026-06-21)
+
+Micro-module fold + dead-code removal. Minor bump because two unused public
+node-keyring exports are dropped; all other public/subpath export names are
+unchanged. All 644 tests pass.
+
+### Removed
+
+- **`sync/node-keyring.ts`** — dropped `listNodeKeyringRecipients()` and the
+  `ListedNodeRecipient` type (no internal or consumer caller), and the unwired
+  full-eviction helper `revokeNodeKeyringRecipients()` (not exported from
+  `index.ts`; node-tier eviction goes through `revokeNodeAccess` in
+  `spaces/nodes.ts`). Now-orphaned imports (`listRecipients`, `buildRevocationList`,
+  `fetchWithTimeout`, `getSyncBase`/`getSyncPrefix`) were pruned with them.
+
+### Changed
+
+- **`wal/index.ts`** — folded the four single-function adapter files
+  (`signer.ts`, `encryptor.ts`, `transport.ts`, `snapshot-store.ts`) inline into
+  the WAL entry module. The `./wal` subpath surface (`createWalDocument`,
+  `WalDocument`, `noopEncryptor`, `createWalTransport`, `createWalSnapshotStore`,
+  `walEncryptorFromKeyring`, `walSignerFromKeys`, `CreateWalDocumentOptions`) is
+  byte-identical.
+- **`format/format.ts`** — absorbed `relativeTime` / `relativeTimeShort` from the
+  deleted `format/relative-time.ts`; the `index.ts` re-export is collapsed to one
+  line with the same six names.
+- **`vitest.config.ts`** — coverage `exclude` now lists `src/wal/**` (the WAL
+  subpath wiring has no unit tests) in place of the stale `src/wal.ts` entry.
+
 ## 0.14.3 (2026-06-20)
 
 Keyed-store consolidation — **no public API or behaviour change** (`index.ts` byte-identical;
