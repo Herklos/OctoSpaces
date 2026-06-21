@@ -51,14 +51,12 @@ import { createKeyedStore } from '../sync/keyed-store.js';
 import { verifyIdentityLinkBinding, verifyIdentityLinkKeys } from './identity-link.js';
 import type { IdentityLink } from './identity-link.js';
 import { createNode, inviteToNode, acceptNodeInvite } from './nodes.js';
-import { verifyKemSig } from './request-verify.js';
+import { verifyKemSig, signKemSig } from './request-verify.js';
 import { readObjectTree } from './object-index.js';
 import { randomId } from '../core/ids.js';
 import type { Session } from '../sync/identity.js';
 import type { ObjectNode } from '../core/types.js';
 import { userIdFromEdPub } from '../sync/paths.js';
-import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
-import { ed25519 } from '@noble/curves/ed25519.js';
 
 /**
  * AES-GCM additional-data context binding for inbox seals.
@@ -295,7 +293,7 @@ export async function submitResourceRequest(
       userId: session.userId,
       edPub: session.keys.edPub,
       kemPub: session.keys.kemPub,
-      kemSig: bytesToHex(ed25519.sign(hexToBytes(session.keys.kemPub), hexToBytes(session.keys.edPriv))),
+      kemSig: signKemSig(session.keys),
     },
   };
 

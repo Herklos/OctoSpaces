@@ -21,8 +21,9 @@ import { readProfile } from '../sync/client.js';
 import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
 import { userIdFromEdPub, ED_PUB_HEX_RE, KEM_PUB_HEX_RE, KEM_SIG_HEX_RE, USER_ID_HEX_RE } from '../sync/paths.js';
 import type { Session } from '../sync/identity.js';
-import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
+import { hexToBytes } from '@drakkar.software/starfish-keyring';
 import { ed25519 } from '@noble/curves/ed25519.js';
+import { signKemSig } from './request-verify.js';
 
 // ── Token shape ───────────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ export async function myIdentityLink(
 ): Promise<string | null> {
   // Root device: keys are already on the session — compute kemSig locally.
   if (session.ownerEdPub === session.keys.edPub) {
-    const kemSig = bytesToHex(ed25519.sign(hexToBytes(session.keys.kemPub), hexToBytes(session.keys.edPriv)));
+    const kemSig = signKemSig(session.keys);
     return encodeIdentityLink(origin, path, {
       v: 2,
       ownerId: session.userId,

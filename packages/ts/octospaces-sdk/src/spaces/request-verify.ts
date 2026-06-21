@@ -8,7 +8,19 @@
  * (throw with a caller-specific message vs. `continue`), which differ by context.
  */
 import { ed25519 } from '@noble/curves/ed25519.js';
-import { hexToBytes } from '@drakkar.software/starfish-keyring';
+import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
+
+/**
+ * Sign `kemPub` (its bytes) with the Ed25519 private key `edPriv`, producing the
+ * `kemSig` hex. The exact inverse of {@link verifyKemSig} — kept beside it so the
+ * two halves share one byte order/encoding and can't silently diverge (a producer
+ * that signed the wrong bytes would mint a kemSig that every verifier rejects, or
+ * worse, one that defeats the MITM protection). Used by every flow that publishes a
+ * kemPub binding (profile keys, join requests, resource requests, identity links).
+ */
+export function signKemSig(keys: { kemPub: string; edPriv: string }): string {
+  return bytesToHex(ed25519.sign(hexToBytes(keys.kemPub), hexToBytes(keys.edPriv)));
+}
 
 /**
  * True iff `kemSig` is a valid Ed25519 signature of `kemPub` (its bytes) by the

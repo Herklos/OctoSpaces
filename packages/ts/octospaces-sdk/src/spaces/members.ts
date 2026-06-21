@@ -20,8 +20,6 @@
  * for each space the paired device should decrypt. ONE keyring per space encrypts all
  * `enc` nodes; adding the device once unlocks the whole space's E2EE content.
  */
-import { hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
-import { ed25519 } from '@noble/curves/ed25519.js';
 import type { RevocationEntry, RevocationList } from '@drakkar.software/starfish-protocol';
 
 import type { Space } from '../core/types.js';
@@ -34,6 +32,7 @@ import {
 import type { LinkAccessPayload } from '../sync/space-access-store.js';
 import { keyringName, recipientFor, spaceMemberScope } from '../sync/paths.js';
 import { assertCapForMe, capNonce, ephemeralSubject, evictKeyringMember, mintCap, parseJoinRequest } from './invite-helpers.js';
+import { signKemSig } from './request-verify.js';
 import { addSpaceKeyringRecipient, ensureSpaceKeyringRecipient, isKeyringMissing } from '../sync/client.js';
 import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, buildSpace, readSpaces, updateSpacesDoc, removeSpaceMember } from './registry.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
@@ -49,7 +48,7 @@ export interface JoinRequest {
 }
 
 export function makeJoinRequest(session: Session): string {
-  const kemSig = bytesToHex(ed25519.sign(hexToBytes(session.keys.kemPub), hexToBytes(session.keys.edPriv)));
+  const kemSig = signKemSig(session.keys);
   const req: JoinRequest = { edPub: session.keys.edPub, kemPub: session.keys.kemPub, userId: session.userId, kemSig };
   return JSON.stringify(req);
 }

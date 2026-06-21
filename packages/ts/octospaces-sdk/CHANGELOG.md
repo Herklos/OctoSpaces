@@ -1,5 +1,23 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.15.1 (2026-06-21)
+
+Crypto consolidation — **no public API or behaviour change** (`index.ts` surface
+unchanged; all 644 tests pass).
+
+### Changed
+
+- **`spaces/request-verify.ts`** — added `signKemSig(keys)`, the inverse of the
+  existing `verifyKemSig`, kept beside it so the sign/verify pair shares one byte
+  order/encoding and can't silently diverge. The `kemSig` signing one-liner
+  (`bytesToHex(ed25519.sign(hexToBytes(kemPub), hexToBytes(edPriv)))`), previously
+  copy-pasted verbatim in four producers — `makeJoinRequest` (`spaces/members.ts`),
+  `ensureProfileKeys` (`sync/client.ts`), `submitResourceRequest`
+  (`spaces/resource-requests.ts`), and `myIdentityLink` (`spaces/identity-link.ts`) —
+  now routes through it; the now-unused `ed25519` / `hexToBytes` / `bytesToHex`
+  imports were pruned from those files. `signKemSig` is internal (not exported from
+  `index.ts`).
+
 ## 0.15.0 (2026-06-21)
 
 Micro-module fold + dead-code removal. Minor bump because two unused public

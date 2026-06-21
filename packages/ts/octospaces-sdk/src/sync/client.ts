@@ -3,9 +3,8 @@
  */
 import { StarfishClient } from '@drakkar.software/starfish-client';
 import type { BatchPullEntry, Encryptor, StarfishCapProvider } from '@drakkar.software/starfish-client';
-import { addCollectionRecipient, createKeyring, createKeyringEncryptor, hexToBytes, bytesToHex } from '@drakkar.software/starfish-keyring';
+import { addCollectionRecipient, createKeyring, createKeyringEncryptor } from '@drakkar.software/starfish-keyring';
 import type { Keyring } from '@drakkar.software/starfish-keyring';
-import { ed25519 } from '@noble/curves/ed25519.js';
 import { signRequest, stableStringify } from '@drakkar.software/starfish-protocol';
 import type { SignableMethod } from '@drakkar.software/starfish-protocol';
 
@@ -16,6 +15,7 @@ import { cacheProfile, loadCachedProfile } from './profile-cache.js';
 import { keyringName, keyringPull, keyringPush, profilePull, profilePush } from './paths.js';
 import { computeOwnerTrustedAdders } from './trusted-adders.js';
 import { b64FromBinaryString } from './base64.js';
+import { signKemSig } from '../spaces/request-verify.js';
 import { SpaceAccessError } from '../core/space-access-error.js';
 
 export interface DeviceKeys {
@@ -378,7 +378,7 @@ export async function ensureProfileKeys(
     return;
   }
   if (!confirmedAbsent) return;
-  const kemSig = bytesToHex(ed25519.sign(hexToBytes(keys.kemPub), hexToBytes(keys.edPriv)));
+  const kemSig = signKemSig(keys);
   await writeProfile(client, userId, { edPub: keys.edPub, kemPub: keys.kemPub, kemSig });
 }
 
