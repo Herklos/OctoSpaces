@@ -11,7 +11,7 @@ import type { StarfishClient } from '@drakkar.software/starfish-client';
 
 import type { CapMap, MutePrefs, PubAccessMap, ReadPrefs, Space } from '../core/types.js';
 import type { SealedBlob } from '../sync/account-seal.js';
-import { randomId } from '../core/ids.js';
+import { randomId } from '@drakkar.software/starfish-protocol';
 import type { Session } from '../sync/identity.js';
 import { seedSpaceObjectIndex } from './object-index.js';
 import { casMutateWithRetry } from '../sync/cas-retry.js';

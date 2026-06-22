@@ -48,12 +48,12 @@ import {
   saveSpaceAccessEntry,
 } from '../sync/space-access-store.js';
 import { sealToSelf } from '../sync/account-seal.js';
-import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
+import { encodeLinkFragment, decodeLinkFragment } from '@drakkar.software/starfish-protocol';
 import { createComposedStore } from '../sync/keyed-store.js';
 import { addObject } from '../objects/objects.js';
 import { updateObjectIndex } from './object-index.js';
 import { addSpaceMember, buildSpace } from './registry.js';
-import { randomId } from '../core/ids.js';
+import { randomId } from '@drakkar.software/starfish-protocol';
 
 // ── owner-side node invite store (nonces for revocation) ─────────────────────
 //
@@ -499,8 +499,12 @@ export function encodeNodeInviteLink(origin: string, token: NodeInviteLinkToken)
 export function decodeNodeInviteLink(fragment: string): NodeInviteLinkToken {
   const raw = decodeLinkFragment<{ spaceId: string; nodeId: string; cap: unknown; key: string } & Partial<NodeInviteLinkToken>>(
     fragment,
-    (tok): tok is { spaceId: string; nodeId: string; cap: unknown; key: string } & Partial<NodeInviteLinkToken> =>
-      !!tok && typeof tok.spaceId === 'string' && typeof tok.nodeId === 'string' && !!tok.cap && typeof tok.key === 'string',
+    (tok) => {
+      const t = tok as Record<string, unknown>;
+      return !!t && typeof t.spaceId === 'string' && typeof t.nodeId === 'string' && !!t.cap && typeof t.key === 'string'
+        ? (t as { spaceId: string; nodeId: string; cap: unknown; key: string } & Partial<NodeInviteLinkToken>)
+        : null;
+    },
     'That node invite link is malformed or incomplete.',
   );
   return {

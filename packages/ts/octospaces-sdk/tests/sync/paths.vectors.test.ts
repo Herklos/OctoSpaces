@@ -22,7 +22,7 @@ import {
   spaceAccessPush,
   userIdFromEdPub,
 } from '../../src/sync/paths.js';
-import { slugify } from '../../src/core/ids.js';
+import { slugify } from '@drakkar.software/starfish-protocol';
 import { toBase64Url, fromBase64Url } from '../../src/sync/base64.js';
 
 import pathsVectors from '../../../../../tests/test-vectors/paths-scopes.json';

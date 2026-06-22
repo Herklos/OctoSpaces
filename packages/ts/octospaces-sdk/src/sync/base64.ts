@@ -1,19 +1,18 @@
 /**
- * Base64 for the Starfish platform — the single home for every base64 flavour:
+ * Base64 for the Starfish platform.
  *
  *  1. **Binary-string primitives** (`b64FromBinaryString` / `b64ToBinaryString`) over a
  *     latin1 string — the native `btoa`/`atob` on web, the Node `Buffer` fallback
- *     elsewhere. For SHORT strings (cap-cert auth headers, link fragments). The platform
- *     branch lives here once.
- *  2. **Chunked byte-array provider** (`starfishBase64`) — `btoa(String.fromCharCode(...data))`
- *     spreads the whole array into one call, so a multi-megabyte attachment overflows the
- *     argument/stack limit ("Maximum call stack size exceeded"). This walks the bytes in
- *     fixed windows instead, so it scales to large blobs. Prefers the platform's own
- *     `btoa`/`atob` (web) and falls back to a pure implementation (Hermes/native).
- *  3. **base64url** (`toBase64Url` / `fromBase64Url`) — UTF-8-safe, no padding, `+/` → `-_`;
- *     the encoding both invitation-link kinds ride in a URL `#fragment`.
+ *     elsewhere. For SHORT strings (cap-cert auth headers).
+ *  2. **Chunked byte-array provider** (`starfishBase64`) — walks bytes in fixed windows
+ *     to avoid the V8 apply-stack limit on multi-MB blobs. Prefers native `btoa`/`atob`
+ *     (web) and falls back to a pure implementation (Hermes/native).
+ *  3. **base64url** — re-exported from `starfish-protocol` since alpha.30.
  */
 import type { Base64Provider } from '@drakkar.software/starfish-protocol';
+
+// ── 3. base64url (re-exported from starfish-protocol) ─────────────────────────
+export { toBase64Url, fromBase64Url } from '@drakkar.software/starfish-protocol';
 
 // ── 1. Binary-string primitives (short strings) ───────────────────────────────
 
@@ -104,18 +103,3 @@ export const starfishBase64: Base64Provider = nativeCodec
   ? { encode: encodeViaBtoa, decode: decodeViaAtob }
   : { encode: encodePure, decode: decodePure };
 
-// ── 3. base64url (link fragments) ─────────────────────────────────────────────
-
-export function toBase64Url(json: string): string {
-  const bytes = new TextEncoder().encode(json);
-  let bin = '';
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return b64FromBinaryString(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-export function fromBase64Url(b64url: string): string {
-  const bin = b64ToBinaryString(b64url.replace(/-/g, '+').replace(/_/g, '/'));
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new TextDecoder().decode(bytes);
-}

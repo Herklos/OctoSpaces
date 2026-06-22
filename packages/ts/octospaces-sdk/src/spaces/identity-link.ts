@@ -18,7 +18,7 @@
  * `starfish/dm-link.ts`, generalized to arbitrary `origin/path` routes (not DM-specific).
  */
 import { readProfile } from '../sync/client.js';
-import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
+import { encodeLinkFragment, decodeLinkFragment } from '@drakkar.software/starfish-protocol';
 import { userIdFromEdPub, ED_PUB_HEX_RE, KEM_PUB_HEX_RE, KEM_SIG_HEX_RE, USER_ID_HEX_RE } from '../sync/paths.js';
 import type { Session } from '../sync/identity.js';
 import { hexToBytes } from '@drakkar.software/starfish-keyring';
@@ -91,17 +91,21 @@ export function encodeIdentityLink(origin: string, path: string, token: Identity
 export function decodeIdentityLink(fragment: string): IdentityLink {
   const raw = decodeLinkFragment<Partial<IdentityLink>>(
     fragment,
-    (tok): tok is Partial<IdentityLink> =>
-      !!tok &&
-      tok.v === 2 &&
-      typeof tok.ownerId === 'string' &&
-      OWNER_ID_RE.test(tok.ownerId) &&
-      typeof tok.edPub === 'string' &&
-      ED_PUB_RE.test(tok.edPub) &&
-      typeof tok.kemPub === 'string' &&
-      KEM_PUB_RE.test(tok.kemPub) &&
-      typeof tok.kemSig === 'string' &&
-      KEM_SIG_RE.test(tok.kemSig),
+    (tok) => {
+      const t = tok as Partial<IdentityLink>;
+      return !!t &&
+        t.v === 2 &&
+        typeof t.ownerId === 'string' &&
+        OWNER_ID_RE.test(t.ownerId) &&
+        typeof t.edPub === 'string' &&
+        ED_PUB_RE.test(t.edPub) &&
+        typeof t.kemPub === 'string' &&
+        KEM_PUB_RE.test(t.kemPub) &&
+        typeof t.kemSig === 'string' &&
+        KEM_SIG_RE.test(t.kemSig)
+        ? t
+        : null;
+    },
     MALFORMED,
   );
   return {

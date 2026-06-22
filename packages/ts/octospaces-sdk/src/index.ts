@@ -27,8 +27,8 @@ export type {
   VerificationLevel,
 } from './core/types.js';
 
-// Ids
-export { randomId, slugify } from './core/ids.js';
+// Ids (re-exported from starfish-protocol since alpha.30)
+export { randomId, slugify } from '@drakkar.software/starfish-protocol';
 
 // Paths / cap scopes
 export {
@@ -327,8 +327,8 @@ export { appendToInbox, postAnonymousAppend, AppendHttpError } from './sync/sign
 // Base64
 export { starfishBase64, toBase64Url, fromBase64Url } from './sync/base64.js';
 
-// Link token helpers (shared encode/decode for invite and identity link fragments)
-export { encodeLinkFragment, decodeLinkFragment } from './sync/link-token.js';
+// Link token helpers (re-exported from starfish-protocol since alpha.30)
+export { encodeLinkFragment, decodeLinkFragment } from '@drakkar.software/starfish-protocol';
 
 // Utilities
 export { matchTitle, rankResults, fold, isWordStart } from './utils/search-match.js';

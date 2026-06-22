@@ -36,7 +36,7 @@ import { signKemSig } from './request-verify.js';
 import { addSpaceKeyringRecipient, ensureSpaceKeyringRecipient, isKeyringMissing } from '../sync/client.js';
 import { addJoinedSpaceWithCap, addJoinedSpaceWithLinkAccess, addSpaceMember, buildSpace, readSpaces, updateSpacesDoc, removeSpaceMember } from './registry.js';
 import { sealToSelf, unsealFromSelf } from '../sync/account-seal.js';
-import { encodeLinkFragment, decodeLinkFragment } from '../sync/link-token.js';
+import { encodeLinkFragment, decodeLinkFragment } from '@drakkar.software/starfish-protocol';
 import { createComposedStore } from '../sync/keyed-store.js';
 
 export interface JoinRequest {
@@ -176,8 +176,12 @@ export function encodeSpaceInviteLink(origin: string, token: SpaceInviteLinkToke
 export function decodeSpaceInviteLink(fragment: string): SpaceInviteLinkToken {
   const raw = decodeLinkFragment<{ spaceId: string; cap: unknown; key: string } & Partial<SpaceInviteLinkToken>>(
     fragment,
-    (tok): tok is { spaceId: string; cap: unknown; key: string } & Partial<SpaceInviteLinkToken> =>
-      !!tok && typeof tok.spaceId === 'string' && !!tok.cap && typeof tok.key === 'string',
+    (tok) => {
+      const t = tok as Record<string, unknown>;
+      return !!t && typeof t.spaceId === 'string' && !!t.cap && typeof t.key === 'string'
+        ? (t as { spaceId: string; cap: unknown; key: string } & Partial<SpaceInviteLinkToken>)
+        : null;
+    },
     'That space invite link is malformed or incomplete.',
   );
   return {

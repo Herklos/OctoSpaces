@@ -53,7 +53,7 @@ import type { IdentityLink } from './identity-link.js';
 import { createNode, inviteToNode, acceptNodeInvite } from './nodes.js';
 import { verifyKemSig, signKemSig } from './request-verify.js';
 import { readObjectTree } from './object-index.js';
-import { randomId } from '../core/ids.js';
+import { randomId } from '@drakkar.software/starfish-protocol';
 import type { Session } from '../sync/identity.js';
 import type { ObjectNode } from '../core/types.js';
 import { userIdFromEdPub } from '../sync/paths.js';

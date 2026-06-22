@@ -1,5 +1,38 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.20.0 (2026-06-22)
+
+### Changed
+
+- **Starfish SDK bumped to `3.0.0-alpha.30`** across all peer/devDependencies
+  (covers alpha.28 offline-first store, alpha.29 flush-retry, alpha.30 new primitives).
+- **`randomId` / `slugify`** — removed local implementations in `core/ids.ts`;
+  re-exported from `@drakkar.software/starfish-protocol` (identical behaviour, alpha.30 added them).
+  `core/ids.ts` deleted.
+- **`toBase64Url` / `fromBase64Url`** — removed local implementations from `sync/base64.ts`;
+  re-exported from `@drakkar.software/starfish-protocol`.
+- **`encodeLinkFragment` / `decodeLinkFragment`** — removed local `sync/link-token.ts`;
+  re-exported from `@drakkar.software/starfish-protocol`. The `validate` callback signature
+  of `decodeLinkFragment` changes from `(tok: Partial<T>) => tok is T` to `(tok: unknown) => T | null`
+  (matching the starfish-protocol contract; internal callers updated).
+- **`parseSseFrames`** — removed local copy from `sync/events.ts`; re-exported from
+  `@drakkar.software/starfish-client/events`.
+- **`buildSignedEventsRequest`** — reimplemented as a thin wrapper around
+  `buildSignedEventsUrl` from `starfish-client/events`; same public signature.
+- **`subscribeChanges`** — reimplemented as a thin wrapper around the generic
+  `subscribeChanges` from `starfish-client/events`; same public interface (`spaces` array).
+
+## 0.19.0 (2026-06-22)
+
+### Performance
+
+- **`getNodeAccess` now shares the space-wide encryptor cache**: enc nodes opened via
+  `getNodeAccess` (member/link paths) now participate in the same `spaceEncryptorCache`
+  introduced in 0.18.0. Previously only `buildNodeAccess` used the cache; repeated
+  `getNodeAccess` calls for different enc nodes in the same space each re-pulled the
+  keyring. Now the first call caches the `Encryptor` promise per `(userId, spaceId)` and
+  subsequent calls reuse it.
+
 ## 0.18.0 (2026-06-22)
 
 ### Performance

@@ -14,7 +14,7 @@
  * No domain types (room, category, task, …) are defined here. Apps define their own.
  */
 import type { ID, NodeAccess, ObjectNode, ObjectType } from '../core/types.js';
-import { randomId } from '../core/ids.js';
+import { randomId } from '@drakkar.software/starfish-protocol';
 
 /** A node plus its resolved children — the shape a tree view renders. */
 export interface ObjectTreeNode extends ObjectNode {

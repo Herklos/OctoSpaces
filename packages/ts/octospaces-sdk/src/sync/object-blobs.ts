@@ -18,7 +18,7 @@ import type { StarfishClient } from '@drakkar.software/starfish-client';
 
 import { kvGet, kvRemove, kvSet } from '../core/adapters.js';
 import { objectBlobName, objectBlobPull, objectBlobPush } from './paths.js';
-import { randomId } from '../core/ids.js';
+import { randomId } from '@drakkar.software/starfish-protocol';
 
 export interface ByteSealer {
   sealBytes(bytes: Uint8Array, aad?: string): Promise<Uint8Array>;
