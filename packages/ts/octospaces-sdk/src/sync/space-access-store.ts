@@ -14,7 +14,7 @@
  * Keyed PER-USER so multiple accounts on one device never see each other's entries.
  */
 import type { CapMap } from '../core/types.js';
-import { kvGet, kvSet } from '../core/adapters.js';
+import { kvGet, kvRemove, kvSet } from '../core/adapters.js';
 
 /** Link-based access credential: the ephemeral cap + keys a link bearer stores to
  *  reach a space. Shared by the access-store entry, the hydrate input, and
@@ -189,4 +189,13 @@ export function linkAccessFromStore(): Record<string, LinkAccessPayload> {
 export function clearSpaceAccessStore(): void {
   cache = {};
   activeKey = null;
+}
+
+/** Drop one identity's persisted space-access blob and reset the in-memory
+ *  cache if it is currently active. Call on wallet / identity change so the
+ *  outgoing identity's non-transferable grants cannot resurface as orphans. */
+export function clearPersistedSpaceAccess(userId: string): void {
+  const key = keyFor(userId);
+  void kvRemove(key).catch(() => {});
+  if (key === activeKey) clearSpaceAccessStore();
 }

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { configureKv } from '../../src/core/adapters.js';
 import {
   clearSpaceAccessStore,
+  clearPersistedSpaceAccess,
   getSpaceAccessEntry,
   getNodeAccessEntry,
   getNodeStreamAccessEntry,
@@ -265,5 +266,30 @@ describe('space-access-store', () => {
     saveNodeKeyringAccessEntry('sp-1', 'n-7', { kind: 'member', cap: '{"keyring":1}' });
     removeNodeAccessEntry('sp-1', 'n-7');
     expect(getNodeKeyringAccessEntry('sp-1', 'n-7')).toBeNull();
+  });
+
+  // ── clearPersistedSpaceAccess ─────────────────────────────────────────────
+
+  it('clearPersistedSpaceAccess removes the kv blob and wipes in-memory cache when userId is active', async () => {
+    await hydrateSpaceAccessStore('user-X', { 'sp-1': 'cap' }, {});
+    expect(store.has('octospaces.spaceaccess.user-X')).toBe(true);
+    expect(getSpaceAccessEntry('sp-1')).not.toBeNull();
+
+    clearPersistedSpaceAccess('user-X');
+    await Promise.resolve(); // kvRemove is fire-and-forget
+
+    expect(store.has('octospaces.spaceaccess.user-X')).toBe(false);
+    expect(getSpaceAccessEntry('sp-1')).toBeNull();
+  });
+
+  it('clearPersistedSpaceAccess removes the kv blob but leaves in-memory cache intact for a different (non-active) userId', async () => {
+    await hydrateSpaceAccessStore('user-active', { 'sp-active': 'cap-active' }, {});
+    store.set('octospaces.spaceaccess.user-old', JSON.stringify({ 'sp-old': { kind: 'member', cap: 'stale' } }));
+
+    clearPersistedSpaceAccess('user-old');
+    await Promise.resolve();
+
+    expect(store.has('octospaces.spaceaccess.user-old')).toBe(false);
+    expect(getSpaceAccessEntry('sp-active')).not.toBeNull();
   });
 });

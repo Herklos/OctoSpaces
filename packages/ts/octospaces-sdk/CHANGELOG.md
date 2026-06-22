@@ -1,5 +1,15 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.17.0 (2026-06-22)
+
+### Added
+
+- **`clearPersistedSpaceAccess(userId: string): void`** (`sync/space-access-store.ts`):
+  drops one identity's persisted localStorage blob (`octospaces.spaceaccess.${userId}`)
+  and resets the in-memory cache if that identity is currently active. Call on
+  wallet / identity change so the outgoing identity's non-transferable grants cannot
+  resurface as unreadable orphans on the next session.
+
 ## 0.16.0 (2026-06-21)
 
 De-chat pass — the SDK is a **generic per-node-access** core, so chat/room/DM-domain

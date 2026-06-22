@@ -206,6 +206,7 @@ export {
   memberCapsFromStore,
   linkAccessFromStore,
   clearSpaceAccessStore,
+  clearPersistedSpaceAccess,
 } from './sync/space-access-store.js';
 export type { SpaceAccessEntry, SpaceAccessMap } from './sync/space-access-store.js';
 
