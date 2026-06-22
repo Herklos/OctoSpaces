@@ -406,6 +406,11 @@ export interface AcceptResult {
  * or a vault page with extra structure) — your callback MUST stamp `meta.reqId` on the
  * created node so the dedup in `scanResourceRequests` works.
  *
+ * Pass `opts.enc: true` to produce an E2EE grant: the node is created with a per-node keyring
+ * (CEK sealed only to its participants), and the grant bundle becomes `'node-enc'` with a
+ * read-only `keyringCap` sealed to the requester. Your `create` callback MUST create the node
+ * with matching `enc: true`. Default `false` preserves the existing plaintext behaviour.
+ *
  * The grant-back cap (`NodeInviteBundle.nodeCap`) is a `nodeMemberScope` cap covering
  * only `spaces/{spaceId}/objects/n/{nodeId}/**` — the narrowest possible grant.
  * The requester is isolated and never receives space-wide access.
@@ -421,6 +426,12 @@ export async function acceptResourceRequest(
     create?: (session: Session, req: ResourceRequest) => Promise<{ nodeId: string }>;
     /** Whether to grant write access to the node. Defaults to true. */
     write?: boolean;
+    /**
+     * Whether the node uses a per-node keyring (E2EE). When true the grant becomes
+     * `'node-enc'` with a read-only `keyringCap` sealed to the requester.
+     * The `create` callback MUST create the node with matching `enc: true`. Default false.
+     */
+    enc?: boolean;
   },
 ): Promise<AcceptResult> {
   const { req } = pending;
@@ -434,7 +445,7 @@ export async function acceptResourceRequest(
       title: req.title,
       meta: { ...(req.meta ?? {}), reqId: req.reqId },
       access: 'invite',
-      enc: false,
+      enc: opts?.enc ?? false,
     });
     nodeId = node.id;
   }
@@ -445,7 +456,7 @@ export async function acceptResourceRequest(
     req.spaceId,
     nodeId,
     JSON.stringify(req.requester),
-    { enc: false },
+    { enc: opts?.enc ?? false },
     req.title,
     { isolated: true, write: opts?.write ?? true },
   );

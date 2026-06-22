@@ -1,5 +1,15 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.21.0 (2026-06-22)
+
+### Added
+
+- **`acceptResourceRequest` accepts `opts.enc`**: passing `enc: true` produces an E2EE grant —
+  the node is created with a per-node keyring (CEK sealed only to participants), and the grant
+  bundle becomes `'node-enc'` with a read-only `keyringCap` sealed to the requester. The caller's
+  `create` callback must create the node with matching `enc: true`. Default `false` is unchanged
+  (plaintext, back-compat with all existing callers).
+
 ## 0.20.0 (2026-06-22)
 
 ### Changed
