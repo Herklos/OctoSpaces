@@ -50,9 +50,16 @@ export interface NodeAccessHandle {
 
 const cache = new Map<string, Promise<NodeAccessHandle>>();
 
-/** Drop every cached handle (on account switch — keys are per-identity). */
+// Space-wide encryptor cache: one _keyring pull per (userId, spaceId) for all
+// non-invite enc nodes. Per-node CONTENT entries (invite+enc, e.g. tickets) have
+// their own per-node keyrings and go through resolveNodeKeyringHandle — not cached here.
+// Null results and rejections are NOT cached (access state may change within a session).
+const spaceEncryptorCache = new Map<string, Promise<Encryptor | null>>();
+
+/** Drop every cached handle and space encryptor (on account switch — keys are per-identity). */
 export function clearNodeAccessCache(): void {
   cache.clear();
+  spaceEncryptorCache.clear();
 }
 
 /**
@@ -121,7 +128,6 @@ function decryptKeysFor(entry: SpaceAccessEntry | null | undefined, session: Ses
   return session.keys;
 }
 
-/** Build a StarfishClient from a stored access entry, or null when there is none. */
 /**
  * Resolve the (content client, node-keyring encryptor) for a PER-NODE-keyring E2EE node
  * (`access:'invite' + enc`, e.g. an OctoDesk ticket). The CEK lives in the node's OWN
@@ -208,12 +214,25 @@ export function getNodeAccess(
       return { encryptor: null, client, isOwnerOpen };
     }
 
-    // E2EE node — resolve the SPACE-WIDE keyring.
+    // E2EE node — resolve the SPACE-WIDE keyring (cached per userId:spaceId).
     const spacePullPath = keyringPull(spaceId);
     const trustedAdders = resolveTrustedAdders(capIss, reg, session);
 
     if (activeEntry?.kind === 'member' || activeEntry?.kind === 'link') {
-      const encryptor = await openEncryptor(client, decryptKeysFor(activeEntry, session), spacePullPath, trustedAdders);
+      const spaceEncKey = `${session.userId}:${spaceId}`;
+      let spaceEncPromise = spaceEncryptorCache.get(spaceEncKey);
+      if (!spaceEncPromise) {
+        const raw = openEncryptor(client, decryptKeysFor(activeEntry, session), spacePullPath, trustedAdders);
+        // Widened type: openEncryptor always resolves non-null but may throw; rejections
+        // are cleared so a retry can re-open the keyring.
+        const p: Promise<Encryptor | null> = raw.catch((err: unknown) => {
+          spaceEncryptorCache.delete(spaceEncKey);
+          throw err;
+        }) as Promise<Encryptor | null>;
+        spaceEncryptorCache.set(spaceEncKey, p);
+        spaceEncPromise = p;
+      }
+      const encryptor = await spaceEncPromise;
       return { encryptor, client, isOwnerOpen: false };
     }
 
@@ -275,9 +294,18 @@ export async function buildNodeAccess(
 
   if (!node.enc) return { client, encryptor: null };
 
-  // Soft-open the SPACE-WIDE keyring.
+  // Soft-open the SPACE-WIDE keyring (cached per userId:spaceId — one pull covers all enc nodes).
   const spacePullPath = keyringPull(spaceId);
-  const encryptor = await buildEncryptor(client, decryptKeysFor(activeEntry, session), spacePullPath, trustedAdders);
+  const spaceEncKey = `${session.userId}:${spaceId}`;
+  let spaceEncPromise = spaceEncryptorCache.get(spaceEncKey);
+  if (!spaceEncPromise) {
+    const p = buildEncryptor(client, decryptKeysFor(activeEntry, session), spacePullPath, trustedAdders);
+    // Null results (no access) are not cached — access state may change within a session.
+    p.then((result) => { if (result === null) spaceEncryptorCache.delete(spaceEncKey); });
+    spaceEncryptorCache.set(spaceEncKey, p);
+    spaceEncPromise = p;
+  }
+  const encryptor = await spaceEncPromise;
   if (encryptor) return { client, encryptor };
 
   // No keyring found. If the caller is the owner, self-heal by minting the keyring.
