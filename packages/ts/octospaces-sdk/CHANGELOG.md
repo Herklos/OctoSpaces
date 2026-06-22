@@ -1,5 +1,11 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.18.0 (2026-06-22)
+
+### Performance
+
+- **Space-wide encryptor cache in `sync/space-access.ts`**: `buildNodeAccess` and `getNodeAccess` now share a module-level `spaceEncryptorCache` keyed `${userId}:${spaceId}` for non-invite enc nodes. Previously, opening M enc nodes in the same space triggered M `_keyring` pulls; now only the first pull fires and subsequent nodes reuse the resolved `Encryptor`. Null results (no access) and rejections are **not** cached so access changes and transient network errors are retried. `clearNodeAccessCache()` also clears this new cache — call it on account switch alongside other cache clears.
+
 ## 0.17.0 (2026-06-22)
 
 ### Added
