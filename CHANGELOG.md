@@ -158,6 +158,17 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## `@drakkar.software/octospaces-sdk`
 
+### [0.22.0] — 2026-06-22 (scanResourceRejects — requester-side rejection reader)
+
+#### Added
+
+- **`scanResourceRejects(session, opts?)`** — requester-side inbox scanner for sealed
+  resource rejections (`kind:'reject'`). Mirrors `scanResourceGrants` exactly: kind-bound
+  AAD unseal, optional `seenReqIds` Set for cross-scan dedup, and sender-authenticity
+  check via `reqIdOwnerStore` (drops a forged rejection without burning the `reqId`).
+  Returns `ResourceReject[]`. Lets consumers surface the declined state and prompt the
+  user to submit a fresh request.
+
 ### [0.19.0] — 2026-06-22 (space-level encryptor cache in getNodeAccess)
 
 #### Added

@@ -546,6 +546,47 @@ export async function scanResourceGrants(
   return out;
 }
 
+// ── REQUESTER: scan rejects ───────────────────────────────────────────────────
+
+/**
+ * REQUESTER: scan this session's own inbox for resource rejections (declined requests).
+ *
+ * Returns all rejections this session can unseal that have not already been seen.
+ * Rejections that can't be unsealed (not for us, tampered) are silently skipped.
+ *
+ * @param opts.seenReqIds  Caller-provided Set for cross-scan dedup (persistent reqId
+ *   tracking). Mutated in place — add to this Set before each call to skip already-
+ *   processed rejections in future scans. When omitted a fresh in-memory Set is used
+ *   (dedup applies only within the current call).
+ */
+export async function scanResourceRejects(
+  session: Session,
+  opts?: { seenReqIds?: Set<string> },
+): Promise<ResourceReject[]> {
+  const out: ResourceReject[] = [];
+  // Use caller-provided Set (persistent cross-scan dedup) or a fresh one (in-scan only).
+  const seenReqIds = opts?.seenReqIds ?? new Set<string>();
+  await scanInbox(session, 'reject', (parsed, sealed) => {
+    const msg = parsed as Partial<ResourceReject>;
+
+    if (msg.v !== 1 || msg.kind !== 'reject' || typeof msg.reqId !== 'string') return;
+
+    // Sender-authenticity check: when we have a record of which owner edPub we sent
+    // this reqId to, the rejection MUST come from that owner. This prevents a third
+    // party from forging a rejection without burning the reqId in seenReqIds (which
+    // would cause a legitimate rejection from the real owner to still be surfaced).
+    const expectedOwnerEdPub = reqIdOwnerStore.get(msg.reqId);
+    if (expectedOwnerEdPub && sealed.entry.addedBy !== expectedOwnerEdPub) {
+      return; // forged sender — skip without burning the reqId
+    }
+
+    if (seenReqIds.has(msg.reqId)) return; // skip replayed/duplicate rejection
+    seenReqIds.add(msg.reqId);
+    out.push(msg as ResourceReject);
+  });
+  return out;
+}
+
 // ── REQUESTER: accept a grant ─────────────────────────────────────────────────
 
 /**

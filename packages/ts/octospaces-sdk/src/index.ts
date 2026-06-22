@@ -360,6 +360,7 @@ export {
   acceptResourceRequest,
   rejectResourceRequest,
   scanResourceGrants,
+  scanResourceRejects,
   acceptResourceGrant,
   // reqId → owner-edPub store (sender-auth for scanResourceGrants, persistence across reloads)
   saveReqIdOwner,

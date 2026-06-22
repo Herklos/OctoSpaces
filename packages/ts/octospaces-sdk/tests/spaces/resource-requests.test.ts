@@ -187,6 +187,61 @@ describe('ResourceRequest seal / unseal round-trip', () => {
   });
 });
 
+// ── Reject seal / unseal round-trip ──────────────────────────────────────────
+
+describe('ResourceReject seal / unseal round-trip', () => {
+  it('requester can unseal a rejection sealed by the owner', async () => {
+    const ownerKeys = generateDeviceKeys();
+    const requesterKeys = generateDeviceKeys();
+    const ownerSession = await makeStubSession(ownerKeys);
+    const requesterSession = await makeStubSession(requesterKeys);
+
+    const rejection = {
+      v: 1 as const,
+      kind: 'reject' as const,
+      reqId: 'test-req-1',
+      reason: 'Out of scope',
+    };
+
+    const sealed = await sealToRecipient(ownerSession, requesterKeys.kemPub, JSON.stringify(rejection));
+    const plain = await unsealFromRecipient(requesterSession, sealed);
+    const decoded = JSON.parse(plain);
+
+    expect(decoded.kind).toBe('reject');
+    expect(decoded.reqId).toBe('test-req-1');
+    expect(decoded.reason).toBe('Out of scope');
+  });
+
+  it('requester can unseal a rejection without an optional reason', async () => {
+    const ownerKeys = generateDeviceKeys();
+    const requesterKeys = generateDeviceKeys();
+    const ownerSession = await makeStubSession(ownerKeys);
+    const requesterSession = await makeStubSession(requesterKeys);
+
+    const rejection = { v: 1 as const, kind: 'reject' as const, reqId: 'req-no-reason' };
+    const sealed = await sealToRecipient(ownerSession, requesterKeys.kemPub, JSON.stringify(rejection));
+    const plain = await unsealFromRecipient(requesterSession, sealed);
+    const decoded = JSON.parse(plain);
+
+    expect(decoded.kind).toBe('reject');
+    expect(decoded.reqId).toBe('req-no-reason');
+    expect(decoded.reason).toBeUndefined();
+  });
+
+  it('requester cannot unseal a rejection sealed to a different recipient', async () => {
+    const ownerKeys = generateDeviceKeys();
+    const requesterKeys = generateDeviceKeys();
+    const thirdPartyKeys = generateDeviceKeys();
+    const ownerSession = await makeStubSession(ownerKeys);
+    const requesterSession = await makeStubSession(requesterKeys);
+
+    // Sealed to thirdParty, not to requester
+    const rejection = { v: 1 as const, kind: 'reject' as const, reqId: 'test-req-x' };
+    const sealed = await sealToRecipient(ownerSession, thirdPartyKeys.kemPub, JSON.stringify(rejection));
+    await expect(unsealFromRecipient(requesterSession, sealed)).rejects.toThrow();
+  });
+});
+
 // ── Grant seal / unseal round-trip ────────────────────────────────────────────
 
 describe('ResourceGrant seal / unseal round-trip', () => {
