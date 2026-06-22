@@ -10,7 +10,13 @@
     "spacesPull": "/pull/user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_spaces",
     "spacesPush": "/push/user/u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/_spaces",
     "spaceAccessPull": "/pull/spaces/space-abc123/_access",
-    "spaceAccessPush": "/push/spaces/space-abc123/_access"
+    "spaceAccessPush": "/push/spaces/space-abc123/_access",
+    "nodeObjectBlobPull": "/pull/spaces/space-abc123/objects/n/node-xyz789/blobs/blob-id-000",
+    "nodeObjectBlobPush": "/push/spaces/space-abc123/objects/n/node-xyz789/blobs/blob-id-000",
+    "nodeObjectBlobName": "spaces/space-abc123/objects/n/node-xyz789/blobs/blob-id-000"
+  },
+  "blob_inputs": {
+    "blobId": "blob-id-000"
   },
   "path_inputs": {
     "spaceId": "space-abc123",

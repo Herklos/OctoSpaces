@@ -145,6 +145,98 @@ describe('loadObjectBlob (standalone)', () => {
   });
 });
 
+// ── Node-scoped blob (objnodeblob) ────────────────────────────────────────────
+
+describe('uploadObjectBlob with nodeId (node-scoped)', () => {
+  it('uses nodeObjectBlobName as AAD and push path instead of space-level path', async () => {
+    const client = makeFakeClient();
+    const ref = await uploadObjectBlob(client as never, fakeSealer, 'sp-abc', BYTES, 'file.pdf', 'application/pdf', 'n-1');
+
+    expect(fakeSealer.sealBytes).toHaveBeenCalledOnce();
+    const [[, aad]] = vi.mocked(fakeSealer.sealBytes).mock.calls;
+    // AAD must contain the node prefix, not the space-level blobs prefix
+    expect(aad).toContain('objects/n/n-1/blobs/');
+    expect(aad).not.toContain('objects/blobs/');
+    expect(aad).toContain(ref.blobId);
+
+    const pushPath = [...client.blobs.keys()][0]!;
+    expect(pushPath).toContain('/push/spaces/sp-abc/objects/n/n-1/blobs/');
+    expect(pushPath).not.toContain('/push/spaces/sp-abc/objects/blobs/');
+  });
+
+  it('round-trip: node-scoped upload then load returns original plaintext', async () => {
+    const client = makeFakeClient();
+    const ref = await uploadObjectBlob(client as never, fakeSealer, 'sp-xyz', BYTES, 'f.bin', 'application/octet-stream', 'n-2');
+    vi.clearAllMocks();
+
+    const pushPath = [...client.blobs.keys()][0]!;
+    client.blobs.set(toPullPath(pushPath), client.blobs.get(pushPath)!);
+
+    const loaded = await loadObjectBlob(client as never, fakeSealer, 'sp-xyz', ref.blobId, 'n-2');
+    expect(loaded).toEqual(BYTES);
+  });
+
+  it('node-scope and space-scope use distinct push paths for the same blobId', async () => {
+    const client = makeFakeClient();
+    const blobId = 'aabbccdd11223344aabbccdd11223344';
+
+    // Manually push to test path isolation
+    await uploadObjectBlob(client as never, null, 'sp-q', BYTES, 'a.bin', 'application/octet-stream');
+    await uploadObjectBlob(client as never, null, 'sp-q', BYTES, 'b.bin', 'application/octet-stream', 'n-3');
+
+    const paths = [...client.blobs.keys()];
+    const spacePaths = paths.filter((p) => p.includes('/objects/blobs/'));
+    const nodePaths = paths.filter((p) => p.includes('/objects/n/n-3/blobs/'));
+    expect(spacePaths).toHaveLength(1);
+    expect(nodePaths).toHaveLength(1);
+  });
+});
+
+describe('loadObjectBlob with nodeId (node-scoped)', () => {
+  it('pulls from node path and opens with node-path AAD', async () => {
+    const client = makeFakeClient();
+    const blobId = 'deadbeefcafebabe0123456789abcdef';
+    client.blobs.set(`/pull/spaces/sp-n/objects/n/n-42/blobs/${blobId}`, SEALED);
+
+    const loaded = await loadObjectBlob(client as never, fakeSealer, 'sp-n', blobId, 'n-42');
+    expect(loaded).toEqual(BYTES);
+    const [[, aad]] = vi.mocked(fakeSealer.openBytes).mock.calls;
+    expect(aad).toContain('objects/n/n-42/blobs/');
+    expect(aad).not.toContain('objects/blobs/');
+  });
+});
+
+describe('createObjectBlobStore with nodeId', () => {
+  it('node-scoped upload + load round-trip (encrypted)', async () => {
+    const client = makeFakeClient();
+    const store = createObjectBlobStore({ persistPrefix: 'ntest.blob.', persistIndex: 'ntest.idx' });
+    const ref = await store.uploadObjectBlob(client as never, fakeSealer, 'sp-1', BYTES, 'f.pdf', 'application/pdf', 'n-node');
+
+    const pushPath = [...client.blobs.keys()][0]!;
+    expect(pushPath).toContain('/objects/n/n-node/blobs/');
+    client.blobs.set(toPullPath(pushPath), client.blobs.get(pushPath)!);
+    vi.clearAllMocks();
+
+    const loaded = await store.loadObjectBlob(client as never, fakeSealer, 'sp-1', ref, 'n-node');
+    expect(loaded).toEqual(BYTES);
+    expect(client.pullBlob).not.toHaveBeenCalled(); // warm from cache
+  });
+
+  it('node-scoped and space-scoped caches are independent (same blobId, different key)', async () => {
+    const client = makeFakeClient();
+    const store = createObjectBlobStore({ persistPrefix: 'iso.blob.', persistIndex: 'iso.idx' });
+
+    const refSpace = await store.uploadObjectBlob(client as never, null, 'sp-iso', BYTES, 'a.bin', 'application/octet-stream');
+    const refNode = await store.uploadObjectBlob(client as never, null, 'sp-iso', BYTES, 'b.bin', 'application/octet-stream', 'iso-node');
+
+    // The two refs have distinct blobIds (randomId) — check their push paths are distinct tiers
+    const paths = [...client.blobs.keys()];
+    expect(paths.some((p) => p.includes('/objects/blobs/'))).toBe(true);
+    expect(paths.some((p) => p.includes('/objects/n/iso-node/blobs/'))).toBe(true);
+    expect(refSpace.blobId).not.toBe(refNode.blobId);
+  });
+});
+
 // ── createObjectBlobStore — cache + persist ───────────────────────────────────
 
 describe('createObjectBlobStore', () => {

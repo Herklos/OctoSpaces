@@ -190,6 +190,18 @@ export const config: SyncConfig = {
       maxBodyBytes: 11_534_336,
       allowedMimeTypes: ["application/octet-stream"],
     },
+    // PER-NODE sealed blob (invite-node attachments, cap-gated): binary blob under the node prefix so
+    // the requester's existing per-node stream cap (objinvlog) authorizes it via synthesized
+    // cap:write:objinvlog role + path-glob containment. Dual-gated: space:member OR cap:*:objinvlog.
+    {
+      name: "objnodeblob",
+      storagePath: "spaces/{spaceId}/objects/n/{nodeId}/blobs/{blobId}",
+      readRoles: ["space:member", "cap:read:objinvlog"],
+      writeRoles: ["space:member", "cap:write:objinvlog"],
+      encryption: "none",
+      maxBodyBytes: 11_534_336,
+      allowedMimeTypes: ["application/octet-stream"],
+    },
     // PER-SPACE CUSTOM TYPE REGISTRY (private/E2EE): union-merged TypeDefs, delegated encryption.
     {
       name: "typeindex",

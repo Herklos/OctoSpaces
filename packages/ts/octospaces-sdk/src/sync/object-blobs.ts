@@ -17,7 +17,7 @@ import { getBase64 } from '@drakkar.software/starfish-protocol';
 import type { StarfishClient } from '@drakkar.software/starfish-client';
 
 import { kvGet, kvRemove, kvSet } from '../core/adapters.js';
-import { objectBlobName, objectBlobPull, objectBlobPush } from './paths.js';
+import { nodeObjectBlobName, nodeObjectBlobPull, nodeObjectBlobPush, objectBlobName, objectBlobPull, objectBlobPush } from './paths.js';
 import { randomId } from '@drakkar.software/starfish-protocol';
 
 export interface ByteSealer {
@@ -63,50 +63,61 @@ export interface ObjectBlobStore {
     bytes: Uint8Array,
     name: string,
     mime: string,
+    nodeId?: string,
   ): Promise<ObjectBlobRef>;
   loadObjectBlob(
     client: StarfishClient,
     enc: ByteSealer | null,
     spaceId: string,
     ref: ObjectBlobRef,
+    nodeId?: string,
   ): Promise<Uint8Array>;
   clearObjectBlobCache(): void;
 }
 
 // ── Shared seal/push/open core (used by both the standalone + cached paths) ────
 
-/** Guard size, mint a blobId, seal (if `enc`) binding the objectBlobName AAD, and
- *  push. Returns the blobId and the stored (sealed) bytes for optional caching. */
+/** Guard size, mint a blobId, seal (if `enc`) binding the path as AAD, and push.
+ *  When `nodeId` is provided the blob is stored under the node prefix (objnodeblob)
+ *  and the node path is used as AAD — preventing relocation to the space tier.
+ *  Returns the blobId and the stored (sealed) bytes for optional caching. */
 async function sealAndPush(
   client: StarfishClient,
   enc: ByteSealer | null,
   spaceId: string,
   bytes: Uint8Array,
+  nodeId?: string,
 ): Promise<{ blobId: string; stored: Uint8Array }> {
   if (bytes.length > MAX_OBJECT_BLOB_BYTES) {
     throw new FileTooLargeError(bytes.length, MAX_OBJECT_BLOB_BYTES);
   }
   const blobId = randomId();
-  const stored = enc ? await enc.sealBytes(bytes, objectBlobName(spaceId, blobId)) : bytes;
-  await client.pushBlob(objectBlobPush(spaceId, blobId), stored, 'application/octet-stream');
+  const aad = nodeId ? nodeObjectBlobName(spaceId, nodeId, blobId) : objectBlobName(spaceId, blobId);
+  const stored = enc ? await enc.sealBytes(bytes, aad) : bytes;
+  const pushPath = nodeId ? nodeObjectBlobPush(spaceId, nodeId, blobId) : objectBlobPush(spaceId, blobId);
+  await client.pushBlob(pushPath, stored, 'application/octet-stream');
   return { blobId, stored };
 }
 
 /** Fetch the stored (post-seal) bytes of a blob. */
-async function pullStored(client: StarfishClient, spaceId: string, blobId: string): Promise<Uint8Array> {
-  const res = await client.pullBlob(objectBlobPull(spaceId, blobId));
+async function pullStored(client: StarfishClient, spaceId: string, blobId: string, nodeId?: string): Promise<Uint8Array> {
+  const pullPath = nodeId ? nodeObjectBlobPull(spaceId, nodeId, blobId) : objectBlobPull(spaceId, blobId);
+  const res = await client.pullBlob(pullPath);
   return new Uint8Array(res.data);
 }
 
-/** Open stored bytes back to plaintext (if `enc`), binding the objectBlobName AAD. */
-async function openStored(enc: ByteSealer | null, spaceId: string, blobId: string, stored: Uint8Array): Promise<Uint8Array> {
-  return enc ? enc.openBytes(stored, objectBlobName(spaceId, blobId)) : stored;
+/** Open stored bytes back to plaintext (if `enc`), binding the correct path as AAD. */
+async function openStored(enc: ByteSealer | null, spaceId: string, blobId: string, stored: Uint8Array, nodeId?: string): Promise<Uint8Array> {
+  const aad = nodeId ? nodeObjectBlobName(spaceId, nodeId, blobId) : objectBlobName(spaceId, blobId);
+  return enc ? enc.openBytes(stored, aad) : stored;
 }
 
 // ── Standalone (uncached) helpers ─────────────────────────────────────────────
 
 /** Seal and upload bytes as an object blob; returns the ref to store in node props.
  *  Pass `enc: null` for plaintext (public) nodes — bytes are stored raw.
+ *  Pass `nodeId` to store under the node prefix (cap-gated `objnodeblob`) rather than
+ *  the space-wide `objblob` tier — required for invite-node attachments.
  *  Throws {@link FileTooLargeError} if `bytes` exceeds {@link MAX_OBJECT_BLOB_BYTES}. */
 export async function uploadObjectBlob(
   client: StarfishClient,
@@ -115,23 +126,26 @@ export async function uploadObjectBlob(
   bytes: Uint8Array,
   name: string,
   mime: string,
+  nodeId?: string,
 ): Promise<ObjectBlobRef> {
-  const { blobId } = await sealAndPush(client, enc, spaceId, bytes);
+  const { blobId } = await sealAndPush(client, enc, spaceId, bytes, nodeId);
   return { blobId, name, mime, size: bytes.length };
 }
 
 /** Fetch + decrypt an object blob back to its original bytes.
  *  Pass `enc: null` for plaintext (public) nodes.
+ *  Pass `nodeId` to fetch from the node-scoped `objnodeblob` tier.
  *  Accepts either a raw `blobId` string or an {@link ObjectBlobRef} object. */
 export async function loadObjectBlob(
   client: StarfishClient,
   enc: ByteSealer | null,
   spaceId: string,
   blobIdOrRef: string | ObjectBlobRef,
+  nodeId?: string,
 ): Promise<Uint8Array> {
   const blobId = typeof blobIdOrRef === 'string' ? blobIdOrRef : blobIdOrRef.blobId;
-  const stored = await pullStored(client, spaceId, blobId);
-  return openStored(enc, spaceId, blobId, stored);
+  const stored = await pullStored(client, spaceId, blobId, nodeId);
+  return openStored(enc, spaceId, blobId, stored, nodeId);
 }
 
 // ── Cached store ──────────────────────────────────────────────────────────────
@@ -158,8 +172,8 @@ export function createObjectBlobStore(opts: {
   const decryptedCache = new Map<string, Uint8Array>();
   let cacheBytes = 0;
 
-  function cacheKey(spaceId: string, blobId: string): string {
-    return `${spaceId}/${blobId}`;
+  function cacheKey(spaceId: string, blobId: string, nodeId?: string): string {
+    return nodeId ? `${spaceId}/n/${nodeId}/${blobId}` : `${spaceId}/${blobId}`;
   }
 
   function cachePut(key: string, bytes: Uint8Array): void {
@@ -175,8 +189,8 @@ export function createObjectBlobStore(opts: {
     }
   }
 
-  function persistStoreKey(spaceId: string, blobId: string): string {
-    return `${persistPrefix}${spaceId}/${blobId}`;
+  function persistStoreKey(spaceId: string, blobId: string, nodeId?: string): string {
+    return nodeId ? `${persistPrefix}${spaceId}/n/${nodeId}/${blobId}` : `${persistPrefix}${spaceId}/${blobId}`;
   }
 
   async function readPersistIndex(): Promise<PersistIndex> {
@@ -190,8 +204,8 @@ export function createObjectBlobStore(opts: {
     }
   }
 
-  async function persistGet(spaceId: string, blobId: string): Promise<Uint8Array | null> {
-    const b64 = await kvGet(persistStoreKey(spaceId, blobId));
+  async function persistGet(spaceId: string, blobId: string, nodeId?: string): Promise<Uint8Array | null> {
+    const b64 = await kvGet(persistStoreKey(spaceId, blobId, nodeId));
     if (!b64) return null;
     try {
       return getBase64().decode(b64);
@@ -200,8 +214,8 @@ export function createObjectBlobStore(opts: {
     }
   }
 
-  async function persistPut(spaceId: string, blobId: string, stored: Uint8Array): Promise<void> {
-    const storeKey = persistStoreKey(spaceId, blobId);
+  async function persistPut(spaceId: string, blobId: string, stored: Uint8Array, nodeId?: string): Promise<void> {
+    const storeKey = persistStoreKey(spaceId, blobId, nodeId);
     const b64 = getBase64().encode(stored);
     const index = (await readPersistIndex()).filter((e) => e.k !== storeKey);
     index.push({ k: storeKey, n: b64.length });
@@ -226,10 +240,11 @@ export function createObjectBlobStore(opts: {
     bytes: Uint8Array,
     name: string,
     mime: string,
+    nodeId?: string,
   ): Promise<ObjectBlobRef> {
-    const { blobId, stored } = await sealAndPush(client, enc, spaceId, bytes);
-    cachePut(cacheKey(spaceId, blobId), bytes);
-    await persistPut(spaceId, blobId, stored);
+    const { blobId, stored } = await sealAndPush(client, enc, spaceId, bytes, nodeId);
+    cachePut(cacheKey(spaceId, blobId, nodeId), bytes);
+    await persistPut(spaceId, blobId, stored, nodeId);
     return { blobId, name, mime, size: bytes.length };
   }
 
@@ -238,16 +253,17 @@ export function createObjectBlobStore(opts: {
     enc: ByteSealer | null,
     spaceId: string,
     ref: ObjectBlobRef,
+    nodeId?: string,
   ): Promise<Uint8Array> {
-    const key = cacheKey(spaceId, ref.blobId);
+    const key = cacheKey(spaceId, ref.blobId, nodeId);
     const hit = decryptedCache.get(key);
     if (hit) return hit;
-    let stored = await persistGet(spaceId, ref.blobId);
+    let stored = await persistGet(spaceId, ref.blobId, nodeId);
     if (!stored) {
-      stored = await pullStored(client, spaceId, ref.blobId);
-      await persistPut(spaceId, ref.blobId, stored);
+      stored = await pullStored(client, spaceId, ref.blobId, nodeId);
+      await persistPut(spaceId, ref.blobId, stored, nodeId);
     }
-    const bytes = await openStored(enc, spaceId, ref.blobId, stored);
+    const bytes = await openStored(enc, spaceId, ref.blobId, stored, nodeId);
     cachePut(key, bytes);
     return bytes;
   }

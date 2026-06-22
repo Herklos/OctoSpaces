@@ -20,6 +20,9 @@ import {
   spacesPush,
   spaceAccessPull,
   spaceAccessPush,
+  nodeObjectBlobName,
+  nodeObjectBlobPull,
+  nodeObjectBlobPush,
   userIdFromEdPub,
 } from '../../src/sync/paths.js';
 import { slugify } from '@drakkar.software/starfish-protocol';
@@ -51,7 +54,7 @@ describe('slugify (vectors)', () => {
 });
 
 describe('path builders (vectors)', () => {
-  const { paths, path_inputs: inp } = pathsVectors;
+  const { paths, path_inputs: inp, blob_inputs: blobInp } = pathsVectors as typeof pathsVectors & { blob_inputs: { blobId: string } };
   it('keyringPull', () => expect(keyringPull(inp.spaceId)).toBe(paths.keyringPull));
   it('keyringPush', () => expect(keyringPush(inp.spaceId)).toBe(paths.keyringPush));
   it('objIndexPull', () => expect(objIndexPull(inp.spaceId)).toBe(paths.objIndexPull));
@@ -62,6 +65,9 @@ describe('path builders (vectors)', () => {
   it('spacesPush', () => expect(spacesPush(inp.userId)).toBe(paths.spacesPush));
   it('spaceAccessPull', () => expect(spaceAccessPull(inp.spaceId)).toBe(paths.spaceAccessPull));
   it('spaceAccessPush', () => expect(spaceAccessPush(inp.spaceId)).toBe(paths.spaceAccessPush));
+  it('nodeObjectBlobName', () => expect(nodeObjectBlobName(inp.spaceId, inp.nodeId, blobInp.blobId)).toBe(paths.nodeObjectBlobName));
+  it('nodeObjectBlobPull', () => expect(nodeObjectBlobPull(inp.spaceId, inp.nodeId, blobInp.blobId)).toBe(paths.nodeObjectBlobPull));
+  it('nodeObjectBlobPush', () => expect(nodeObjectBlobPush(inp.spaceId, inp.nodeId, blobInp.blobId)).toBe(paths.nodeObjectBlobPush));
 });
 
 describe('cap scopes (vectors)', () => {

@@ -93,6 +93,17 @@ export const { pull: objDocPull, push: objDocPush } = pullPush(objDocName);
 export const objectBlobName = (spaceId: string, blobId: string) => `spaces/${spaceId}/objects/blobs/${blobId}`;
 export const { pull: objectBlobPull, push: objectBlobPush } = pullPush(objectBlobName);
 
+// ── Per-node sealed blob (invite-node attachments, cap-gated) ─────────────────
+// For `access:'invite'` nodes: the blob sits under the node prefix so the
+// requester's existing per-node stream cap (`nodeStreamScope`, collection
+// `objinvlog`) authorizes it via `cap:write:objinvlog` role synthesis +
+// path-glob containment. The node path is bound as the seal AAD so a sealed
+// node blob cannot be relocated to the space-level objblob tier.
+// Keep in sync with the `objnodeblob` collection in apps/server AND Infra collections.py.
+export const nodeObjectBlobName = (spaceId: string, nodeId: string, blobId: string) =>
+  `spaces/${spaceId}/objects/n/${nodeId}/blobs/${blobId}`;
+export const { pull: nodeObjectBlobPull, push: nodeObjectBlobPush } = pullPush(nodeObjectBlobName);
+
 // ── Public node content (world-readable) ─────────────────────────────────────
 // For `access:'public'` nodes, content is stored here so anonymous readers can
 // fetch it without being a space member. Keep in sync with objpub in server config.
