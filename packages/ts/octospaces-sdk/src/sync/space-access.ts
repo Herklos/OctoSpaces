@@ -294,18 +294,11 @@ export async function buildNodeAccess(
 
   if (!node.enc) return { client, encryptor: null };
 
-  // Soft-open the SPACE-WIDE keyring (cached per userId:spaceId — one pull covers all enc nodes).
+  // Soft-open the SPACE-WIDE keyring. buildNodeAccess is the infrequent "first load"
+  // resolver and may intentionally return null — not cached here. Use getNodeAccess
+  // (hot subscription path) for the per-(userId,spaceId) dedup.
   const spacePullPath = keyringPull(spaceId);
-  const spaceEncKey = `${session.userId}:${spaceId}`;
-  let spaceEncPromise = spaceEncryptorCache.get(spaceEncKey);
-  if (!spaceEncPromise) {
-    const p = buildEncryptor(client, decryptKeysFor(activeEntry, session), spacePullPath, trustedAdders);
-    // Null results (no access) are not cached — access state may change within a session.
-    p.then((result) => { if (result === null) spaceEncryptorCache.delete(spaceEncKey); });
-    spaceEncryptorCache.set(spaceEncKey, p);
-    spaceEncPromise = p;
-  }
-  const encryptor = await spaceEncPromise;
+  const encryptor = await buildEncryptor(client, decryptKeysFor(activeEntry, session), spacePullPath, trustedAdders);
   if (encryptor) return { client, encryptor };
 
   // No keyring found. If the caller is the owner, self-heal by minting the keyring.

@@ -158,6 +158,18 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## `@drakkar.software/octospaces-sdk`
 
+### [0.19.0] — 2026-06-22 (space-level encryptor cache in getNodeAccess)
+
+#### Added
+
+- **Space-level encryptor cache in `getNodeAccess`** — a module-level
+  `Map<string, Promise<Encryptor | null>>` keyed `${userId}:${spaceId}` deduplicates
+  `openEncryptor` calls across all enc-node subscriptions within the same space.
+  The first subscription fires the keyring pull; subsequent ones for the same space
+  immediately reuse the settled promise, eliminating redundant round-trips.
+  Null results and rejections are NOT cached so access granted later in the session
+  is not missed. The cache is cleared by the existing `clearNodeAccessCache()`.
+
 ### [Unreleased] — 2026-06-12 (unified spaces refactor)
 
 #### Changed — **breaking** (pre-publish clean break; no consumers yet)

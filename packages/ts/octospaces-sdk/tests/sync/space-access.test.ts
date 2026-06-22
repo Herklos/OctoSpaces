@@ -498,66 +498,11 @@ describe('buildNodeAccess — per-node keyring (invite + enc)', () => {
   });
 });
 
-// ── spaceEncryptorCache — buildNodeAccess ─────────────────────────────────────
-
-describe('spaceEncryptorCache — buildNodeAccess', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    clearNodeAccessCache();
-    vi.mocked(getNodeAccessEntry).mockReturnValue(null);
-    vi.mocked(getSpaceAccessEntry).mockReturnValue({ kind: 'member', cap: MEMBER_CAP_JSON });
-    vi.mocked(getNodeKeyringAccessEntry).mockReturnValue(null);
-    vi.mocked(makeClient).mockReturnValue(mockMemberClient);
-    vi.mocked(buildEncryptor).mockResolvedValue(MOCK_ENCRYPTOR);
-  });
-
-  it('deduplicates concurrent buildEncryptor calls for the same (userId, spaceId)', async () => {
-    const session = makeSession(MEMBER_ID);
-    const [a, b] = await Promise.all([
-      buildNodeAccess(session, SPACE_ID, 'node-a', { enc: true }),
-      buildNodeAccess(session, SPACE_ID, 'node-b', { enc: true }),
-    ]);
-    expect(vi.mocked(buildEncryptor)).toHaveBeenCalledTimes(1);
-    expect(a!.encryptor).toBe(MOCK_ENCRYPTOR);
-    expect(b!.encryptor).toBe(MOCK_ENCRYPTOR);
-  });
-
-  it('subsequent calls for the same space skip buildEncryptor entirely', async () => {
-    const session = makeSession(MEMBER_ID);
-    await buildNodeAccess(session, SPACE_ID, 'node-a', { enc: true });
-    vi.mocked(buildEncryptor).mockClear();
-    await buildNodeAccess(session, SPACE_ID, 'node-b', { enc: true });
-    expect(vi.mocked(buildEncryptor)).not.toHaveBeenCalled();
-  });
-
-  it('null result is not cached — next call retries buildEncryptor', async () => {
-    vi.mocked(buildEncryptor).mockResolvedValue(null);
-    const session = makeSession(MEMBER_ID);
-    await buildNodeAccess(session, SPACE_ID, 'node-a', { enc: true });
-    vi.mocked(buildEncryptor).mockResolvedValue(MOCK_ENCRYPTOR);
-    const result = await buildNodeAccess(session, SPACE_ID, 'node-b', { enc: true });
-    expect(vi.mocked(buildEncryptor)).toHaveBeenCalledTimes(2);
-    expect(result!.encryptor).toBe(MOCK_ENCRYPTOR);
-  });
-
-  it('different spaces have separate cache entries', async () => {
-    const session = makeSession(MEMBER_ID);
-    await buildNodeAccess(session, SPACE_ID, NODE_ID, { enc: true });
-    await buildNodeAccess(session, 'sp-other', NODE_ID, { enc: true });
-    expect(vi.mocked(buildEncryptor)).toHaveBeenCalledTimes(2);
-  });
-
-  it('clearNodeAccessCache clears the space encryptor cache', async () => {
-    const session = makeSession(MEMBER_ID);
-    await buildNodeAccess(session, SPACE_ID, NODE_ID, { enc: true });
-    clearNodeAccessCache();
-    vi.mocked(buildEncryptor).mockClear();
-    await buildNodeAccess(session, SPACE_ID, 'node-b', { enc: true });
-    expect(vi.mocked(buildEncryptor)).toHaveBeenCalledTimes(1);
-  });
-});
-
 // ── spaceEncryptorCache — getNodeAccess ───────────────────────────────────────
+//
+// The space-wide encryptor cache is used only by getNodeAccess (the hot subscription
+// path). buildNodeAccess is the infrequent "soft resolver" and does not cache so it
+// can correctly return null without poisoning the shared cache.
 
 describe('spaceEncryptorCache — getNodeAccess', () => {
   beforeEach(() => {
