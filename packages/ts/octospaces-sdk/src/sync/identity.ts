@@ -1,183 +1,45 @@
 /**
- * Identity & 12-word recovery seed. The seed is a BIP-39 mnemonic used as the
- * passphrase for Starfish's `bootstrapRootIdentity`; the same words deterministically
- * recover the identity.
+ * Identity persistence bridge — rebuilds a starfish Session from a persisted vault
+ * entry using connection config from `configureOctoSpaces`.
+ *
+ * Vault types and the core session-rebuild logic have moved to
+ * `@drakkar.software/starfish-spaces` (`vault.ts`). This module re-exports those
+ * and wraps `sessionFromPersisted` to inject the `configureOctoSpaces` globals
+ * so callers keep the same zero-arg signature they had before.
+ *
+ * Session builders, seed helpers, and fingerprint utilities — import directly:
+ *   import { buildSession, deriveSession, buildLinkedSession,
+ *            generateSeedWords, isValidSeed, fingerprintFromUserId,
+ *            ownerTrustedAdders } from '@drakkar.software/starfish-spaces';
  */
-import { generateMnemonic, validateMnemonic } from '@scure/bip39';
-import { wordlist } from '@scure/bip39/wordlists/english.js';
-import { bootstrapRootIdentity, mintDeviceCap } from '@drakkar.software/starfish-identities';
-import type { StarfishClient } from '@drakkar.software/starfish-client';
-import type { CapCert } from '@drakkar.software/starfish-protocol';
+export type { Session, LinkedIdentity } from '@drakkar.software/starfish-spaces';
+export {
+  rootIdentityOf,
+  activeAccountOf,
+} from '@drakkar.software/starfish-spaces';
 
-import { makeClient, ensureProfileKeys, ensurePseudo, type DeviceKeys } from './client.js';
-import { computeOwnerTrustedAdders } from './trusted-adders.js';
-import { accountScope, ownerScope } from './paths.js';
-import { getSharedSpacesNamespace } from '../core/config.js';
-import type { DerivedIdentity, PersistedSession, Vault } from '../core/storage-types.js';
+import {
+  sessionFromPersisted as _sessionFromPersisted,
+} from '@drakkar.software/starfish-spaces';
+import type { PersistedSession } from '@drakkar.software/starfish-spaces';
+import type { Session } from '@drakkar.software/starfish-spaces';
+import { getSyncBase, getSyncNamespace, getSharedSpacesNamespace } from '../core/config.js';
 
-export interface Session {
-  userId: string;
-  name: string;
-  keys: DeviceKeys;
-  contentCap: unknown;
-  accountCap: unknown;
-  /**
-   * The primary Starfish client for space content (keyring, nodes, objects).
-   * Uses the app's default namespace.
-   */
-  contentClient: StarfishClient;
-  /**
-   * The Starfish client for account-scoped content (profile, _spaces registry).
-   * Uses the app's default namespace.
-   */
-  accountClient: StarfishClient;
-  /**
-   * Starfish client for cross-app shared-spaces registry operations.
-   * When `sharedSpacesNamespace` is configured, uses that namespace override so
-   * the spaces list lives in a separate namespace shared across multiple apps.
-   * Falls back to `accountClient` when no shared namespace is configured.
-   */
-  spacesRegistryClient: StarfishClient;
-  /**
-   * Starfish client for cross-app shared-spaces keyring operations.
-   * Same namespace logic as `spacesRegistryClient`, scoped to space content.
-   * Falls back to `contentClient` when no shared namespace is configured.
-   */
-  spacesKeyringClient: StarfishClient;
-  fingerprint: string;
-  /**
-   * The Ed25519 pubkey that signs this identity's OWNED-space keyring entries —
-   * the trusted-adder provenance anchor for opening them.
-   */
-  ownerEdPub: string;
-}
-
-/**
- * Trusted-adder allow-list for opening an OWNED space's keyring.
- */
-export function ownerTrustedAdders(session: Session): string[] {
-  return computeOwnerTrustedAdders(session.ownerEdPub, session.keys.edPub);
-}
-
-/** Fresh 12-word recovery seed. */
-export function generateSeedWords(): string[] {
-  return generateMnemonic(wordlist, 128).split(' ');
-}
-
-export function isValidSeed(words: string[]): boolean {
-  return validateMnemonic(words.join(' ').trim(), wordlist);
-}
-
-/** Human-readable fingerprint derived from the identity's user id. */
-export function fingerprintFromUserId(userId: string): string {
-  const h = userId.replace(/[^0-9a-f]/gi, '').toUpperCase();
-  return [h.slice(0, 4), h.slice(4, 8), h.slice(8, 12)].filter(Boolean).join(' · ');
-}
-
-/**
- * Build a full owner session (caps + clients + pseudo) from an already-derived
- * root identity. No Argon2id — only fast Ed25519 cap-minting plus a profile fetch.
- */
-export async function buildSession({ userId, keys }: DerivedIdentity, name?: string): Promise<Session> {
-  const fallback = name && name.trim() ? name.trim() : `user-${userId.slice(0, 6)}`;
-  const sub = { edPubHex: keys.edPub, kemPubHex: keys.kemPub };
-  const contentCap = await mintDeviceCap(keys.edPriv, keys.edPub, sub, ownerScope());
-  const accountCap = await mintDeviceCap(keys.edPriv, keys.edPub, sub, accountScope(userId));
-  const contentClient = makeClient(contentCap, keys.edPriv);
-  const accountClient = makeClient(accountCap, keys.edPriv);
-
-  const sharedNs = getSharedSpacesNamespace();
-  const spacesRegistryClient = sharedNs ? makeClient(accountCap, keys.edPriv, sharedNs) : accountClient;
-  const spacesKeyringClient = sharedNs ? makeClient(contentCap, keys.edPriv, sharedNs) : contentClient;
-
-  const displayName = await ensurePseudo(accountClient, userId, fallback).catch(() => fallback);
-  void ensureProfileKeys(accountClient, userId, keys).catch(() => {});
+function makeClientOpts() {
   return {
-    userId,
-    name: displayName,
-    keys,
-    contentCap,
-    accountCap,
-    contentClient,
-    accountClient,
-    spacesRegistryClient,
-    spacesKeyringClient,
-    fingerprint: fingerprintFromUserId(userId),
-    ownerEdPub: keys.edPub,
+    baseUrl: getSyncBase(),
+    namespace: getSyncNamespace() ?? '',
   };
 }
 
-/** A paired device's credentials: its own keypair + the root-signed cap-cert. */
-export interface LinkedIdentity {
-  userId: string;
-  keys: DeviceKeys;
-  capCert: CapCert;
-}
-
 /**
- * Build a session for a PAIRED (linked) device. Unlike {@link buildSession}, the
- * device keypair is NOT the root, so it cannot self-mint caps — both clients are
- * driven by the single root-signed `capCert` from the pairing bundle.
- */
-export async function buildLinkedSession({ userId, keys, capCert }: LinkedIdentity, name?: string): Promise<Session> {
-  const fallback = name && name.trim() ? name.trim() : `user-${userId.slice(0, 6)}`;
-  const contentClient = makeClient(capCert, keys.edPriv);
-  const accountClient = makeClient(capCert, keys.edPriv);
-
-  const sharedNs = getSharedSpacesNamespace();
-  const spacesRegistryClient = sharedNs ? makeClient(capCert, keys.edPriv, sharedNs) : accountClient;
-  const spacesKeyringClient = sharedNs ? makeClient(capCert, keys.edPriv, sharedNs) : contentClient;
-
-  const displayName = await ensurePseudo(accountClient, userId, fallback).catch(() => fallback);
-  return {
-    userId,
-    name: displayName,
-    keys,
-    contentCap: capCert,
-    accountCap: capCert,
-    contentClient,
-    accountClient,
-    spacesRegistryClient,
-    spacesKeyringClient,
-    fingerprint: fingerprintFromUserId(userId),
-    ownerEdPub: capCert.iss,
-  };
-}
-
-/** Derive a full owner session (identity + caps + clients) from a seed. */
-export async function deriveSession(seedWords: string[], name?: string): Promise<Session> {
-  const passphrase = seedWords.join(' ').trim();
-  const creds = await bootstrapRootIdentity(passphrase);
-  return buildSession({ userId: creds.userId, keys: creds.device as DeviceKeys }, name);
-}
-
-/** The cached root identity (userId + keys) carried by a built session. */
-export function rootIdentityOf(s: Session): DerivedIdentity {
-  return { userId: s.userId, keys: s.keys };
-}
-
-/**
- * Rebuild a live Session from a persisted vault entry — WITHOUT React.
- * Prefers the cached `derived` identity (skips Argon2id); falls back to the seed.
- * Nostr-derived accounts have no seed and MUST have usable `derived`.
+ * Rebuild a live starfish Session from a persisted vault entry.
+ *
+ * Synthesises `clientOpts` from the `configureOctoSpaces` global config so apps
+ * still call `configureOctoSpaces` once at boot. Prefers the cached `derived`
+ * identity (skips Argon2id); falls back to the seed.
  */
 export async function sessionFromPersisted(p: PersistedSession): Promise<Session> {
-  if (p.capCert && p.derived) {
-    return buildLinkedSession({ userId: p.derived.userId, keys: p.derived.keys, capCert: p.capCert }, p.name);
-  }
-  if (p.derived) {
-    try {
-      return await buildSession(p.derived, p.name);
-    } catch {
-      /* cached keys unusable — fall through to a full re-derive from the seed */
-    }
-  }
-  if (p.seed) return deriveSession(p.seed, p.name);
-  throw new Error('Persisted account has neither usable derived keys nor a recovery seed.');
-}
-
-/** The active account in a vault: the one matching `activeId`, else the first. */
-export function activeAccountOf(v: Vault): PersistedSession | null {
-  if (v.accounts.length === 0) return null;
-  return v.accounts.find((a) => a.derived?.userId === v.activeId) ?? v.accounts[0];
+  const sharedNamespace = getSharedSpacesNamespace() ?? undefined;
+  return _sessionFromPersisted(p, makeClientOpts(), { sharedNamespace });
 }

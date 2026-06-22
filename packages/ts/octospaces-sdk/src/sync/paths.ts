@@ -17,6 +17,8 @@
  * OBJECT_COLLECTIONS / spaceMemberScope — only a per-node cap can reach it.
  */
 import type { ScopePreset } from '@drakkar.software/starfish-identities';
+import { bytesToHex } from '@drakkar.software/starfish-protocol';
+export { bytesToHex };
 
 const pull = (rest: string) => `/pull/${rest}`;
 const push = (rest: string) => `/push/${rest}`;
@@ -304,12 +306,6 @@ export function linkedDeviceScope(userId: string): ScopePreset {
       `inbox/${userId}/**`,
     ],
   };
-}
-
-export function bytesToHex(b: Uint8Array): string {
-  let s = '';
-  for (const x of b) s += x.toString(16).padStart(2, '0');
-  return s;
 }
 
 /** A 32-byte key as 64 hex chars — shared by Ed25519 + X25519 KEM public keys. */

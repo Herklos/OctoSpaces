@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { ObjectNode } from '../../src/core/types.js';
+import type { ObjectNode } from '@drakkar.software/starfish-spaces';
 import {
   addObject,
   archiveObject,
@@ -11,7 +11,7 @@ import {
   reparentObject,
   reorderObjects,
   subtreeIds,
-} from '../../src/objects/objects.js';
+} from '@drakkar.software/starfish-spaces';
 
 const NOW = 1_700_000_000_000;
 

@@ -1,14 +1,32 @@
-/** @drakkar.software/octospaces-sdk — public surface */
+/**
+ * @drakkar.software/octospaces-sdk — residual peripherals surface (0.23+)
+ *
+ * The spaces domain (registry, members, nodes, keyrings, sessions, access store,
+ * sealed inbox, resource requests, identity links, object index, object directory,
+ * client helpers) has been removed and now lives in:
+ *
+ *   @drakkar.software/starfish-spaces
+ *
+ * This package retains ONLY the unique peripherals starfish-spaces does not provide:
+ * prefs, format/search, blobs, pairing, inbox signed-append, base64, paths, storage
+ * types, connection config, KV adapter, and the full 10-algorithm object tree.
+ *
+ * Group-A delegations (now in starfish): WAL (→ starfish-wal/client), fetch-timeout
+ * (→ createTimeoutFetch in starfish-client/fetch), pull-cache (→ createKvPullCache
+ * in starfish-client), postAnonymousAppend (→ StarfishClient.appendAnonymous).
+ *
+ * See CHANGELOG.md for the full migration guide.
+ */
 
-// Configuration
+// ── Connection config (still needed for residuals + identity bridge) ──────────
 export { configureOctoSpaces, getSyncBase, getSyncNamespace, getSyncPrefix, getSharedSpacesNamespace, getEventsUrl } from './core/config.js';
 export type { OctoSpacesConfig } from './core/config.js';
 
-// KV adapter
+// ── KV adapter (bridges into starfish-spaces on configureKv) ─────────────────
 export { configureKv, kvGet, kvSet, kvRemove } from './core/adapters.js';
 export type { KvAdapter } from './core/adapters.js';
 
-// Domain types
+// ── Residual domain types (spaces types are now in starfish-spaces) ───────────
 export type {
   ID,
   NodeAccess,
@@ -16,7 +34,6 @@ export type {
   ObjectType,
   ObjectsIndex,
   ObjectContentKind,
-  Space,
   CapMap,
   PubAccessMap,
   MuteValue,
@@ -25,12 +42,13 @@ export type {
   ReadPrefs,
   PresenceStatus,
   VerificationLevel,
+  SealedBlob,
 } from './core/types.js';
 
-// Ids (re-exported from starfish-protocol since alpha.30)
+// ── Ids (re-exported from starfish-protocol since alpha.30) ──────────────────
 export { randomId, slugify } from '@drakkar.software/starfish-protocol';
 
-// Paths / cap scopes
+// ── Paths / cap scopes ────────────────────────────────────────────────────────
 export {
   OBJECT_COLLECTIONS,
   ownerScope,
@@ -46,7 +64,6 @@ export {
   nodeKeyringName,
   nodeKeyringPull,
   nodeKeyringPush,
-  nodeKeyringScope,
   objIndexName,
   objIndexPull,
   objIndexPush,
@@ -109,59 +126,17 @@ export {
   RECIPIENT_LABEL_LEN,
 } from './sync/paths.js';
 
-// Object blobs (sealed files keyed by space)
+// ── Object blobs (sealed files keyed by space) ────────────────────────────────
 export type { ByteSealer, ObjectBlobRef, ObjectBlobStore } from './sync/object-blobs.js';
 export { attachmentKind, MAX_OBJECT_BLOB_BYTES, FileTooLargeError, uploadObjectBlob, loadObjectBlob, createObjectBlobStore } from './sync/object-blobs.js';
 
-// Client
-export {
-  makeClient,
-  capProviderFor,
-  openEncryptor,
-  buildEncryptor,
-  ownerEnsureKeyring,
-  isAlreadyPresentRecipient,
-  addSpaceKeyringRecipient,
-  ownerEnsureSpaceKeyring,
-  ensureSpaceKeyringRecipient,
-  readProfile,
-  readPseudo,
-  readProfiles,
-  writeProfile,
-  writePseudo,
-  ensureProfileKeys,
-  buildAuthHeaders,
-  ensurePseudo,
-} from './sync/client.js';
-export type { DeviceKeys, PublicProfile } from './sync/client.js';
-
-// Per-node keyring (E2EE invite nodes — OctoDesk tickets)
-export {
-  ownerEnsureNodeKeyring,
-  openNodeEncryptor,
-  buildNodeEncryptor,
-  addNodeKeyringRecipient,
-  ensureNodeKeyringRecipient,
-  removeNodeKeyringRecipient,
-} from './sync/node-keyring.js';
-export type { NodeKeyringRecipient } from './sync/node-keyring.js';
-
-// Identity / session
-export {
-  buildSession,
-  buildLinkedSession,
-  deriveSession,
-  rootIdentityOf,
-  ownerTrustedAdders,
-  generateSeedWords,
-  isValidSeed,
-  fingerprintFromUserId,
-  sessionFromPersisted,
-  activeAccountOf,
-} from './sync/identity.js';
+// ── Identity persistence bridge ───────────────────────────────────────────────
+// Session builders, seed helpers, fingerprint, ownerTrustedAdders →
+//   import from '@drakkar.software/starfish-spaces' directly.
+export { rootIdentityOf, sessionFromPersisted, activeAccountOf } from './sync/identity.js';
 export type { Session, LinkedIdentity } from './sync/identity.js';
 
-// Storage types
+// ── Storage types (now in starfish-spaces) ────────────────────────────────────
 export type {
   DerivedIdentity,
   PersistedSession,
@@ -170,114 +145,28 @@ export type {
   UnlockMethod,
   PasskeyEnrollment,
   SeedLock,
-} from './core/storage-types.js';
+} from '@drakkar.software/starfish-spaces';
 
-// Sealed blobs
-export { sealToSelf, unsealFromSelf, sealToRecipient, unsealFromRecipient } from './sync/account-seal.js';
-export type { SealedBlob } from './sync/account-seal.js';
+// ── Pairing ───────────────────────────────────────────────────────────────────
+export { startDevicePairing, completeDevicePairing, PAIR_PREFIX } from './sync/pairing.js';
+export type { PairResult, StartPairingOptions } from './sync/pairing.js';
 
-// Node access (per-node encryptor + client resolver, replaces per-space access)
-export {
-  SpaceAccessError,
-  getSpaceClient,
-  getNodeStreamClient,
-  getNodeAccess,
-  buildNodeAccess,
-  clearNodeAccessCache,
-} from './sync/space-access.js';
-export type { NodeAccessHandle } from './sync/space-access.js';
+// ── Profile cache ─────────────────────────────────────────────────────────────
+export { cacheProfile, loadCachedProfile } from './sync/profile-cache.js';
 
-// Space access store (replaces member-caps + pubspace-caps)
-export {
-  hydrateSpaceAccessStore,
-  getSpaceAccessEntry,
-  saveSpaceAccessEntry,
-  removeSpaceAccessEntry,
-  getNodeAccessEntry,
-  saveNodeAccessEntry,
-  removeNodeAccessEntry,
-  getNodeStreamAccessEntry,
-  saveNodeStreamAccessEntry,
-  removeNodeStreamAccessEntry,
-  getNodeKeyringAccessEntry,
-  saveNodeKeyringAccessEntry,
-  removeNodeKeyringAccessEntry,
-  localSpaceAccessEntries,
-  memberCapsFromStore,
-  linkAccessFromStore,
-  clearSpaceAccessStore,
-  clearPersistedSpaceAccess,
-} from './sync/space-access-store.js';
-export type { SpaceAccessEntry, SpaceAccessMap } from './sync/space-access-store.js';
+// ── Anonymous signed-append (cap-less inbox write) ────────────────────────────
+// postAnonymousAppend removed — use StarfishClient.appendAnonymous directly.
+// fetchWithTimeout removed — use createTimeoutFetch from @drakkar.software/starfish-client/fetch.
+// pullCache removed — use createKvPullCache from @drakkar.software/starfish-client.
+export { appendToInbox, AppendHttpError } from './sync/signed-append.js';
 
-// Registry
-export {
-  buildSpace,
-  readSpaces,
-  updateSpacesDoc,
-  updateMutesDoc,
-  updateReadsDoc,
-  updateSpacesExtraField,
-  writeSpaces,
-  reorderSpaces,
-  removeJoinedSpace,
-  moveSpace,
-  readSpaceAccess,
-  writeSpaceAccess,
-  addSpaceMember,
-  removeSpaceMember,
-  addJoinedSpace,
-  addJoinedSpaceWithCap,
-  addJoinedSpaceWithLinkAccess,
-  createSpace,
-  reconcileSpaceMeta,
-  onSpaceMeta,
-  broadcastSpaceMeta,
-} from './spaces/registry.js';
-export type { SpaceMeta, SpaceMetaUpdate } from './spaces/registry.js';
+// ── Base64 ────────────────────────────────────────────────────────────────────
+export { starfishBase64, toBase64Url, fromBase64Url } from './sync/base64.js';
 
-// Members
-export {
-  makeJoinRequest,
-  inviteToSpace,
-  acceptSpaceInvite,
-  encodeSpaceInviteLink,
-  decodeSpaceInviteLink,
-  createSpaceInviteLink,
-  joinSpaceByLink,
-  recoverSpaceAccess,
-  addDeviceToSpaceKeyring,
-  // space-tier eviction
-  revokeSpaceAccess,
-  saveSpaceInviteEntry,
-  getSpaceInviteEntry,
-  clearSpaceInviteStore,
-  serializeSpaceInviteStore,
-  hydrateSpaceInviteStore,
-} from './spaces/members.js';
-export type { JoinRequest, SpaceInviteLinkToken, StoredSpaceInvite } from './spaces/members.js';
+// ── Link token helpers (from starfish-protocol since alpha.30) ────────────────
+export { encodeLinkFragment, decodeLinkFragment } from '@drakkar.software/starfish-protocol';
 
-// Nodes (per-node creation + access management + invite flows)
-export {
-  createNode,
-  setNodeAccess,
-  inviteToNode,
-  acceptNodeInvite,
-  createNodeInviteLink,
-  decodeNodeInviteLink,
-  encodeNodeInviteLink,
-  joinNodeByLink,
-  // revocation infrastructure for isolated per-node-keyring (OctoDesk ticket) nodes
-  revokeNodeAccess,
-  saveNodeInviteEntry,
-  getNodeInviteEntry,
-  clearNodeInviteStore,
-  serializeNodeInviteStore,
-  hydrateNodeInviteStore,
-} from './spaces/nodes.js';
-export type { CreateNodeInput, NodeInviteBundle, NodeInviteKind, NodeInviteLinkToken, StoredNodeInvite } from './spaces/nodes.js';
-
-// Object core
+// ── Object tree — full 10-algorithm surface (now in starfish-spaces) ─────────
 export {
   buildTree,
   breadcrumbs,
@@ -289,99 +178,30 @@ export {
   reparentObject,
   reorderObjects,
   archiveObject,
-} from './objects/objects.js';
-export type { ObjectTreeNode, NewObjectInput } from './objects/objects.js';
+} from '@drakkar.software/starfish-spaces';
+export type { ObjectTreeNode, NewObjectInput } from '@drakkar.software/starfish-spaces';
 
-// Object index
-export {
-  pushIndexSeed,
-  seedSpaceObjectIndex,
-  updateObjectIndex,
-  readObjectTree,
-} from './spaces/object-index.js';
-
-// Public object directory (world-readable, server-maintained projection)
-export { readObjectDirectory, parseObjectDirectoryDoc } from './spaces/object-directory.js';
-export type { PublicObjectDirEntry } from './spaces/object-directory.js';
-
-// Pairing
-export { startDevicePairing, completeDevicePairing, PAIR_PREFIX } from './sync/pairing.js';
-export type { PairResult, StartPairingOptions } from './sync/pairing.js';
-
-// Pull cache
-export { pullCache, PULL_CACHE_MAX_AGE_MS } from './sync/pull-cache.js';
-
-// Profile cache
-export { cacheProfile, loadCachedProfile } from './sync/profile-cache.js';
-
-// Fetch
-export { fetchWithTimeout, CONNECT_TIMEOUT_MS } from './sync/fetch-timeout.js';
-
-// Inbox helpers (shard rotation + authenticated read)
-export { inboxShard, inboxShards, pullInbox } from './sync/inbox.js';
-export type { InboxElement } from './sync/inbox.js';
-
-// Anonymous signed append (cap-less inbox write)
-export { appendToInbox, postAnonymousAppend, AppendHttpError } from './sync/signed-append.js';
-
-// Base64
-export { starfishBase64, toBase64Url, fromBase64Url } from './sync/base64.js';
-
-// Link token helpers (re-exported from starfish-protocol since alpha.30)
-export { encodeLinkFragment, decodeLinkFragment } from '@drakkar.software/starfish-protocol';
-
-// Utilities
+// ── Utilities ─────────────────────────────────────────────────────────────────
 export { matchTitle, rankResults, fold, isWordStart } from './utils/search-match.js';
 export type { MatchRange, TitleMatch, RankedResult } from './utils/search-match.js';
 
 export { registerPull, dispatchDocChange, emitSseStatus, onSseStatus, clearLiveSyncBus } from './utils/live-sync-bus.js';
 
-// SSE events transport (generic, parse-injected)
+// ── SSE events transport ──────────────────────────────────────────────────────
 export { buildSignedEventsRequest, parseSseFrames, subscribeChanges } from './sync/events.js';
 export type { SubscribeChangesOptions } from './sync/events.js';
 
+// ── Invite preview ────────────────────────────────────────────────────────────
+// SpaceInviteLinkToken + NodeInviteLinkToken are from starfish-spaces; re-exported
+// here for backwards compat at the type level.
 export { previewInvite } from './utils/invite-preview.js';
-export type { InvitePreview } from './utils/invite-preview.js';
+export type { InvitePreview, SpaceInviteLinkToken, NodeInviteLinkToken } from './utils/invite-preview.js';
 
-// Identity links (pure-identity tokens, no credential/cap)
-export {
-  encodeIdentityLink,
-  decodeIdentityLink,
-  verifyIdentityLinkBinding,
-  verifyIdentityLinkKeys,
-  myIdentityLink,
-} from './spaces/identity-link.js';
-export type { IdentityLink } from './spaces/identity-link.js';
-
-// Resource-request inbox (sealed request → owner creates node → sealed grant-back)
-export {
-  submitResourceRequest,
-  scanResourceRequests,
-  acceptResourceRequest,
-  rejectResourceRequest,
-  scanResourceGrants,
-  scanResourceRejects,
-  acceptResourceGrant,
-  // reqId → owner-edPub store (sender-auth for scanResourceGrants, persistence across reloads)
-  saveReqIdOwner,
-  serializeReqIdOwnerStore,
-  hydrateReqIdOwnerStore,
-  clearReqIdOwnerStore,
-} from './spaces/resource-requests.js';
-export type {
-  ResourceRequest,
-  ResourceGrant,
-  ResourceReject,
-  PendingRequest,
-  AcceptResult,
-  SubmitResourceRequestOptions,
-} from './spaces/resource-requests.js';
-
-// Prefs
+// ── Prefs ─────────────────────────────────────────────────────────────────────
 export { createMutesStore, isMuteActive } from './prefs/mutes.js';
 export type { MutesStore } from './prefs/mutes.js';
 export { createReadsStore } from './prefs/reads.js';
 export type { ReadsStore } from './prefs/reads.js';
 
-// Format
+// ── Format ────────────────────────────────────────────────────────────────────
 export { plural, clockTime, initialsFor, formatBytes, relativeTime, relativeTimeShort } from './format/format.js';

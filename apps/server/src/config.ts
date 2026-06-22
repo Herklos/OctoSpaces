@@ -143,8 +143,8 @@ export const config: SyncConfig = {
     {
       name: "objinv",
       storagePath: "spaces/{spaceId}/objects/n/{nodeId}/content",
-      readRoles: [],
-      writeRoles: [],
+      readRoles: ["space:member", "cap:read:objinv"],
+      writeRoles: ["space:member", "cap:write:objinv"],
       encryption: "none",
       maxBodyBytes: 262_144,
       allowedMimeTypes: JSON_ONLY,

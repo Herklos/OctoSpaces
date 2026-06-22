@@ -13,10 +13,20 @@ import {
 } from '@drakkar.software/starfish-identities';
 import type { CapCert } from '@drakkar.software/starfish-protocol';
 
-import { makeAnonClient, type DeviceKeys } from './client.js';
+import { StarfishClient } from '@drakkar.software/starfish-client';
+import { createTimeoutFetch } from '@drakkar.software/starfish-client/fetch';
+import type { DeviceKeys } from '@drakkar.software/starfish-spaces';
+import { fingerprintFromUserId } from '@drakkar.software/starfish-spaces';
 import type { Session } from './identity.js';
-import { fingerprintFromUserId } from './identity.js';
+import { getSyncBase, getSyncNamespace } from '../core/config.js';
 import { bytesToHex, linkedDeviceScope } from './paths.js';
+
+/** 12 s connect cap — matches the previous fetchWithTimeout default. */
+const CONNECT_TIMEOUT_MS = 12_000;
+
+function makeAnonClient(): StarfishClient {
+  return new StarfishClient({ baseUrl: getSyncBase(), namespace: getSyncNamespace() ?? undefined, fetch: createTimeoutFetch(CONNECT_TIMEOUT_MS) });
+}
 
 /** The QR-payload prefix this SDK uses. Kept distinct from `octochat-pair:` so apps
  *  can route QR payloads to the correct handler during their migration window. */

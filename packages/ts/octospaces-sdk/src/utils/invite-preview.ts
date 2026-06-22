@@ -9,10 +9,8 @@
  *   - A node invite link (URL fragment encoded by `createNodeInviteLink`)
  *   - A private member-bundle JSON minted by `inviteToSpace`
  */
-import { decodeSpaceInviteLink } from '../spaces/members.js';
-import { decodeNodeInviteLink } from '../spaces/nodes.js';
-import type { SpaceInviteLinkToken } from '../spaces/members.js';
-import type { NodeInviteLinkToken } from '../spaces/nodes.js';
+import { decodeSpaceInviteLink, decodeNodeInviteLink } from '@drakkar.software/starfish-spaces';
+import type { SpaceInviteLinkToken, NodeInviteLinkToken } from '@drakkar.software/starfish-spaces';
 
 export type { SpaceInviteLinkToken, NodeInviteLinkToken };
 

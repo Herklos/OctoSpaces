@@ -1,81 +1,39 @@
 /**
- * Anonymous signed append — POST one JSON element to a public-write collection with
- * the requester's own Ed25519 author proof and NO cap/auth headers.
+ * Anonymous signed append — POST one JSON element to a public-write collection
+ * with the requester's own Ed25519 author proof and NO cap/auth headers.
  *
- * `StarfishClient.append`/`push` always attaches a cap-signed Authorization header
- * (see `capProviderFor` in `client.ts`). The `inbox/{identity}/{shard}` collection
- * is `writeRoles:["public"]` — appending with a cap header would fail its path-scope
- * check. We POST directly via `fetch`, signing only the append-author proof (bound to
- * the document key, not to a request auth path) with the sender's own key.
+ * Delegates to StarfishClient.appendAnonymous, which signs the append-author
+ * proof internally (signAppendAuthor bound to the document key) and POSTs
+ * { data, authorPubkey, authorSignature } without an Authorization header.
  *
- * The inbox collection sets `requireAuthorSignature: false`, so the proof is optional
- * server-side, but we sign it anyway for parity with the OctoChat server config and to
- * surface the sender's edPub via `sealed.entry.addedBy` in the receive path.
+ * AppendHttpError (re-exported from starfish-client) is thrown on any non-2xx
+ * response; callers that catch it should import the type from here or directly
+ * from @drakkar.software/starfish-client.
  */
-import { signAppendAuthor } from '@drakkar.software/starfish-protocol';
+import { StarfishClient } from '@drakkar.software/starfish-client';
+import { createTimeoutFetch } from '@drakkar.software/starfish-client/fetch';
+export { AppendHttpError } from '@drakkar.software/starfish-client';
 
 import { getSyncBase, getSyncNamespace } from '../core/config.js';
-import { fetchWithTimeout } from './fetch-timeout.js';
 import { inboxPush } from './paths.js';
 
-/** A non-2xx response from {@link appendToInbox}. */
-export class AppendHttpError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'AppendHttpError';
-  }
-}
+/** 12 s connect cap — consistent with the pairing client. */
+const CONNECT_TIMEOUT_MS = 12_000;
 
-function actionPathFor(signPath: string): string {
-  const ns = getSyncNamespace();
-  return (ns ? `/v1/${ns}` : '') + signPath;
-}
-
-/**
- * POST one element to a public-write collection with no auth headers — the
- * anonymous inbox push. Signs the append-author proof with `author` (optional per
- * the inbox collection config, but signed for provenance).
- *
- * @param signPath  Full server-relative push path (e.g. from `inboxPush(id, shard)`).
- * @param element   The JSON element to append (`{ sealed, ts }`).
- * @param author    The sender's Ed25519 key pair — signs the author proof.
- */
-export async function postAnonymousAppend(opts: {
-  signPath: string;
-  element: Record<string, unknown>;
-  author: { edPubHex: string; edPrivHex: string };
-  failurePrefix?: string;
-}): Promise<void> {
-  const actionPath = actionPathFor(opts.signPath);
-  const url = `${getSyncBase().replace(/\/+$/, '')}${actionPath}`;
-  // documentKey = the part after /push/; bound into the author proof.
-  const documentKey = opts.signPath.replace(/^\/push\//, '');
-  const author = signAppendAuthor(
-    documentKey,
-    opts.element,
-    opts.author.edPubHex,
-    opts.author.edPrivHex,
-  );
-  const body = JSON.stringify({ data: opts.element, ...author });
-  const res = await fetchWithTimeout()(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body,
+function makeAnonClient(): StarfishClient {
+  return new StarfishClient({
+    baseUrl: getSyncBase(),
+    namespace: getSyncNamespace() ?? undefined,
+    fetch: createTimeoutFetch(CONNECT_TIMEOUT_MS),
   });
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new AppendHttpError(
-      res.status,
-      `${opts.failurePrefix ?? 'anonymous append'} failed: HTTP ${res.status} ${detail}`,
-    );
-  }
 }
 
 /**
  * Anonymously append a sealed element to an identity's inbox shard.
+ *
+ * The inbox collection is `writeRoles:["public"]` — no cap header is sent.
+ * The Ed25519 author proof (signed by `author`) is bound to the document key
+ * and surfaces the sender's edPub via `sealed.entry.addedBy` in the receive path.
  *
  * @param identity  The inbox owner's userId (`inbox/{identity}/{shard}`).
  * @param shard     UTC `YYYY-MM` shard from {@link inboxShard}.
@@ -88,10 +46,5 @@ export async function appendToInbox(
   element: Record<string, unknown>,
   author: { edPubHex: string; edPrivHex: string },
 ): Promise<void> {
-  await postAnonymousAppend({
-    signPath: inboxPush(identity, shard),
-    element,
-    author,
-    failurePrefix: 'inbox append',
-  });
+  await makeAnonClient().appendAnonymous(inboxPush(identity, shard), element, author);
 }

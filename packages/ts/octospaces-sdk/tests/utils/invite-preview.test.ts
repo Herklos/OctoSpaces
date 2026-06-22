@@ -1,9 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { previewInvite } from '../../src/utils/invite-preview.js';
-import { encodeSpaceInviteLink } from '../../src/spaces/members.js';
-import { encodeNodeInviteLink } from '../../src/spaces/nodes.js';
-import type { SpaceInviteLinkToken } from '../../src/spaces/members.js';
-import type { NodeInviteLinkToken } from '../../src/spaces/nodes.js';
+import { encodeSpaceInviteLink, encodeNodeInviteLink } from '@drakkar.software/starfish-spaces';
+import type { SpaceInviteLinkToken, NodeInviteLinkToken } from '@drakkar.software/starfish-spaces';
 
 const spaceToken: SpaceInviteLinkToken = {
   v: 1,

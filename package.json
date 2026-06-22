@@ -2,7 +2,9 @@
   "private": true,
   "name": "octospaces",
   "packageManager": "pnpm@10.11.0",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",

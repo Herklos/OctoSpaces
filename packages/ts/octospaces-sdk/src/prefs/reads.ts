@@ -11,11 +11,11 @@
  * @param logTag       Console tag, e.g. `'[OctoChat]'`.
  */
 import type { StarfishClient } from '@drakkar.software/starfish-client';
+import type { Session } from '@drakkar.software/starfish-spaces';
+import { updateSpacesExtraField } from '@drakkar.software/starfish-spaces';
 
 import type { ReadPrefs } from '../core/types.js';
 import { kvGet, kvSet } from '../core/adapters.js';
-import { updateReadsDoc } from '../spaces/registry.js';
-import type { Session } from '../sync/identity.js';
 
 const FLUSH_DELAY_MS = 8_000;
 
@@ -94,10 +94,15 @@ export function createReadsStore(opts: {
     const session = flushSession;
     if (!session) return;
     const snapshot = cache;
-    await updateReadsDoc(client(session), session.userId, (cur) => {
-      const merged = maxMerge(cur, snapshot);
-      return merged === cur ? null : merged;
-    }).catch((err) => {
+    await updateSpacesExtraField<ReadPrefs>(
+      client(session),
+      session,
+      'reads',
+      (cur) => {
+        const merged = maxMerge(cur ?? EMPTY, snapshot);
+        return merged === (cur ?? EMPTY) ? null : merged;
+      },
+    ).catch((err) => {
       console.error(`${logTag} reads: failed to sync read marks`, err);
     });
   }

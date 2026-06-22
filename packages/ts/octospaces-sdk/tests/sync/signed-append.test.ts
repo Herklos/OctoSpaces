@@ -1,261 +1,89 @@
 /**
- * Tests for sync/signed-append.ts — postAnonymousAppend / appendToInbox.
+ * Tests for sync/signed-append.ts — appendToInbox.
  *
- * HTTP calls (fetchWithTimeout) are mocked so no server is needed.
- * The core assertion: the author proof signs the element bound to the documentKey
- * (inbox path), and a tampered data field fails signature verification.
+ * StarfishClient is mocked to avoid a real network call. The core assertion is
+ * that appendToInbox routes to the correct inboxPush path with the given
+ * element + author. Signature correctness is tested upstream in starfish-client.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ed25519 } from '@noble/curves/ed25519.js';
-import { verifyAppendAuthor } from '@drakkar.software/starfish-protocol';
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
 
-// Mock fetchWithTimeout — capture what was POSTed
-vi.mock('../../src/sync/fetch-timeout.js', () => ({
-  fetchWithTimeout: vi.fn(),
+vi.mock('@drakkar.software/starfish-client', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@drakkar.software/starfish-client')>();
+  return {
+    ...original,
+    StarfishClient: vi.fn().mockImplementation(() => ({
+      appendAnonymous: vi.fn().mockResolvedValue(undefined),
+    })),
+  };
+});
+
+vi.mock('@drakkar.software/starfish-client/fetch', () => ({
+  createTimeoutFetch: vi.fn(() => globalThis.fetch),
 }));
 
-// Mock configureOctoSpaces / getSyncBase / getSyncNamespace so the module loads
 vi.mock('../../src/core/config.js', () => ({
   getSyncBase: vi.fn(() => 'http://localhost:8787'),
   getSyncNamespace: vi.fn(() => undefined),
-  getSyncPrefix: vi.fn(() => ''),
-  getOnServerReachable: vi.fn(() => undefined),
 }));
 
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
-import { fetchWithTimeout } from '../../src/sync/fetch-timeout.js';
-import { postAnonymousAppend, appendToInbox, AppendHttpError } from '../../src/sync/signed-append.js';
+import { StarfishClient, AppendHttpError } from '@drakkar.software/starfish-client';
+import { appendToInbox } from '../../src/sync/signed-append.js';
 import { inboxPush } from '../../src/sync/paths.js';
 
-// ── Key helpers ───────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-function toHex(b: Uint8Array): string {
-  return Buffer.from(b).toString('hex');
+function lastInstance(): { appendAnonymous: ReturnType<typeof vi.fn> } {
+  const calls = vi.mocked(StarfishClient).mock.results;
+  return calls[calls.length - 1]!.value as { appendAnonymous: ReturnType<typeof vi.fn> };
 }
 
-function makeAuthor(): { edPubHex: string; edPrivHex: string } {
-  const privBytes = new Uint8Array(32);
-  crypto.getRandomValues(privBytes);
-  const edPrivHex = toHex(privBytes);
-  const edPubHex = toHex(ed25519.getPublicKey(privBytes));
-  return { edPubHex, edPrivHex };
-}
-
-// ── Mock response helpers ─────────────────────────────────────────────────────
-
-function okFetch(captureRef: { body: Record<string, unknown> | null }) {
-  return vi.fn().mockImplementation((_url: string, init: RequestInit) => {
-    captureRef.body = JSON.parse(init.body as string) as Record<string, unknown>;
-    return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('') });
-  });
-}
-
-function errorFetch(status: number, text = 'error') {
-  return vi.fn().mockReturnValue(
-    Promise.resolve({ ok: false, status, text: () => Promise.resolve(text) }),
-  );
-}
-
-// ── postAnonymousAppend ───────────────────────────────────────────────────────
-
-describe('postAnonymousAppend', () => {
-  beforeEach(() => {
-    vi.mocked(fetchWithTimeout).mockReset();
-  });
-
-  it('POSTs to the correct URL (syncBase + signPath)', async () => {
-    const capture = { body: null as Record<string, unknown> | null };
-    const fetcher = okFetch(capture);
-    vi.mocked(fetchWithTimeout).mockReturnValue(fetcher as ReturnType<ReturnType<typeof fetchWithTimeout>>);
-
-    const author = makeAuthor();
-    const signPath = '/push/inbox/testuser/2024-06';
-    await postAnonymousAppend({
-      signPath,
-      element: { msg: 'hello' },
-      author,
-    });
-
-    expect(fetcher).toHaveBeenCalledOnce();
-    const [url] = vi.mocked(fetcher).mock.calls[0]!;
-    expect(url).toBe('http://localhost:8787/push/inbox/testuser/2024-06');
-  });
-
-  it('includes Content-Type: application/json header', async () => {
-    const capture = { body: null as Record<string, unknown> | null };
-    const fetcher = okFetch(capture);
-    vi.mocked(fetchWithTimeout).mockReturnValue(fetcher as ReturnType<ReturnType<typeof fetchWithTimeout>>);
-
-    const author = makeAuthor();
-    await postAnonymousAppend({
-      signPath: '/push/inbox/u/2024-06',
-      element: { x: 1 },
-      author,
-    });
-
-    const [, init] = vi.mocked(fetcher).mock.calls[0]!;
-    expect((init?.headers as Record<string, string>)?.['Content-Type']).toBe('application/json');
-  });
-
-  it('POSTed body contains data field equal to the element', async () => {
-    const capture = { body: null as Record<string, unknown> | null };
-    const fetcher = okFetch(capture);
-    vi.mocked(fetchWithTimeout).mockReturnValue(fetcher as ReturnType<ReturnType<typeof fetchWithTimeout>>);
-
-    const author = makeAuthor();
-    const element = { sealed: { ct: 'abc' }, ts: 12345 };
-    await postAnonymousAppend({ signPath: '/push/inbox/u/2024-06', element, author });
-
-    expect(capture.body?.data).toEqual(element);
-  });
-
-  it('POSTed body contains authorPubkey field matching author.edPubHex', async () => {
-    const capture = { body: null as Record<string, unknown> | null };
-    const fetcher = okFetch(capture);
-    vi.mocked(fetchWithTimeout).mockReturnValue(fetcher as ReturnType<ReturnType<typeof fetchWithTimeout>>);
-
-    const author = makeAuthor();
-    const element = { msg: 'test' };
-    await postAnonymousAppend({ signPath: '/push/inbox/u/2024-06', element, author });
-
-    expect(capture.body?.authorPubkey).toBe(author.edPubHex);
-  });
-
-  it('author proof signature verifies against documentKey and element', async () => {
-    const capture = { body: null as Record<string, unknown> | null };
-    const fetcher = okFetch(capture);
-    vi.mocked(fetchWithTimeout).mockReturnValue(fetcher as ReturnType<ReturnType<typeof fetchWithTimeout>>);
-
-    const author = makeAuthor();
-    const signPath = '/push/inbox/owner123/2024-06';
-    const element = { sealed: { entry: { ct: 'xyz' } }, ts: 99 };
-    await postAnonymousAppend({ signPath, element, author });
-
-    const body = capture.body!;
-    const documentKey = signPath.replace(/^\/push\//, '');
-    const isValid = verifyAppendAuthor(
-      documentKey,
-      body.data as Record<string, unknown>,
-      body.authorPubkey as string,
-      body.authorSignature as string,
-    );
-    expect(isValid).toBe(true);
-  });
-
-  it('a tampered data field fails signature verification', async () => {
-    const capture = { body: null as Record<string, unknown> | null };
-    const fetcher = okFetch(capture);
-    vi.mocked(fetchWithTimeout).mockReturnValue(fetcher as ReturnType<ReturnType<typeof fetchWithTimeout>>);
-
-    const author = makeAuthor();
-    const signPath = '/push/inbox/owner123/2024-06';
-    const element = { sealed: { ct: 'original' }, ts: 1 };
-    await postAnonymousAppend({ signPath, element, author });
-
-    const body = capture.body!;
-    const documentKey = signPath.replace(/^\/push\//, '');
-    // Tamper the data field
-    const tamperedData = { sealed: { ct: 'tampered' }, ts: 1 };
-    const isValid = verifyAppendAuthor(
-      documentKey,
-      tamperedData,
-      body.authorPubkey as string,
-      body.authorSignature as string,
-    );
-    expect(isValid).toBe(false);
-  });
-
-  it('a tampered documentKey fails signature verification', async () => {
-    const capture = { body: null as Record<string, unknown> | null };
-    const fetcher = okFetch(capture);
-    vi.mocked(fetchWithTimeout).mockReturnValue(fetcher as ReturnType<ReturnType<typeof fetchWithTimeout>>);
-
-    const author = makeAuthor();
-    const signPath = '/push/inbox/owner123/2024-06';
-    const element = { x: 42 };
-    await postAnonymousAppend({ signPath, element, author });
-
-    const body = capture.body!;
-    // Use a different documentKey
-    const wrongDocumentKey = 'inbox/other-owner/2024-06';
-    const isValid = verifyAppendAuthor(
-      wrongDocumentKey,
-      body.data as Record<string, unknown>,
-      body.authorPubkey as string,
-      body.authorSignature as string,
-    );
-    expect(isValid).toBe(false);
-  });
-
-  it('throws AppendHttpError on non-2xx response', async () => {
-    const fetcher = errorFetch(403, 'forbidden');
-    vi.mocked(fetchWithTimeout).mockReturnValue(fetcher as ReturnType<ReturnType<typeof fetchWithTimeout>>);
-
-    const author = makeAuthor();
-    await expect(
-      postAnonymousAppend({ signPath: '/push/inbox/u/2024-06', element: {}, author }),
-    ).rejects.toThrow(AppendHttpError);
-  });
-
-  it('AppendHttpError carries the HTTP status code', async () => {
-    const fetcher = errorFetch(429, 'rate limited');
-    vi.mocked(fetchWithTimeout).mockReturnValue(fetcher as ReturnType<ReturnType<typeof fetchWithTimeout>>);
-
-    const author = makeAuthor();
-    try {
-      await postAnonymousAppend({ signPath: '/push/inbox/u/2024-06', element: {}, author });
-      expect.fail('should have thrown');
-    } catch (e) {
-      expect(e).toBeInstanceOf(AppendHttpError);
-      expect((e as AppendHttpError).status).toBe(429);
-    }
-  });
-});
-
-// ── appendToInbox ─────────────────────────────────────────────────────────────
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('appendToInbox', () => {
   beforeEach(() => {
-    vi.mocked(fetchWithTimeout).mockReset();
+    vi.mocked(StarfishClient).mockClear();
   });
 
-  it('calls postAnonymousAppend with the correct inboxPush path', async () => {
-    const capture = { body: null as Record<string, unknown> | null };
-    const fetcher = okFetch(capture);
-    vi.mocked(fetchWithTimeout).mockReturnValue(fetcher as ReturnType<ReturnType<typeof fetchWithTimeout>>);
+  it('calls appendAnonymous with inboxPush(identity, shard) path', async () => {
+    const element = { ts: 42 };
+    const author = { edPubHex: 'a'.repeat(64), edPrivHex: 'b'.repeat(64) };
+    await appendToInbox('user-123', '2024-09', element, author);
 
-    const author = makeAuthor();
-    const identity = 'user-abc';
-    const shard = '2024-09';
-    await appendToInbox(identity, shard, { ts: 1 }, author);
-
-    const [url] = vi.mocked(fetcher).mock.calls[0]!;
-    const expectedPath = inboxPush(identity, shard);
-    expect(url).toContain(expectedPath.replace(/^\/push\//, ''));
-  });
-
-  it('author proof in appendToInbox verifies correctly', async () => {
-    const capture = { body: null as Record<string, unknown> | null };
-    const fetcher = okFetch(capture);
-    vi.mocked(fetchWithTimeout).mockReturnValue(fetcher as ReturnType<ReturnType<typeof fetchWithTimeout>>);
-
-    const author = makeAuthor();
-    const identity = 'user-xyz';
-    const shard = '2024-10';
-    const element = { sealed: { ct: 'test-seal' }, ts: 42 };
-    await appendToInbox(identity, shard, element, author);
-
-    const body = capture.body!;
-    const documentKey = inboxPush(identity, shard).replace(/^\/push\//, '');
-    const isValid = verifyAppendAuthor(
-      documentKey,
-      body.data as Record<string, unknown>,
-      body.authorPubkey as string,
-      body.authorSignature as string,
+    const { appendAnonymous } = lastInstance();
+    expect(appendAnonymous).toHaveBeenCalledOnce();
+    expect(appendAnonymous).toHaveBeenCalledWith(
+      inboxPush('user-123', '2024-09'),
+      element,
+      author,
     );
-    expect(isValid).toBe(true);
+  });
+
+  it('propagates errors thrown by appendAnonymous', async () => {
+    const err = new Error('network failure');
+    vi.mocked(StarfishClient).mockImplementationOnce(() => ({
+      appendAnonymous: vi.fn().mockRejectedValue(err),
+    }) as unknown as InstanceType<typeof StarfishClient>);
+
+    await expect(
+      appendToInbox('u', '2024-01', {}, { edPubHex: 'a'.repeat(64), edPrivHex: 'b'.repeat(64) }),
+    ).rejects.toBe(err);
+  });
+
+  it('constructs a StarfishClient with the configured base URL', async () => {
+    await appendToInbox('u', '2024-01', {}, { edPubHex: 'a'.repeat(64), edPrivHex: 'b'.repeat(64) });
+    expect(vi.mocked(StarfishClient)).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: 'http://localhost:8787' }),
+    );
+  });
+});
+
+describe('AppendHttpError (re-exported from starfish-client)', () => {
+  it('is the AppendHttpError class from starfish-client', () => {
+    expect(AppendHttpError).toBeDefined();
+    expect(typeof AppendHttpError).toBe('function');
   });
 });

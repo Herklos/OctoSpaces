@@ -7,7 +7,7 @@
  * falls back to the last-known pseudo/avatar.
  */
 import { kvGet, kvSet } from '../core/adapters.js';
-import type { PublicProfile } from './client.js';
+import type { PublicProfile } from '@drakkar.software/starfish-spaces';
 
 const key = (userId: string) => `octospaces.profile.v1.${userId}`;
 

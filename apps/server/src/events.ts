@@ -30,7 +30,7 @@ import type {
   RoleEnricher,
 } from "@drakkar.software/starfish-server";
 
-import { SPACE_MEMBER_ROLE } from "./space-role.js";
+const SPACE_MEMBER_ROLE = "space:member";
 
 const WHISTLERS_INTERNAL_URL =
   process.env.WHISTLERS_INTERNAL_URL ?? "http://localhost:8080/events";

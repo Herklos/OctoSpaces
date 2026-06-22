@@ -11,11 +11,11 @@
  * @param logTag     Console tag for error messages, e.g. `'[OctoChat]'`.
  */
 import type { StarfishClient } from '@drakkar.software/starfish-client';
+import type { Session } from '@drakkar.software/starfish-spaces';
+import { updateSpacesExtraField } from '@drakkar.software/starfish-spaces';
 
 import type { MutePrefs, MuteValue } from '../core/types.js';
 import { kvGet, kvSet } from '../core/adapters.js';
-import { updateMutesDoc } from '../spaces/registry.js';
-import type { Session } from '../sync/identity.js';
 
 /** A mute is active when set to `true` (forever) or to a future epoch-ms instant. */
 export function isMuteActive(v: MuteValue | undefined): boolean {
@@ -95,7 +95,12 @@ export function createMutesStore(opts: {
     }
     pending++;
     try {
-      await updateMutesDoc(client(session), session.userId, (cur) => applyMute(cur, field, id, muted));
+      await updateSpacesExtraField<MutePrefs>(
+        client(session),
+        session,
+        'mutes',
+        (cur) => applyMute(cur ?? EMPTY, field, id, muted),
+      );
     } catch (err) {
       console.error(`${logTag} mutes: failed to sync mute change`, err);
     } finally {

@@ -6,9 +6,17 @@
  * key/value store at boot via {@link configureKv}. This holds account-scoped state
  * the SDK persists offline (joined-space member caps, the public-space access map,
  * read marks, mutes, profile/pull caches).
+ *
+ * As of 0.23.0, {@link configureKv} also bridges into starfish-spaces: it calls
+ * `configureSpaces` and `configureSpaceAccessStore` with an adapted KvAdapter shape
+ * (`{getItem,setItem,removeItem}`), so a single `configureKv` call at boot wires
+ * both the octospaces residuals and the starfish-spaces access store.
  */
+import { configureSpaces, configureSpaceAccessStore } from '@drakkar.software/starfish-spaces';
 
-/** Async key/value store — web `localStorage`, native `AsyncStorage`, etc. */
+/** Async key/value store — web `localStorage`, native `AsyncStorage`, etc.
+ *  Uses `{get,set,remove}` (octospaces shape); the bridge to starfish's
+ *  `{getItem,setItem,removeItem}` shape is handled internally by {@link configureKv}. */
 export interface KvAdapter {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
@@ -17,9 +25,24 @@ export interface KvAdapter {
 
 let kv: KvAdapter | null = null;
 
-/** Install the host's key/value store. Call once at app boot. */
+/**
+ * Install the host's key/value store. Call once at app boot, BEFORE building sessions
+ * or using any starfish-spaces registry/prefs functions.
+ *
+ * Also wires starfish-spaces config: calls `configureSpaces({ kvAdapter })` and
+ * `configureSpaceAccessStore({ kvAdapter, kvKeyPrefix: 'octospaces.spaceaccess.' })`.
+ * The `kvKeyPrefix` is fixed to match the pre-0.23.0 persisted access store — existing
+ * persisted access entries remain readable after the upgrade.
+ */
 export function configureKv(adapter: KvAdapter): void {
   kv = adapter;
+  const sf = {
+    getItem: (k: string) => adapter.get(k),
+    setItem: (k: string, v: string) => adapter.set(k, v),
+    removeItem: (k: string) => adapter.remove(k),
+  };
+  configureSpaces({ kvAdapter: sf });
+  configureSpaceAccessStore({ kvAdapter: sf, kvKeyPrefix: 'octospaces.spaceaccess.' });
 }
 
 /** The configured KV store, or throw if the host never called {@link configureKv}. */

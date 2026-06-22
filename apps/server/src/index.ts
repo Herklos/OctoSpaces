@@ -13,12 +13,12 @@ import { identitiesServerPlugin } from "@drakkar.software/starfish-identities";
 import { sharingServerPlugin } from "@drakkar.software/starfish-sharing";
 import { createQueuingServerPlugin } from "@drakkar.software/starfish-queuing";
 import { createProjectionServerPlugin } from "@drakkar.software/starfish-projection";
+import { createSpacesRoleEnricher, createSpacesDirectoryServerPlugin } from "@drakkar.software/starfish-spaces";
 
 import { config } from "./config.js";
 import { projections } from "./projections.js";
 import { createNatsQueue } from "./queue.js";
 import { createFileRevocationStore } from "./revocation-store.js";
-import { makeSpaceRoleEnricher } from "./space-role.js";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const DATA_DIR = process.env.STARFISH_DATA_DIR ?? "./data";
@@ -79,14 +79,18 @@ const queuing = createQueuingServerPlugin({
 
 // Grants `space:owner` / `space:member` by reading `spaces/{spaceId}/_access`.
 // Shared between the sync router and the /events proxy.
-const spaceEnricher = makeSpaceRoleEnricher(store);
+const spaceEnricher = createSpacesRoleEnricher(store);
 
 const syncRouter = createSyncRouter({
   store,
   config,
   roleResolver,
   roleEnricher: spaceEnricher,
-  plugins: [createProjectionServerPlugin({ store, projections }), queuing],
+  plugins: [
+    createProjectionServerPlugin({ store, projections }),
+    createSpacesDirectoryServerPlugin({ getString: (k) => store.getString(k), putString: (k, v) => store.put(k, v) }),
+    queuing,
+  ],
 });
 
 await saveConfig(store, config);

@@ -3,7 +3,7 @@
  * Shares tests/test-vectors/objects-tree.json with the Python suite.
  */
 import { describe, it, expect } from 'vitest';
-import type { ObjectNode } from '../../src/core/types.js';
+import type { ObjectNode } from '@drakkar.software/starfish-spaces';
 import {
   addObject,
   breadcrumbs,
@@ -11,7 +11,7 @@ import {
   nextOrder,
   patchObject,
   subtreeIds,
-} from '../../src/objects/objects.js';
+} from '@drakkar.software/starfish-spaces';
 import vectors from '../../../../../tests/test-vectors/objects-tree.json';
 
 const NOW = vectors.now;

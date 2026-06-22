@@ -1,5 +1,227 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.25.0 (2026-06-22) — BREAKING
+
+### Summary
+
+Group-B generic modules promoted to `@drakkar.software/starfish-spaces` /
+`@drakkar.software/starfish-protocol` (alpha.32) are deleted locally and delegated
+upstream. All symbols are still re-exported from this package unchanged — no
+import-source change needed for consumers.
+
+### Removed local modules
+
+| Deleted | Now canonical source |
+|---|---|
+| `src/objects/objects.ts` (10 tree algos + types) | `starfish-spaces` — full algo surface + `ObjectTreeNode` / `NewObjectInput` now barrel-exported |
+| `src/core/storage-types.ts` (vault types) | `starfish-spaces` — `Vault`, `PersistedSession`, `DerivedIdentity`, `UnlockMethod`, `SeedLock`, `PasskeyEnrollment`, `VaultLoad` |
+| local `bytesToHex` in `src/sync/paths.ts` | `starfish-protocol` — `bytesToHex` / `hexToBytes` now barrel-exported |
+| `ID`, `ObjectNode`, `ObjectsIndex`, `ObjectType`, `ObjectContentKind`, `NodeAccess` in `core/types.ts` | re-exported from `starfish-spaces` (wire-identical) |
+
+### Changed
+
+- **`sync/identity.ts`** — thin wrapper: imports vault types + helpers from
+  `starfish-spaces`, wraps `sessionFromPersisted` to inject `configureOctoSpaces`
+  globals. Public API unchanged — callers still call `sessionFromPersisted(p)`.
+
+### Peer-dependency bump
+
+`starfish-protocol` and `starfish-spaces` require `>=3.0.0-alpha.32`.
+
+## 0.24.0 (2026-06-22) — BREAKING
+
+### Summary
+
+Group-A generic-infrastructure modules that were duplicate copies of already-published
+starfish code have been deleted. Apps must import their replacements directly from the
+starfish packages listed below.
+
+### Removed (breaking)
+
+| Removed symbol | Replacement |
+|---|---|
+| `./wal` subpath (all WAL exports) | `@drakkar.software/starfish-wal/client` — identical API: `createWalDocument`, `createWalTransport`, `createWalSnapshotStore`, `walEncryptorFromKeyring`, `walSignerFromKeys`, `noopEncryptor`, `CreateWalDocumentOptions` |
+| `fetchWithTimeout(ms?)` | `createTimeoutFetch(ms?)` from `@drakkar.software/starfish-client/fetch` — **note: starfish default is 10 s; octospaces used 12 s, so pass `createTimeoutFetch(12_000)` to preserve the old behavior** |
+| `CONNECT_TIMEOUT_MS` | use the literal `12_000` or `createTimeoutFetch(12_000)` |
+| `pullCache()` / `PULL_CACHE_MAX_AGE_MS` | `createKvPullCache(kv, opts)` from `@drakkar.software/starfish-client` — pass `{ prefix: 'octospaces.pullcache.', maxAgeMs: 30*24*60*60*1000 }` and a `KvStore` `{getItem,setItem,removeItem}` adapter |
+| `postAnonymousAppend(opts)` | `StarfishClient.appendAnonymous(path, element, {edPubHex,edPrivHex})` — call on an anonymous `new StarfishClient({ baseUrl, namespace, fetch })` instance |
+
+### Kept / unchanged
+
+`AppendHttpError` is still exported from this package (now re-exported from
+`@drakkar.software/starfish-client`). No import-source change needed for that error class.
+
+`appendToInbox` is unchanged in signature — it now delegates internally to
+`StarfishClient.appendAnonymous`.
+
+### Migration for WAL users (OctoVault)
+
+```ts
+// BEFORE
+import { createWalDocument, CreateWalDocumentOptions } from '@drakkar.software/octospaces-sdk/wal';
+
+// AFTER
+import { createWalDocument, CreateWalDocumentOptions } from '@drakkar.software/starfish-wal/client';
+// (also import other WAL helpers directly from starfish-wal/client)
+```
+
+All WAL function names and option shapes are identical.
+
+### Migration for fetch-timeout users
+
+```ts
+// BEFORE
+import { fetchWithTimeout } from '@drakkar.software/octospaces-sdk';
+const f = fetchWithTimeout(); // 12 s
+const g = fetchWithTimeout(5_000);
+
+// AFTER
+import { createTimeoutFetch } from '@drakkar.software/starfish-client/fetch';
+const f = createTimeoutFetch(12_000); // explicit — starfish default is 10 s
+const g = createTimeoutFetch(5_000);
+```
+
+### Migration for pull-cache users
+
+```ts
+// BEFORE
+import { pullCache } from '@drakkar.software/octospaces-sdk';
+const cache = pullCache(); // uses configured KV adapter internally
+
+// AFTER
+import { createKvPullCache } from '@drakkar.software/starfish-client';
+const kv = { getItem: adapter.get, setItem: adapter.set, removeItem: adapter.remove };
+const cache = createKvPullCache(kv, { prefix: 'octospaces.pullcache.', maxAgeMs: 30*24*60*60*1000 });
+```
+
+## 0.23.0 (2026-06-22) — BREAKING
+
+### Summary
+
+Bumped `@drakkar.software/starfish-*` to `3.0.0-alpha.31`, which ships
+`@drakkar.software/starfish-spaces` — a comprehensive spaces domain implementation.
+The entire octospaces-sdk spaces domain is **removed** and delegated to that package.
+octospaces-sdk survives as a slim residual layer of unique peripherals.
+
+`apps/server` is also updated: `makeSpaceRoleEnricher` → `createSpacesRoleEnricher`;
+`projectObjIndexPublic` / the old space-role.ts → `createSpacesDirectoryServerPlugin`.
+
+### Removed (breaking)
+
+All of the following are now provided by `@drakkar.software/starfish-spaces`. Apps
+importing these symbols must update their import source.
+
+**Spaces domain (import from `@drakkar.software/starfish-spaces`):**
+`createSpace`, `createNode`, `seedSpaceObjectIndex`, `updateObjectIndex`,
+`inviteToSpace`, `inviteToNode`, `acceptSpaceInvite`, `acceptNodeInvite`,
+`createSpaceInviteLink`, `createNodeInviteLink`, `joinSpaceByLink`, `joinNodeByLink`,
+`decodeSpaceInviteLink`, `decodeNodeInviteLink`, `encodeSpaceInviteLink`, `encodeNodeInviteLink`,
+`addSpaceMember`, `removeSpaceMember`, `revokeSpaceAccess`, `revokeNodeAccess`,
+`getNodeAccess`, `setNodeAccess`, `buildNodeAccess`,
+`submitResourceRequest`, `scanResourceRequests`, `acceptResourceRequest`,
+`acceptResourceGrant`, `scanResourceGrants`, `rejectResourceRequest`, `scanResourceRejects`,
+`encodeIdentityLink`, `decodeIdentityLink`, `verifyIdentityLinkBinding`, `myIdentityLink`,
+`sealToSelf`, `unsealFromSelf`, `sealToRecipient`, `unsealFromRecipient`,
+`pullInbox`, `readProfile`, `readProfiles`, `writeProfile`, `ensurePseudo`, `ensureProfileKeys`,
+`readSpaces`, `writeSpaces`, `addJoinedSpace`, `addJoinedSpaceWithCap`, `removeJoinedSpace`,
+`readObjectDirectory`, `readObjectTree`, `readSpaceAccess`, `writeSpaceAccess`,
+`hydrateSpaceAccessStore`, `serializeSpaceInviteStore`, `hydrateSpaceInviteStore`,
+`serializeNodeInviteStore`, `hydrateNodeInviteStore`,
+`serializeReqIdOwnerStore`, `hydrateReqIdOwnerStore`,
+`clearSpaceAccessStore`, `clearSpaceInviteStore`, `clearNodeInviteStore`, `clearReqIdOwnerStore`,
+`makeClient`, `makeAnonClient` (→ `makeSpaceClient`, `makeAnonSpaceClient`),
+`casMutateWithRetry` (→ `runCas`).
+
+**Session builders (import from `@drakkar.software/starfish-spaces`):**
+`buildSession`, `buildLinkedSession`, `deriveSession`,
+`generateSeedWords`, `isValidSeed`, `fingerprintFromUserId`, `ownerTrustedAdders`.
+
+**Types (import from `@drakkar.software/starfish-spaces`):**
+`Session`, `LinkedIdentity`, `Space`, `DeviceKeys`, `PublicProfile`, `PublicObjectDirEntry`
+(→ `ObjectDirectoryEntry`), `SpaceInviteLinkToken`, `NodeInviteLinkToken`.
+
+**Registry:**
+`updateMutesDoc`, `updateReadsDoc` — use `updateSpacesExtraField(client, session, 'mutes'|'reads', mutator)` from starfish-spaces. Reads: `readSpaces(client, session).extra.mutes` / `.extra.reads`.
+
+### Kept (residual surface — no import change for these)
+
+`configureOctoSpaces`, `configureKv`, `kvGet`, `kvSet`, `kvRemove`,
+`getSyncBase`, `getSyncNamespace`, `getSharedSpacesNamespace`, `setSharedSpacesNamespace`,
+`rootIdentityOf`, `sessionFromPersisted`, `activeAccountOf`,
+`startDevicePairing`, `completeDevicePairing`, `PAIR_PREFIX`,
+`cacheProfile`, `loadCachedProfile`,
+`appendToInbox`, `AppendHttpError`, `buildSignedEventsRequest`, `subscribeChanges`, `parseSseFrames`,
+`buildTree`, `addObject`, `patchObject`, `reparentObject`, `reorderObjects`, `archiveObject`,
+`breadcrumbs`, `ancestors`, `subtreeIds`, `nextOrder`,
+`uploadObjectBlob`, `loadObjectBlob`, `createObjectBlobStore`, all blob types/constants,
+`previewInvite`, `SpaceInviteLinkToken`, `NodeInviteLinkToken`,
+`createMutesStore`, `isMuteActive`, `createReadsStore`,
+`starfishBase64`, `bytesToHex`, `userIdFromEdPub`, all path/scope helpers,
+format/search/live-sync-bus utilities.
+
+Note: `fetchWithTimeout`, `pullCache`, `postAnonymousAppend`, and the `./wal` subpath were
+subsequently removed in **0.24.0** — see that entry for replacements.
+
+### `configureKv` bridge (no app change needed)
+
+`configureKv(adapter)` now also calls starfish-spaces' `configureSpaces` and
+`configureSpaceAccessStore` internally. Apps that call `configureKv` once at boot
+automatically wire starfish's KV persistence — no additional starfish config call
+is needed. The host `KvAdapter` shape (`{get,set,remove}`) is unchanged; the bridge
+translates it to starfish's `{getItem,setItem,removeItem}` internally.
+`configureSpaceAccessStore` is pinned to `kvKeyPrefix: 'octospaces.spaceaccess.'` to
+preserve existing persisted access caches across the upgrade.
+
+### Migration guide for app developers
+
+#### 1. Add the starfish-spaces dependency
+```
+pnpm add @drakkar.software/starfish-spaces@3.0.0-alpha.31
+```
+
+#### 2. Update import sources
+Replace `from '@drakkar.software/octospaces-sdk'` with `from '@drakkar.software/starfish-spaces'`
+for all symbols listed under **Removed** above.
+
+#### 3. Update session builders
+```ts
+// BEFORE
+import { buildSession, deriveSession, buildLinkedSession } from '@drakkar.software/octospaces-sdk';
+buildSession(derived, name)
+deriveSession(seed, name)
+buildLinkedSession({ userId, keys, capCert }, name)
+
+// AFTER (connection config moves from global to per-call)
+import { buildSession, deriveSession, buildLinkedSession } from '@drakkar.software/starfish-spaces';
+buildSession({ userId, keys, name?, clientOpts: { baseUrl, namespace }, sharedNamespace? })
+deriveSession(seed, clientOpts, { name?, sharedNamespace? })
+buildLinkedSession({ identity: { userId, keys, capCert }, clientOpts, name?, sharedNamespace? })
+```
+`clientOpts.baseUrl` = `getSyncBase()`, `clientOpts.namespace` = `getSyncNamespace() ?? ''`.
+The residual `sessionFromPersisted(p: PersistedSession)` helper builds these for you.
+
+#### 4. `Space` type is leaner
+`Space = { id, name, members }` — `short`, `image`, `unread` are gone.
+Compute a monogram (`short`) in your view layer; carry image/unread in your own view model.
+
+#### 5. Public object directory
+`readObjectDirectory(shard?)` (no session, anon) is removed. Call
+`readObjectDirectory(session, shard?)` from starfish-spaces (requires a session).
+An anon/session-less variant is pending upstream in starfish-spaces.
+
+#### 6. Wire continuity
+Keep the starfish-spaces defaults for `inboxAadNamespace`, `userIdFromEdPub`, `kvKeyPrefix`,
+`spaceIdPrefix`, `nodeIdPrefix` — they match the octospaces wire format exactly.
+Do NOT override them unless you know what you are doing.
+
+## 0.22.0 (2026-06-22)
+
+### Added
+
+- **`scanResourceRejects`** (`spaces/resource-requests.ts`): requester-side rejection
+  reader. Call after `submitResourceRequest` to detect explicit owner rejections.
+  Accepted rejections are burned (reqId cleared) so they don't resurface.
+
 ## 0.21.0 (2026-06-22)
 
 ### Added
