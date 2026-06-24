@@ -12,8 +12,12 @@
  *
  * `@noble/hashes/argon2` is already a dependency and produces byte-identical
  * output for our locked params (verified against hash-wasm), so existing
- * identities/sealed envelopes still recover. We call the async variant so the
- * memory-hard derivation yields to the scheduler instead of freezing the UI.
+ * identities/sealed envelopes still recover. We call the async variant with
+ * `asyncTick: 50` and a patched macrotask nextTick (see
+ * patches/@noble__hashes@2.2.0.patch in the consumer workspace) so the
+ * derivation yields real macrotasks every ~50 ms, letting React / Reanimated
+ * repaint the progress bar between block batches. noble's original nextTick was
+ * a microtask no-op that never unblocked the paint loop on RN/Hermes.
  *
  * The SDK calls `argon2id` with no progress callback, so we surface progress
  * out-of-band via `subscribeArgon2Progress` (a framework-agnostic emitter; a
@@ -61,6 +65,9 @@ export async function argon2id(options: Argon2idOptions): Promise<Uint8Array> {
       m: options.memorySize,
       p: options.parallelism,
       dkLen: options.hashLength,
+      // Yield every 50 ms (~20 fps) — enough for a smooth progress bar without
+      // thousands of setTimeout roundtrips over the 30-120 s derivation.
+      asyncTick: 50,
       onProgress: (frac) => emit(Math.max(0, Math.min(1, frac))),
     });
   } finally {

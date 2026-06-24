@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@noble/hashes@2.2.0':
+    hash: 9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520
+    path: patches/@noble__hashes@2.2.0.patch
+
 importers:
 
   .: {}
@@ -89,7 +94,7 @@ importers:
         version: 2.2.0
       '@noble/hashes':
         specifier: ^2.2.0
-        version: 2.2.0
+        version: 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       '@scure/bip39':
         specifier: ^2.0.0
         version: 2.2.0
@@ -4163,7 +4168,7 @@ snapshots:
       '@drakkar.software/starfish-keyring': 3.0.0-alpha.31(react@19.2.7)
       '@drakkar.software/starfish-protocol': 3.0.0-alpha.31
       '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       hash-wasm: 4.12.0
     transitivePeerDependencies:
       - '@legendapp/state'
@@ -4193,19 +4198,19 @@ snapshots:
   '@drakkar.software/starfish-protocol@3.0.0-alpha.30':
     dependencies:
       '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       hash-wasm: 4.12.0
 
   '@drakkar.software/starfish-protocol@3.0.0-alpha.31':
     dependencies:
       '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       hash-wasm: 4.12.0
 
   '@drakkar.software/starfish-protocol@3.0.0-alpha.32':
     dependencies:
       '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       hash-wasm: 4.12.0
 
   '@drakkar.software/starfish-queuing@3.0.0-alpha.31':
@@ -4216,7 +4221,7 @@ snapshots:
     dependencies:
       '@drakkar.software/starfish-protocol': 3.0.0-alpha.31
       '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       hono: 4.12.26
 
   '@drakkar.software/starfish-sharing@3.0.0-alpha.31(react@19.2.7)':
@@ -4239,7 +4244,7 @@ snapshots:
       '@drakkar.software/starfish-server': 3.0.0-alpha.31
       '@drakkar.software/starfish-sharing': 3.0.0-alpha.31(react@19.2.7)
       '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       '@scure/bip39': 1.6.0
     transitivePeerDependencies:
       - '@aws-sdk/client-s3'
@@ -4258,7 +4263,7 @@ snapshots:
       '@drakkar.software/starfish-server': 3.0.0-alpha.31
       '@drakkar.software/starfish-sharing': 3.0.0-alpha.31(react@19.2.7)
       '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       '@scure/bip39': 1.6.0
     transitivePeerDependencies:
       - '@aws-sdk/client-s3'
@@ -4848,11 +4853,11 @@ snapshots:
 
   '@noble/curves@2.2.0':
     dependencies:
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
 
   '@noble/hashes@1.8.0': {}
 
-  '@noble/hashes@2.2.0': {}
+  '@noble/hashes@2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)': {}
 
   '@pkgjs/parseargs@0.11.0':
     optional: true
@@ -5076,7 +5081,7 @@ snapshots:
 
   '@scure/bip39@2.2.0':
     dependencies:
-      '@noble/hashes': 2.2.0
+      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       '@scure/base': 2.2.0
 
   '@sinclair/typebox@0.27.10': {}

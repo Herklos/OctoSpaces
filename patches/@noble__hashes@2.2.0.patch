@@ -1,0 +1,27 @@
+diff --git a/utils.js b/utils.js
+index b4c71b6bf711a9fdc77686242def3956ef1556fb..6490ad3c96709e989480afc5d0165286d88ba807 100644
+--- a/utils.js
++++ b/utils.js
+@@ -384,16 +384,17 @@ export function hexToBytes(hex) {
+     return array;
+ }
+ /**
+- * There is no setImmediate in browser and setTimeout is slow.
+- * This yields to the Promise/microtask scheduler queue, not to timers or the
+- * full macrotask event loop.
++ * Yields a real macrotask via setTimeout(0) so the UI thread (React state
++ * updates, Reanimated repaints) can run between argon2 block batches.
++ * The original noble implementation was a no-op microtask yield, which never
++ * unblocked the paint loop on RN/Hermes.
+  * @example
+- * Yield to the next scheduler tick.
++ * Yield to the macrotask queue.
+  * ```ts
+  * await nextTick();
+  * ```
+  */
+-export const nextTick = async () => { };
++export const nextTick = () => new Promise((resolve) => setTimeout(resolve, 0));
+ /**
+  * Returns control to the Promise/microtask scheduler every `tick`
+  * milliseconds to avoid blocking long loops.

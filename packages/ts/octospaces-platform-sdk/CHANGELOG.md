@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 (2026-06-24)
+
+### Fixed
+
+- **Argon2id progress bar now moves on React Native / Hermes.** `@noble/hashes`'
+  `nextTick` was a microtask no-op that never unblocked the React / Reanimated paint
+  loop during derivation — `subscribeArgon2Progress` listeners received updates but
+  the UI could not repaint until the JS thread was fully released. Fixed via a pnpm
+  patch that replaces `nextTick` with a real `setTimeout(0)` macrotask yield.
+  `asyncTick` on the `argon2idAsync` call is also raised to 50 ms (~20 fps) to
+  cap the number of `setTimeout` roundtrips over a 30–120 s derivation.
+
 ## 0.1.0 (2026-06-16)
 
 Initial release — extracted from `OctoChat` and `OctoVault` app-SDKs.

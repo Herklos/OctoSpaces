@@ -1,8 +1,8 @@
 packages:
-  - 'apps/*'
-  - 'packages/ts/*'
-
+  - apps/*
+  - packages/ts/*
 nodeLinker: hoisted
-
 onlyBuiltDependencies:
   - esbuild
+patchedDependencies:
+  '@noble/hashes@2.2.0': patches/@noble__hashes@2.2.0.patch
