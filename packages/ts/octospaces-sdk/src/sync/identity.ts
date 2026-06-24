@@ -23,12 +23,24 @@ import {
 } from '@drakkar.software/starfish-spaces';
 import type { PersistedSession } from '@drakkar.software/starfish-spaces';
 import type { Session } from '@drakkar.software/starfish-spaces';
-import { getSyncBase, getSyncNamespace, getSharedSpacesNamespace } from '../core/config.js';
+import {
+  getSyncBase,
+  getSyncNamespace,
+  getSharedSpacesNamespace,
+  getCache,
+  getCacheMaxAgeMs,
+  getCacheFallbackStatuses,
+  getOnServerReachable,
+} from '../core/config.js';
 
 function makeClientOpts() {
   return {
     baseUrl: getSyncBase(),
     namespace: getSyncNamespace() ?? '',
+    cache: getCache(),
+    cacheMaxAgeMs: getCacheMaxAgeMs(),
+    cacheFallbackStatuses: getCacheFallbackStatuses(),
+    onRevalidated: getOnServerReachable(),
   };
 }
 

@@ -1,5 +1,25 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.27.0 (2026-06-24)
+
+### Added — stale-while-revalidate pull-cache passthrough
+
+`OctoSpacesConfig` gains three optional fields: `cache` (`PullCache` from
+`@drakkar.software/starfish-client`), `cacheMaxAgeMs`, and `cacheFallbackStatuses`. When
+set, every session client constructed by `sessionFromPersisted` — the restore-on-launch
+path — is built with the provided pull-cache so `_spaces` and object-index docs paint
+instantly from kv and revalidate in the background (stale-while-revalidate, starfish
+alpha.35+).
+
+The previously-dead `onServerReachable` config field is now wired: it is forwarded to
+`StarfishClient`'s `onRevalidated` callback through `makeClientOpts`, so when a
+background revalidation succeeds the host app's reachability signal fires.
+
+**New exports:** `getCache`, `getCacheMaxAgeMs`, `getCacheFallbackStatuses`,
+`getOnServerReachable` are now exported from the package root.
+
+No breaking changes. Consumers that do not pass `cache` retain existing behaviour.
+
 ## 0.25.0 (2026-06-22) — BREAKING
 
 ### Summary

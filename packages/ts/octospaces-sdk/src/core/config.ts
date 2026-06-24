@@ -8,6 +8,8 @@
  * Getters throw a clear error if called before configuration so a misconfigured
  * host fails fast rather than silently signing the wrong path.
  */
+import type { PullCache } from '@drakkar.software/starfish-client';
+
 export interface OctoSpacesConfig {
   /** Starfish sync server base URL (e.g. `http://localhost:8787`). */
   syncBase: string;
@@ -31,6 +33,23 @@ export interface OctoSpacesConfig {
    * is reachable again so any stale views re-pull and recover.
    */
   onServerReachable?: () => void;
+  /**
+   * Stale-while-revalidate pull cache. When provided, every `client.pull()` call
+   * returns a cached response immediately and revalidates in the background.
+   * Pass a `createKvPullCache(...)` instance from `@drakkar.software/starfish-client`.
+   */
+  cache?: PullCache;
+  /**
+   * Maximum age (ms) of a cache entry before it is considered stale and re-fetched
+   * even outside of a stale-while-revalidate context. Omit for entries that never
+   * expire (recommended for most document pulls).
+   */
+  cacheMaxAgeMs?: number;
+  /**
+   * HTTP status codes that trigger a stale cache-fallback when the network request
+   * fails. Typical set: `[429, 500, 502, 503, 504]`.
+   */
+  cacheFallbackStatuses?: number[];
 }
 
 let cfg: OctoSpacesConfig | null = null;
@@ -80,3 +99,9 @@ export const getSharedSpacesNamespace = (): string | undefined => cfg?.sharedSpa
 export const getEventsUrl = (): string => req().eventsUrl ?? `${getSyncBase()}${getSyncPrefix()}/events`;
 /** Callback to invoke when a background Starfish revalidation succeeds. */
 export const getOnServerReachable = (): (() => void) | undefined => cfg?.onServerReachable;
+/** Stale-while-revalidate pull cache instance (from `createKvPullCache`). */
+export const getCache = (): PullCache | undefined => cfg?.cache;
+/** Maximum age (ms) before a cache entry is considered stale. */
+export const getCacheMaxAgeMs = (): number | undefined => cfg?.cacheMaxAgeMs;
+/** HTTP status codes that trigger a stale cache-fallback. */
+export const getCacheFallbackStatuses = (): number[] | undefined => cfg?.cacheFallbackStatuses;

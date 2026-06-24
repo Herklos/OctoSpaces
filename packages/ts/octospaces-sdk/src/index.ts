@@ -19,7 +19,7 @@
  */
 
 // ── Connection config (still needed for residuals + identity bridge) ──────────
-export { configureOctoSpaces, getSyncBase, getSyncNamespace, getSyncPrefix, getSharedSpacesNamespace, getEventsUrl } from './core/config.js';
+export { configureOctoSpaces, getSyncBase, getSyncNamespace, getSyncPrefix, getSharedSpacesNamespace, getEventsUrl, getOnServerReachable, getCache, getCacheMaxAgeMs, getCacheFallbackStatuses } from './core/config.js';
 export type { OctoSpacesConfig } from './core/config.js';
 
 // ── KV adapter (bridges into starfish-spaces on configureKv) ─────────────────
