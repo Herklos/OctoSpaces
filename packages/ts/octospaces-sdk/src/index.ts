@@ -113,6 +113,15 @@ export {
   objectBlobName,
   objectBlobPull,
   objectBlobPush,
+  objectParquetName,
+  objectParquetPull,
+  objectParquetPush,
+  objectParquetPubName,
+  objectParquetPubPull,
+  objectParquetPubPush,
+  objectParquetEncName,
+  objectParquetEncPull,
+  objectParquetEncPush,
   nodeObjectBlobName,
   nodeObjectBlobPull,
   nodeObjectBlobPush,
@@ -132,6 +141,9 @@ export {
 // ── Object blobs (sealed files keyed by space) ────────────────────────────────
 export type { ByteSealer, ObjectBlobRef, ObjectBlobStore } from './sync/object-blobs.js';
 export { attachmentKind, MAX_OBJECT_BLOB_BYTES, FileTooLargeError, uploadObjectBlob, loadObjectBlob, createObjectBlobStore } from './sync/object-blobs.js';
+
+// ── E2EE sealed Parquet datasets ──────────────────────────────────────────────
+export { MAX_OBJECT_PARQUET_ENC_BYTES, uploadObjectParquetEnc, loadObjectParquetEnc } from './sync/object-parquet.js';
 
 // ── Identity persistence bridge ───────────────────────────────────────────────
 // Session builders, seed helpers, fingerprint, ownerTrustedAdders →

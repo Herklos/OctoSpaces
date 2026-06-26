@@ -1,4 +1,5 @@
 import type { SyncConfig } from "@drakkar.software/starfish-server";
+import { createParquetCollection, createSealedParquetCollection } from "@drakkar.software/starfish-server";
 
 /**
  * Starfish collection layout for OctoSpaces — the unified generic backend.
@@ -25,8 +26,11 @@ import type { SyncConfig } from "@drakkar.software/starfish-server";
  *   objlog     — WAL/CRDT append-only op-log (delegated E2EE)
  *   objsnap    — sibling LWW snapshot for fast cold-start
  *   objdoc     — LWW merge-doc (delegated E2EE)
- *   objblob    — sealed raw binary blobs (client-sealed before upload)
- *   typeindex  — per-space custom type registry (delegated E2EE)
+ *   objblob      — sealed raw binary blobs (client-sealed before upload)
+ *   typeindex    — per-space custom type registry (delegated E2EE)
+ *   objparquet    — private columnar Parquet datasets (plaintext; space:member read+write)
+ *   objparquetpub — public-read columnar Parquet datasets (plaintext; member-write, world-read)
+ *   objparquetenc — private E2EE columnar Parquet (client-sealed; space:member; not DuckDB-over-S3)
  *
  * New generic primitives:
  *   objpublog  — public-read + member-write append-log (public streams)
@@ -190,6 +194,40 @@ export const config: SyncConfig = {
       maxBodyBytes: 11_534_336,
       allowedMimeTypes: ["application/octet-stream"],
     },
+    // PRIVATE PARQUET DATASETS (space:member gated): columnar Apache Parquet files; plaintext on
+    // storage so DuckDB can read them directly. Both read and write are restricted to space members.
+    // Not E2EE — DuckDB cannot read ciphertext. Last path segment is {objectId} → auto-listable
+    // for DuckDB prefix glob via read_parquet('s3://…/*.parquet'). Max 64 MiB per object.
+    // Keep in sync with objparquet in Infra/sync/server/drakkar_sync/apps/octospaces/collections.py.
+    createParquetCollection({
+      name: "objparquet",
+      storagePath: "spaces/{spaceId}/objects/parquet/{objectId}",
+      read: ["space:member"],
+      write: ["space:member"],
+      maxBodyBytes: 67_108_864,
+    }),
+    // PUBLIC PARQUET DATASETS (world-readable): columnar Apache Parquet files; read = public so
+    // DuckDB can query s3://…/*.parquet directly, bypassing the server. Write is space:member only.
+    // Use only for intentionally-public datasets. Not E2EE. Auto-listable via {objectId} param.
+    // Keep in sync with objparquetpub in Infra/sync/server/drakkar_sync/apps/octospaces/collections.py.
+    createParquetCollection({
+      name: "objparquetpub",
+      storagePath: "spaces/{spaceId}/objects/parquet-pub/{objectId}",
+      read: "public",
+      write: ["space:member"],
+      maxBodyBytes: 67_108_864,
+    }),
+    // E2EE SEALED PARQUET DATASETS (space:member gated): client AES-256-GCM-seals the parquet bytes
+    // under the space keyring CEK; server stores opaque ciphertext only. NOT DuckDB-over-S3 queryable.
+    // Members pull → unseal → query locally (DuckDB-WASM). Storage path is the seal AAD.
+    // Auto-listable via {objectId} param. Keep in sync with Infra/sync/server/drakkar_sync/apps/octospaces/collections.py.
+    createSealedParquetCollection({
+      name: "objparquetenc",
+      storagePath: "spaces/{spaceId}/objects/parquet-enc/{objectId}",
+      read: ["space:member"],
+      write: ["space:member"],
+      maxBodyBytes: 67_108_864,
+    }),
     // PER-NODE sealed blob (invite-node attachments, cap-gated): binary blob under the node prefix so
     // the requester's existing per-node stream cap (objinvlog) authorizes it via synthesized
     // cap:write:objinvlog role + path-glob containment. Dual-gated: space:member OR cap:*:objinvlog.

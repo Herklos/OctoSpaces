@@ -16,26 +16,26 @@ importers:
   apps/server:
     dependencies:
       '@drakkar.software/starfish-identities':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31(react@19.2.7)
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43(react@19.2.7)
       '@drakkar.software/starfish-projection':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43
       '@drakkar.software/starfish-protocol':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43
       '@drakkar.software/starfish-queuing':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43
       '@drakkar.software/starfish-server':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43
       '@drakkar.software/starfish-sharing':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31(react@19.2.7)
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43(react@19.2.7)
       '@drakkar.software/starfish-spaces':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31(react@19.2.7)
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43(react@19.2.7)
       '@hono/node-server':
         specifier: ^1.13.0
         version: 1.19.14(hono@4.12.26)
@@ -63,11 +63,11 @@ importers:
         version: link:../octospaces-sdk
     devDependencies:
       '@drakkar.software/starfish-identities':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31(react@19.2.7)
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43(react@19.2.7)
       '@drakkar.software/starfish-protocol':
-        specifier: 3.0.0-alpha.32
-        version: 3.0.0-alpha.32
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43
       '@react-native-async-storage/async-storage':
         specifier: 2.2.0
         version: 2.2.0(react-native@0.86.0(@babel/core@7.29.7)(react@19.2.7))
@@ -103,26 +103,26 @@ importers:
         version: 4.12.0
     devDependencies:
       '@drakkar.software/starfish-client':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31(react@19.2.7)
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43(react@19.2.7)
       '@drakkar.software/starfish-identities':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31(react@19.2.7)
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43(react@19.2.7)
       '@drakkar.software/starfish-keyring':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31(react@19.2.7)
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43(react@19.2.7)
       '@drakkar.software/starfish-protocol':
-        specifier: 3.0.0-alpha.32
-        version: 3.0.0-alpha.32
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43
       '@drakkar.software/starfish-sharing':
-        specifier: 3.0.0-alpha.31
-        version: 3.0.0-alpha.31(react@19.2.7)
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43(react@19.2.7)
       '@drakkar.software/starfish-spaces':
-        specifier: 3.0.0-alpha.32
-        version: 3.0.0-alpha.32(react@19.2.7)
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43(react@19.2.7)
       '@drakkar.software/starfish-wal':
-        specifier: 3.0.0-alpha.30
-        version: 3.0.0-alpha.30
+        specifier: 3.0.0-alpha.43
+        version: 3.0.0-alpha.43
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.0
@@ -575,8 +575,8 @@ packages:
     resolution: {integrity: sha512-Vd/9EVDiu6PPJt9yAh6roZP6El1xHrdvIVGjyBsHR0RYwNHgL7FJPyIIW4fANJNG6FtyZfvlRPpFI4ZM/lubvw==}
     engines: {node: '>=18'}
 
-  '@drakkar.software/starfish-client@3.0.0-alpha.31':
-    resolution: {integrity: sha512-EzNx107TB7rbsGjtuKL/j+WL63IY/VNQlxZDg5d1Y4yEwLZOXY1WunNXFZfaQC0fw8bRh2hqMz/UD4NGcZv7zw==}
+  '@drakkar.software/starfish-client@3.0.0-alpha.43':
+    resolution: {integrity: sha512-u6jF8wNGaA8pjAi3pG5F+vr6Z7+FI2E7WILr1eB0czJSBUCJ44Zig/o7FtbcMldJjs1oN0nbG0wgRByBe1Gb+w==}
     peerDependencies:
       '@legendapp/state': '>=2.0.0'
       immer: '>=9.0.0'
@@ -592,29 +592,23 @@ packages:
       zustand:
         optional: true
 
-  '@drakkar.software/starfish-identities@3.0.0-alpha.31':
-    resolution: {integrity: sha512-rwiZUD0v1VPXGB5fCiBIuQ8onijIe6V5JhNIC3iX6iF5fKGMo9K50ZKrqx7s3HYbot4CP1rT8XYoOjyMJlhKZw==}
+  '@drakkar.software/starfish-identities@3.0.0-alpha.43':
+    resolution: {integrity: sha512-eljEMozXW+zHWdRxsaQ02ATGiI/omxJ4NhpxqG935RcJvcjjVw7yneiH11EWEx7k5c4Koul2jIRO6ZyYhLjhDA==}
 
-  '@drakkar.software/starfish-keyring@3.0.0-alpha.31':
-    resolution: {integrity: sha512-oLE0HHYBGK81VDXvc42S6ps2rw/tuUlqRRAebY22Q7uFL0YAagqnYf7Yj50KMup3mNPogwSKuX/g0vQeUBZ8JQ==}
+  '@drakkar.software/starfish-keyring@3.0.0-alpha.43':
+    resolution: {integrity: sha512-cq3rriSCbDU4Uz0Lo/aKl2dDfA8dwVrib+SAK/4wVNVG3bzhLKR0/jVzMoPtyJkvaSJLJn0SUYjrUH0Lu6FpEQ==}
 
-  '@drakkar.software/starfish-projection@3.0.0-alpha.31':
-    resolution: {integrity: sha512-C9PLjhBKtR+VuGykMUmCQdf2XVWOh6mM6XAJVlFYsk8Q2asFObKrpD2bwe5yLrJHKzGnTYQsx/b0b1dSv9mnuQ==}
+  '@drakkar.software/starfish-projection@3.0.0-alpha.43':
+    resolution: {integrity: sha512-OV2/ximXG5NGDUQuuHcpp9zsGxQWG5Cc4sMJs4Ti4F8glkF69Zj8V35Z6W6cY2Pzanwe75AiZ5q2JVcfinAFVQ==}
 
-  '@drakkar.software/starfish-protocol@3.0.0-alpha.30':
-    resolution: {integrity: sha512-KIKTpF177fuHF/FjVVOFtQzO1iGuHL/cSgXGxRSKDdhfFV3jz7jN3DlacNL0S/sNzdevDWAveuhVXpdr0D6saw==}
+  '@drakkar.software/starfish-protocol@3.0.0-alpha.43':
+    resolution: {integrity: sha512-52+nvSoaIf3ai2WZh25cV8l2agJCo7nafy8EfOFkCpgTMxXst1lYZtgx6MbUt42ASfPwXL43CEf7qiam5+lckQ==}
 
-  '@drakkar.software/starfish-protocol@3.0.0-alpha.31':
-    resolution: {integrity: sha512-pOsCPIxSwsyuoYQ7z51PkL/s2tXg0EK7pLlYizHmCmnYf44yt/PZoAbZ6BCeaokRHMcP+ZNjwcFqc/+brcGvAw==}
+  '@drakkar.software/starfish-queuing@3.0.0-alpha.43':
+    resolution: {integrity: sha512-ee1V/i2z6H++TYgdDF+qAyanGV+R3FVo6mgn1tMr6LdkvWTodWCU50g6OvG8HZcw4Sq1Q0ZTWFtV/kaL4GriHg==}
 
-  '@drakkar.software/starfish-protocol@3.0.0-alpha.32':
-    resolution: {integrity: sha512-zA2PlWHINTTAbya6d45elj2VNcDjqnkzWrP9IziOe49tGKP4fIJ73edfdcPeyHt2h+/tMuFY4UiNBjbz1VJEFQ==}
-
-  '@drakkar.software/starfish-queuing@3.0.0-alpha.31':
-    resolution: {integrity: sha512-KgCwy71x0uPP2wr4jFf/xnmNuanOFjqdpr/ZMCu1DJ3Hq6g33R42pOGG0MycAFX0L5uBPn4OGEz4w5KPWbnjXQ==}
-
-  '@drakkar.software/starfish-server@3.0.0-alpha.31':
-    resolution: {integrity: sha512-29mgyMou/GOWgxtaxdZ9K15LTTTxBuKF4bFXvexr4iqipWAUQrYTrYbm6T5UFDp/Bq+alsVaAMJEVKybbjxX6w==}
+  '@drakkar.software/starfish-server@3.0.0-alpha.43':
+    resolution: {integrity: sha512-9qQ6FwC63S1loBlCiEL+g4IfsZNHtq/yQL015qlAwJl1bx0yBGoCe++SIK9dff1pLskmMMY8weUteI7wpkXSHw==}
     peerDependencies:
       '@aws-sdk/client-s3': '>=3.0.0'
       ajv: '>=8.0.0'
@@ -624,17 +618,14 @@ packages:
       ajv:
         optional: true
 
-  '@drakkar.software/starfish-sharing@3.0.0-alpha.31':
-    resolution: {integrity: sha512-FGIxbBThCfhUmmFarWV6QWA64CGoVPVQIyqitK7KLusBpj9YdhTqUQJ/w62lpJFiRzMg6dQ8hOfHjW4jujpEug==}
+  '@drakkar.software/starfish-sharing@3.0.0-alpha.43':
+    resolution: {integrity: sha512-/RFduxGZQk4HBUabnfuqBgCDeeJM6soo/R23o+5srMrmDEAln7YQbL/gr0QyUxEPOcgd+aflJ6oJQMu5B1H9ig==}
 
-  '@drakkar.software/starfish-spaces@3.0.0-alpha.31':
-    resolution: {integrity: sha512-5wr7Ba6iZCeYQ6iQVa9Crcq/KvG6+/U/nwrrs38dw1cqQcn6b1i9Qevz2VmI39VXXBy6sA98OctCw+h1B7623w==}
+  '@drakkar.software/starfish-spaces@3.0.0-alpha.43':
+    resolution: {integrity: sha512-MXNPNlNqlM7u61xABqVomWBmEZHKrXI7nFEs29jeoZW+0oOFgymq5XtBRGKwYsxCQtTJabGeMILmeCiXZ5p1Gg==}
 
-  '@drakkar.software/starfish-spaces@3.0.0-alpha.32':
-    resolution: {integrity: sha512-MUZiawpGt4T7z49KC3CqEVyCv9mBuw4FepuC9rRrjtrrAX/+bcZNhISDPUAQ8CVFMv9KyA9B4NYrE1zBuaerQQ==}
-
-  '@drakkar.software/starfish-wal@3.0.0-alpha.30':
-    resolution: {integrity: sha512-9ye+5T9qVsrligB7+LUf3uv/Bo7Vki8FBELJzYjQETc3efW/XPgdFviXMQkUbh9mKIH62ZBSpUdTH4bBW81EOA==}
+  '@drakkar.software/starfish-wal@3.0.0-alpha.43':
+    resolution: {integrity: sha512-iTwWahRMnpraHl2AQ6a+7cEFzxsL7fZ02A/PkOsw8qxtFbCrH6l9J0lEqv/KF2Wb3O8gdWPrjhOqWghrl8HWZw==}
 
   '@esbuild/aix-ppc64@0.27.7':
     resolution: {integrity: sha512-EKX3Qwmhz1eMdEJokhALr0YiD0lhQNwDqkPYyPhiSwKrh7/4KRjQc04sZ8db+5DVVnZ1LmbNDI1uAMPEUBnQPg==}
@@ -4156,17 +4147,17 @@ snapshots:
 
   '@csstools/css-tokenizer@3.0.4': {}
 
-  '@drakkar.software/starfish-client@3.0.0-alpha.31(react@19.2.7)':
+  '@drakkar.software/starfish-client@3.0.0-alpha.43(react@19.2.7)':
     dependencies:
-      '@drakkar.software/starfish-protocol': 3.0.0-alpha.31
+      '@drakkar.software/starfish-protocol': 3.0.0-alpha.43
     optionalDependencies:
       react: 19.2.7
 
-  '@drakkar.software/starfish-identities@3.0.0-alpha.31(react@19.2.7)':
+  '@drakkar.software/starfish-identities@3.0.0-alpha.43(react@19.2.7)':
     dependencies:
-      '@drakkar.software/starfish-client': 3.0.0-alpha.31(react@19.2.7)
-      '@drakkar.software/starfish-keyring': 3.0.0-alpha.31(react@19.2.7)
-      '@drakkar.software/starfish-protocol': 3.0.0-alpha.31
+      '@drakkar.software/starfish-client': 3.0.0-alpha.43(react@19.2.7)
+      '@drakkar.software/starfish-keyring': 3.0.0-alpha.43(react@19.2.7)
+      '@drakkar.software/starfish-protocol': 3.0.0-alpha.43
       '@noble/curves': 2.2.0
       '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       hash-wasm: 4.12.0
@@ -4176,10 +4167,10 @@ snapshots:
       - react
       - zustand
 
-  '@drakkar.software/starfish-keyring@3.0.0-alpha.31(react@19.2.7)':
+  '@drakkar.software/starfish-keyring@3.0.0-alpha.43(react@19.2.7)':
     dependencies:
-      '@drakkar.software/starfish-client': 3.0.0-alpha.31(react@19.2.7)
-      '@drakkar.software/starfish-protocol': 3.0.0-alpha.31
+      '@drakkar.software/starfish-client': 3.0.0-alpha.43(react@19.2.7)
+      '@drakkar.software/starfish-protocol': 3.0.0-alpha.43
       '@noble/curves': 2.2.0
     transitivePeerDependencies:
       - '@legendapp/state'
@@ -4187,62 +4178,50 @@ snapshots:
       - react
       - zustand
 
-  '@drakkar.software/starfish-projection@3.0.0-alpha.31':
+  '@drakkar.software/starfish-projection@3.0.0-alpha.43':
     dependencies:
-      '@drakkar.software/starfish-protocol': 3.0.0-alpha.31
-      '@drakkar.software/starfish-server': 3.0.0-alpha.31
+      '@drakkar.software/starfish-protocol': 3.0.0-alpha.43
+      '@drakkar.software/starfish-server': 3.0.0-alpha.43
     transitivePeerDependencies:
       - '@aws-sdk/client-s3'
       - ajv
 
-  '@drakkar.software/starfish-protocol@3.0.0-alpha.30':
+  '@drakkar.software/starfish-protocol@3.0.0-alpha.43':
     dependencies:
       '@noble/curves': 2.2.0
       '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       hash-wasm: 4.12.0
 
-  '@drakkar.software/starfish-protocol@3.0.0-alpha.31':
+  '@drakkar.software/starfish-queuing@3.0.0-alpha.43':
     dependencies:
-      '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
-      hash-wasm: 4.12.0
+      '@drakkar.software/starfish-protocol': 3.0.0-alpha.43
 
-  '@drakkar.software/starfish-protocol@3.0.0-alpha.32':
+  '@drakkar.software/starfish-server@3.0.0-alpha.43':
     dependencies:
-      '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
-      hash-wasm: 4.12.0
-
-  '@drakkar.software/starfish-queuing@3.0.0-alpha.31':
-    dependencies:
-      '@drakkar.software/starfish-protocol': 3.0.0-alpha.31
-
-  '@drakkar.software/starfish-server@3.0.0-alpha.31':
-    dependencies:
-      '@drakkar.software/starfish-protocol': 3.0.0-alpha.31
+      '@drakkar.software/starfish-protocol': 3.0.0-alpha.43
       '@noble/curves': 2.2.0
       '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       hono: 4.12.26
 
-  '@drakkar.software/starfish-sharing@3.0.0-alpha.31(react@19.2.7)':
+  '@drakkar.software/starfish-sharing@3.0.0-alpha.43(react@19.2.7)':
     dependencies:
-      '@drakkar.software/starfish-client': 3.0.0-alpha.31(react@19.2.7)
-      '@drakkar.software/starfish-keyring': 3.0.0-alpha.31(react@19.2.7)
-      '@drakkar.software/starfish-protocol': 3.0.0-alpha.31
+      '@drakkar.software/starfish-client': 3.0.0-alpha.43(react@19.2.7)
+      '@drakkar.software/starfish-keyring': 3.0.0-alpha.43(react@19.2.7)
+      '@drakkar.software/starfish-protocol': 3.0.0-alpha.43
     transitivePeerDependencies:
       - '@legendapp/state'
       - immer
       - react
       - zustand
 
-  '@drakkar.software/starfish-spaces@3.0.0-alpha.31(react@19.2.7)':
+  '@drakkar.software/starfish-spaces@3.0.0-alpha.43(react@19.2.7)':
     dependencies:
-      '@drakkar.software/starfish-client': 3.0.0-alpha.31(react@19.2.7)
-      '@drakkar.software/starfish-identities': 3.0.0-alpha.31(react@19.2.7)
-      '@drakkar.software/starfish-keyring': 3.0.0-alpha.31(react@19.2.7)
-      '@drakkar.software/starfish-protocol': 3.0.0-alpha.31
-      '@drakkar.software/starfish-server': 3.0.0-alpha.31
-      '@drakkar.software/starfish-sharing': 3.0.0-alpha.31(react@19.2.7)
+      '@drakkar.software/starfish-client': 3.0.0-alpha.43(react@19.2.7)
+      '@drakkar.software/starfish-identities': 3.0.0-alpha.43(react@19.2.7)
+      '@drakkar.software/starfish-keyring': 3.0.0-alpha.43(react@19.2.7)
+      '@drakkar.software/starfish-protocol': 3.0.0-alpha.43
+      '@drakkar.software/starfish-server': 3.0.0-alpha.43
+      '@drakkar.software/starfish-sharing': 3.0.0-alpha.43(react@19.2.7)
       '@noble/curves': 2.2.0
       '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
       '@scure/bip39': 1.6.0
@@ -4254,28 +4233,9 @@ snapshots:
       - react
       - zustand
 
-  '@drakkar.software/starfish-spaces@3.0.0-alpha.32(react@19.2.7)':
+  '@drakkar.software/starfish-wal@3.0.0-alpha.43':
     dependencies:
-      '@drakkar.software/starfish-client': 3.0.0-alpha.31(react@19.2.7)
-      '@drakkar.software/starfish-identities': 3.0.0-alpha.31(react@19.2.7)
-      '@drakkar.software/starfish-keyring': 3.0.0-alpha.31(react@19.2.7)
-      '@drakkar.software/starfish-protocol': 3.0.0-alpha.32
-      '@drakkar.software/starfish-server': 3.0.0-alpha.31
-      '@drakkar.software/starfish-sharing': 3.0.0-alpha.31(react@19.2.7)
-      '@noble/curves': 2.2.0
-      '@noble/hashes': 2.2.0(patch_hash=9a9ab44997cfd9871d0b58146eb21a03a3cab91b54d9cebe3118d11f8ea17520)
-      '@scure/bip39': 1.6.0
-    transitivePeerDependencies:
-      - '@aws-sdk/client-s3'
-      - '@legendapp/state'
-      - ajv
-      - immer
-      - react
-      - zustand
-
-  '@drakkar.software/starfish-wal@3.0.0-alpha.30':
-    dependencies:
-      '@drakkar.software/starfish-protocol': 3.0.0-alpha.30
+      '@drakkar.software/starfish-protocol': 3.0.0-alpha.43
 
   '@esbuild/aix-ppc64@0.27.7':
     optional: true

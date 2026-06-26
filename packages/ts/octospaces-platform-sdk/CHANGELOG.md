@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.4 (2026-06-26)
+
+### Changed
+
+Starfish peer and dev dependencies updated to `3.0.0-alpha.43` (was alpha.40).
+No API or behaviour changes.
+
+## 0.3.3 (2026-06-26)
+
+### Changed
+
+Starfish peer and dev dependencies updated to `3.0.0-alpha.40` (`starfish-identities`,
+`starfish-protocol`). No API or behaviour changes.
+
+## 0.3.2 (2026-06-24)
+
+_(interim patch bump — see git history)_
+
 ## 0.3.1 (2026-06-24)
 
 ### Fixed

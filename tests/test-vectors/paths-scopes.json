@@ -13,7 +13,16 @@
     "spaceAccessPush": "/push/spaces/space-abc123/_access",
     "nodeObjectBlobPull": "/pull/spaces/space-abc123/objects/n/node-xyz789/blobs/blob-id-000",
     "nodeObjectBlobPush": "/push/spaces/space-abc123/objects/n/node-xyz789/blobs/blob-id-000",
-    "nodeObjectBlobName": "spaces/space-abc123/objects/n/node-xyz789/blobs/blob-id-000"
+    "nodeObjectBlobName": "spaces/space-abc123/objects/n/node-xyz789/blobs/blob-id-000",
+    "objectParquetName": "spaces/space-abc123/objects/parquet/obj-pq-000",
+    "objectParquetPull": "/pull/spaces/space-abc123/objects/parquet/obj-pq-000",
+    "objectParquetPush": "/push/spaces/space-abc123/objects/parquet/obj-pq-000",
+    "objectParquetPubName": "spaces/space-abc123/objects/parquet-pub/obj-pq-000",
+    "objectParquetPubPull": "/pull/spaces/space-abc123/objects/parquet-pub/obj-pq-000",
+    "objectParquetPubPush": "/push/spaces/space-abc123/objects/parquet-pub/obj-pq-000",
+    "objectParquetEncName": "spaces/space-abc123/objects/parquet-enc/obj-pq-000",
+    "objectParquetEncPull": "/pull/spaces/space-abc123/objects/parquet-enc/obj-pq-000",
+    "objectParquetEncPush": "/push/spaces/space-abc123/objects/parquet-enc/obj-pq-000"
   },
   "blob_inputs": {
     "blobId": "blob-id-000"
@@ -21,7 +30,8 @@
   "path_inputs": {
     "spaceId": "space-abc123",
     "nodeId": "node-xyz789",
-    "userId": "u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    "userId": "u-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "objectId": "obj-pq-000"
   },
   "scopes": {
     "owner": {
@@ -40,6 +50,9 @@
         "typeindex",
         "objpub",
         "objpublog",
+        "objparquet",
+        "objparquetpub",
+        "objparquetenc",
         "objowner",
         "objinvlog"
       ],
@@ -62,7 +75,10 @@
         "objblob",
         "typeindex",
         "objpub",
-        "objpublog"
+        "objpublog",
+        "objparquet",
+        "objparquetpub",
+        "objparquetenc"
       ],
       "paths": [
         "spaces/space-abc123/**"
@@ -82,7 +98,10 @@
         "objblob",
         "typeindex",
         "objpub",
-        "objpublog"
+        "objpublog",
+        "objparquet",
+        "objparquetpub",
+        "objparquetenc"
       ],
       "paths": [
         "spaces/space-abc123/**"
@@ -150,6 +169,9 @@
         "typeindex",
         "objpub",
         "objpublog",
+        "objparquet",
+        "objparquetpub",
+        "objparquetenc",
         "objowner",
         "objinvlog",
         "profile",
@@ -176,6 +198,9 @@
     "objblob",
     "typeindex",
     "objpub",
-    "objpublog"
+    "objpublog",
+    "objparquet",
+    "objparquetpub",
+    "objparquetenc"
   ]
 }

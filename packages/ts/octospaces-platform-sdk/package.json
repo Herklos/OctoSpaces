@@ -1,6 +1,6 @@
 {
   "name": "@drakkar.software/octospaces-platform-sdk",
-  "version": "0.3.2",
+  "version": "0.3.4",
   "description": "Platform adapters for octospaces-sdk — KV, vault storage, passkey, and crypto setup.",
   "type": "module",
   "sideEffects": false,
@@ -27,8 +27,8 @@
     "@drakkar.software/octospaces-sdk": "workspace:*"
   },
   "peerDependencies": {
-    "@drakkar.software/starfish-identities": ">=3.0.0-alpha.31",
-    "@drakkar.software/starfish-protocol": ">=3.0.0-alpha.32",
+    "@drakkar.software/starfish-identities": ">=3.0.0-alpha.43",
+    "@drakkar.software/starfish-protocol": ">=3.0.0-alpha.43",
     "@react-native-async-storage/async-storage": "*",
     "expo-secure-store": "*",
     "react-native-quick-crypto": "*"
@@ -39,8 +39,8 @@
     "react-native-quick-crypto": { "optional": true }
   },
   "devDependencies": {
-    "@drakkar.software/starfish-identities": "3.0.0-alpha.31",
-    "@drakkar.software/starfish-protocol": "3.0.0-alpha.32",
+    "@drakkar.software/starfish-identities": "3.0.0-alpha.43",
+    "@drakkar.software/starfish-protocol": "3.0.0-alpha.43",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@types/node": "^22.0.0",
     "expo-secure-store": "*",

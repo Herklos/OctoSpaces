@@ -13,17 +13,13 @@
  * decrypted-blob cache; use the standalone {@link uploadObjectBlob} / {@link loadObjectBlob}
  * for one-off calls without caching.
  */
-import { getBase64 } from '@drakkar.software/starfish-protocol';
+import { getBase64, randomId } from '@drakkar.software/starfish-protocol';
 import type { StarfishClient } from '@drakkar.software/starfish-client';
+export type { ByteSealer } from '@drakkar.software/starfish-client';
+import type { ByteSealer } from '@drakkar.software/starfish-client';
 
 import { kvGet, kvRemove, kvSet } from '../core/adapters.js';
 import { nodeObjectBlobName, nodeObjectBlobPull, nodeObjectBlobPush, objectBlobName, objectBlobPull, objectBlobPush } from './paths.js';
-import { randomId } from '@drakkar.software/starfish-protocol';
-
-export interface ByteSealer {
-  sealBytes(bytes: Uint8Array, aad?: string): Promise<Uint8Array>;
-  openBytes(blob: Uint8Array, aad?: string): Promise<Uint8Array>;
-}
 
 export function attachmentKind(mime: string): 'image' | 'file' {
   return mime.startsWith('image/') ? 'image' : 'file';
@@ -93,8 +89,8 @@ async function sealAndPush(
   }
   const blobId = randomId();
   const aad = nodeId ? nodeObjectBlobName(spaceId, nodeId, blobId) : objectBlobName(spaceId, blobId);
-  const stored = enc ? await enc.sealBytes(bytes, aad) : bytes;
   const pushPath = nodeId ? nodeObjectBlobPush(spaceId, nodeId, blobId) : objectBlobPush(spaceId, blobId);
+  const stored = enc ? await enc.sealBytes(bytes, aad) : bytes;
   await client.pushBlob(pushPath, stored, 'application/octet-stream');
   return { blobId, stored };
 }

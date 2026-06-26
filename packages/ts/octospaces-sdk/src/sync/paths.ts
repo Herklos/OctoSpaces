@@ -93,6 +93,28 @@ export const { pull: objDocPull, push: objDocPush } = pullPush(objDocName);
 export const objectBlobName = (spaceId: string, blobId: string) => `spaces/${spaceId}/objects/blobs/${blobId}`;
 export const { pull: objectBlobPull, push: objectBlobPush } = pullPush(objectBlobName);
 
+// ── Space parquet datasets ────────────────────────────────────────────────────
+// Two tiers: private (space:member read+write) and public (world-read, member-write).
+// Both are plaintext — DuckDB cannot read ciphertext. Last segment is {objectId} so
+// the server auto-enables `listable`, letting DuckDB glob all objects under the prefix.
+// Keep in sync with `objparquet`/`objparquetpub` in apps/server AND Infra collections.py.
+export const objectParquetName = (spaceId: string, objectId: string) =>
+  `spaces/${spaceId}/objects/parquet/${objectId}`;
+export const { pull: objectParquetPull, push: objectParquetPush } = pullPush(objectParquetName);
+
+export const objectParquetPubName = (spaceId: string, objectId: string) =>
+  `spaces/${spaceId}/objects/parquet-pub/${objectId}`;
+export const { pull: objectParquetPubPull, push: objectParquetPubPush } = pullPush(objectParquetPubName);
+
+// ── E2EE sealed parquet (space:member only — server stores AES-GCM ciphertext) ──
+// Client seals the parquet bytes under the space keyring CEK before upload; the
+// server sees only ciphertext. NOT DuckDB-over-S3 queryable — members pull→unseal
+// first, then query locally (DuckDB-WASM). The storage path is also the seal AAD.
+// Keep in sync with `objparquetenc` in apps/server AND Infra collections.py.
+export const objectParquetEncName = (spaceId: string, objectId: string) =>
+  `spaces/${spaceId}/objects/parquet-enc/${objectId}`;
+export const { pull: objectParquetEncPull, push: objectParquetEncPush } = pullPush(objectParquetEncName);
+
 // ── Per-node sealed blob (invite-node attachments, cap-gated) ─────────────────
 // For `access:'invite'` nodes: the blob sits under the node prefix so the
 // requester's existing per-node stream cap (`nodeStreamScope`, collection
@@ -188,6 +210,7 @@ export const inboxPush = (identity: string, shard?: string) => push(inboxName(id
 // `objpublog` IS included — space members may write to public append-logs.
 export const OBJECT_COLLECTIONS: string[] = [
   'spacekeyring', 'objindex', 'objlog', 'objsnap', 'objdoc', 'objblob', 'typeindex', 'objpub', 'objpublog',
+  'objparquet', 'objparquetpub', 'objparquetenc',
 ];
 
 // OWNER_COLLECTIONS extends member collections with objowner (webhook registry) and

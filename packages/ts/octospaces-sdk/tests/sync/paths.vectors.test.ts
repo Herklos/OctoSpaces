@@ -23,6 +23,15 @@ import {
   nodeObjectBlobName,
   nodeObjectBlobPull,
   nodeObjectBlobPush,
+  objectParquetName,
+  objectParquetPull,
+  objectParquetPush,
+  objectParquetPubName,
+  objectParquetPubPull,
+  objectParquetPubPush,
+  objectParquetEncName,
+  objectParquetEncPull,
+  objectParquetEncPush,
   userIdFromEdPub,
 } from '../../src/sync/paths.js';
 import { slugify } from '@drakkar.software/starfish-protocol';
@@ -54,7 +63,10 @@ describe('slugify (vectors)', () => {
 });
 
 describe('path builders (vectors)', () => {
-  const { paths, path_inputs: inp, blob_inputs: blobInp } = pathsVectors as typeof pathsVectors & { blob_inputs: { blobId: string } };
+  const { paths, path_inputs: inp, blob_inputs: blobInp } = pathsVectors as typeof pathsVectors & {
+    blob_inputs: { blobId: string };
+    path_inputs: { spaceId: string; nodeId: string; userId: string; objectId: string };
+  };
   it('keyringPull', () => expect(keyringPull(inp.spaceId)).toBe(paths.keyringPull));
   it('keyringPush', () => expect(keyringPush(inp.spaceId)).toBe(paths.keyringPush));
   it('objIndexPull', () => expect(objIndexPull(inp.spaceId)).toBe(paths.objIndexPull));
@@ -68,6 +80,15 @@ describe('path builders (vectors)', () => {
   it('nodeObjectBlobName', () => expect(nodeObjectBlobName(inp.spaceId, inp.nodeId, blobInp.blobId)).toBe(paths.nodeObjectBlobName));
   it('nodeObjectBlobPull', () => expect(nodeObjectBlobPull(inp.spaceId, inp.nodeId, blobInp.blobId)).toBe(paths.nodeObjectBlobPull));
   it('nodeObjectBlobPush', () => expect(nodeObjectBlobPush(inp.spaceId, inp.nodeId, blobInp.blobId)).toBe(paths.nodeObjectBlobPush));
+  it('objectParquetName', () => expect(objectParquetName(inp.spaceId, inp.objectId)).toBe(paths.objectParquetName));
+  it('objectParquetPull', () => expect(objectParquetPull(inp.spaceId, inp.objectId)).toBe(paths.objectParquetPull));
+  it('objectParquetPush', () => expect(objectParquetPush(inp.spaceId, inp.objectId)).toBe(paths.objectParquetPush));
+  it('objectParquetPubName', () => expect(objectParquetPubName(inp.spaceId, inp.objectId)).toBe(paths.objectParquetPubName));
+  it('objectParquetPubPull', () => expect(objectParquetPubPull(inp.spaceId, inp.objectId)).toBe(paths.objectParquetPubPull));
+  it('objectParquetPubPush', () => expect(objectParquetPubPush(inp.spaceId, inp.objectId)).toBe(paths.objectParquetPubPush));
+  it('objectParquetEncName', () => expect(objectParquetEncName(inp.spaceId, inp.objectId)).toBe(paths.objectParquetEncName));
+  it('objectParquetEncPull', () => expect(objectParquetEncPull(inp.spaceId, inp.objectId)).toBe(paths.objectParquetEncPull));
+  it('objectParquetEncPush', () => expect(objectParquetEncPush(inp.spaceId, inp.objectId)).toBe(paths.objectParquetEncPush));
 });
 
 describe('cap scopes (vectors)', () => {

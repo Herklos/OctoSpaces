@@ -1,5 +1,68 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.29.0 (2026-06-26)
+
+### Added — E2EE sealed Parquet + starfish alpha.43
+
+**New E2EE Parquet collection (`objparquetenc`):** client AES-256-GCM-seals Parquet bytes
+under the space keyring CEK before upload; the server and S3 store only ciphertext.
+Trade-off: sealed bytes are not valid Parquet files, so DuckDB-over-S3 is not available —
+members pull → unseal → query locally (DuckDB-WASM).
+
+- **`uploadObjectParquetEnc(client, enc, spaceId, bytes, objectId?)`** — seals and uploads
+  a Parquet dataset to `spaces/{spaceId}/objects/parquet-enc/{objectId}`. The storage path
+  is bound into the seal AAD (prevents relocation to a different objectId). Returns the
+  `objectId` to store for later retrieval.
+- **`loadObjectParquetEnc(client, enc, spaceId, objectId)`** — pulls and unseals a dataset,
+  returning the original plaintext Parquet bytes.
+- **`MAX_OBJECT_PARQUET_ENC_BYTES = 67_108_800`** (64 MiB − 32 B AES-GCM headroom).
+  `FileTooLargeError` is thrown before any upload attempt if exceeded.
+
+**New path helpers** (re-exported from the package root):
+`objectParquetEncName`, `objectParquetEncPull`, `objectParquetEncPush`.
+
+**`'objparquetenc'` added to `OBJECT_COLLECTIONS`** — `spaceMemberScope`, `ownerScope`,
+`spaceOwnerScope`, and `linkedDeviceScope` now mint caps covering this collection.
+
+**`ByteSealer`** is now sourced from `@drakkar.software/starfish-client` (via
+`createSealedParquetCollection` upstream). It is still re-exported from this package
+unchanged — no import path change needed.
+
+**Starfish bump:** all starfish dependencies updated to `3.0.0-alpha.43` (was alpha.40).
+alpha.43 introduces `createSealedParquetCollection` (TS + Python) and the
+`sealAndPushBlob`/`pullAndOpenBlob` client seal helpers used by `object-parquet.ts`.
+
+No breaking changes.
+
+## 0.28.0 (2026-06-26)
+
+### Added — space parquet collections + starfish alpha.42 bump
+
+**Two new space-scoped Parquet collections** for storing columnar datasets in a space:
+
+- **`objparquet`** — private Parquet objects (`read`+`write` = `space:member`). Members
+  pull bytes and query locally (e.g. DuckDB-WASM). Path:
+  `spaces/{spaceId}/objects/parquet/{objectId}`. Auto-`listable` for DuckDB prefix glob.
+- **`objparquetpub`** — public-read Parquet objects (`read` = `public`, `write` =
+  `space:member`). World-readable; DuckDB can query `s3://…/*.parquet` directly, bypassing
+  the server. Path: `spaces/{spaceId}/objects/parquet-pub/{objectId}`.
+
+Both use `encryption: "none"` (DuckDB cannot read ciphertext) and `maxBodyBytes: 64 MiB`.
+Both are wired via `createParquetCollection` (starfish alpha.40+).
+
+**New path helpers** (re-exported from the package root):
+`objectParquetName`, `objectParquetPull`, `objectParquetPush`,
+`objectParquetPubName`, `objectParquetPubPull`, `objectParquetPubPush`.
+
+Both collection names added to **`OBJECT_COLLECTIONS`** so `spaceMemberScope`,
+`ownerScope`, `spaceOwnerScope`, and `linkedDeviceScope` mint caps covering them.
+
+**Starfish bump:** all starfish peer and dev dependencies updated to `3.0.0-alpha.40`
+(was alpha.31/alpha.32). This is also the release that introduced native Parquet/DuckDB
+collection support (`createParquetCollection`, `PARQUET_MIME_TYPES`, `duckdbReadParquetSql`).
+
+No breaking changes.
+
 ## 0.27.0 (2026-06-24)
 
 ### Added — stale-while-revalidate pull-cache passthrough
