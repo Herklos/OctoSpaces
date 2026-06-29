@@ -47,11 +47,13 @@ export function createReadsStore(opts: {
   const listeners = new Set<() => void>();
 
   function maxMerge(base: ReadPrefs, over: ReadPrefs): ReadPrefs {
+    const baseNodes = base.nodes ?? {};
+    const overNodes = over.nodes ?? {};
     let nodes: Record<string, number> | null = null;
-    for (const [id, ts] of Object.entries(over.nodes)) {
+    for (const [id, ts] of Object.entries(overNodes)) {
       if (typeof ts !== 'number' || !Number.isFinite(ts)) continue;
-      if (!(id in base.nodes) || ts > base.nodes[id]) {
-        nodes ??= { ...base.nodes };
+      if (!(id in baseNodes) || ts > baseNodes[id]) {
+        nodes ??= { ...baseNodes };
         nodes[id] = ts;
       }
     }

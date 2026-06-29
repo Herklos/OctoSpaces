@@ -1,5 +1,19 @@
 # Changelog — @drakkar.software/octospaces-sdk
 
+## 0.29.1 (2026-06-29)
+
+### Fixed
+
+- **`maxMerge` crash on malformed server `reads` doc** — `flush()` passed the raw
+  `extra.reads` value from Starfish straight into `maxMerge` as `base`. The guard
+  `cur ?? EMPTY` only handled `null`/`undefined`; a non-null object lacking a `.nodes`
+  key (legacy `{ rooms: … }` shape, bare map, or `{}`) left `base.nodes === undefined`,
+  causing `TypeError: Cannot use 'in' operator to search for '…' in undefined`. Every
+  `flush()` for an affected identity was silently swallowed, so read marks never
+  persisted to the server. Fix: `maxMerge` now coerces both `base.nodes` and `over.nodes`
+  to `{}` before use, making it defensive against any malformed input on either side.
+  The next successful flush self-heals the stored doc to the clean `{ nodes: … }` shape.
+
 ## 0.29.0 (2026-06-26)
 
 ### Added — E2EE sealed Parquet + starfish alpha.43
